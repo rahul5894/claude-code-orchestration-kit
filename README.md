@@ -2,14 +2,19 @@
 
 > **This fork (2026-09-14): two models, code-intelligence tools, two refuters.**
 > Upstream pins haiku/sonnet/opus and bans `fable` on subagents. This fork runs on a Max
-> plan where Opus quota is not the constraint and Fable quota is, so: `fable` (`effort:
-> high`) on the main session, the **builder** and the **debugger** — the three seats that
-> think and write code, kept out of the main context so its quota lasts; `opus`
-> (`effort: xhigh`) on the researcher and refuter; `opus` `low` on the scout. The scout
-> has no `Read` (it physically cannot return contents) and searches through qartez; the
-> researcher has Firecrawl/Exa/Context7 instead of `WebFetch`/`WebSearch`; the builder
-> must run `qartez_impact` before every edit; the refuter is spawned **twice per change**,
-> once with a `correctness` mandate and once with a `security` mandate, both must ACCEPT.
+> plan where Opus quota is not the constraint and Fable quota is. The split is **what
+> thinks vs what executes**: `fable` (`effort: high`) on the main session and the
+> **debugger** — every design decision (what changes, which pattern, which helper, which
+> library) is made there; `opus` (`effort: xhigh`) on the researcher, **builder** and
+> refuter — they execute a decision already written down; `opus` `low` on the scout. The
+> brief's CONTEXT therefore names the pattern and points at an existing `file:line` that
+> does it that way; a builder that meets an unsettled choice stops and reports instead of
+> picking, and the refuter fails a diff that uses a pattern the brief did not name. The
+> scout has no `Read` (it physically cannot return contents) and searches through qartez;
+> the researcher has Firecrawl/Exa/Context7 instead of `WebFetch`/`WebSearch`; the
+> builder must run `qartez_impact` before every edit; the refuter is spawned **twice per
+> change**, once with a `correctness` mandate and once with a `security` mandate, both
+> must ACCEPT.
 > Install is a **merge** into `~/.claude/`, never a replace. `validate_kit.py` pins all
 > of this. Upstream: [SirRuggie/claude-code-orchestration-kit](https://github.com/SirRuggie/claude-code-orchestration-kit).
 
@@ -47,7 +52,7 @@ file loaded → `/tasks` while a subagent runs shows its model.
 | File | What it is |
 |---|---|
 | `core/CLAUDE.md` | The rules. This is the only place that defines the brief format (six sections), the bucket, and the rule that every agent has a pinned model. |
-| `core/agents/` | The five agents, one file each: scout `opus`, researcher `opus`, builder `fable`, refuter `opus`, debugger `fable`. Each file pins the model, the **effort**, and the tools. |
+| `core/agents/` | The five agents, one file each: scout `opus`, researcher `opus`, builder `opus`, refuter `opus`, debugger `fable`. Each file pins the model, the **effort**, and the tools. |
 | `core/commands/task.md` | `/task` shows every open task. `/task <sentence>` continues one or starts a new one. |
 | `core/settings.user.json` | The user-settings fragment the installer merges: per-model `modelSettings` effort (fable `high`, opus `xhigh`), `env` (`CLAUDE_CODE_SUBAGENT_MODEL=opus` for off-roster agents, `CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH=1`), brief-folder deny rules, push/reset ask rules. |
 
@@ -69,7 +74,7 @@ never set either.
 |---|---|---|---|
 | scout | opus, `effort: low` | Finds where things are in the code, through qartez. | Cannot edit. Has no `Read`: returns file paths only, never file contents. |
 | researcher | opus, `effort: xhigh` | Answers a question from source (qartez), library docs (Context7) or the web (Firecrawl, Exa), with citations. | Cannot edit. Has no `WebFetch`/`WebSearch`. |
-| builder | fable, `effort: high` | Writes the code and runs the tests; `qartez_impact` before every edit. | The only agent with Edit and Write. |
+| builder | opus, `effort: xhigh` | Writes the code the brief specifies, in the pattern the brief names, and runs the tests; `qartez_impact` before every edit. | The only agent with Edit and Write. Does not choose patterns: an unsettled choice is a BLOCKER, not a decision. |
 | refuter | opus, `effort: xhigh` | Reviews the builder's change and tries to find what is wrong with it. Spawned twice: `correctness` mandate + `security` mandate. | Has no Edit or Write tool. It reports problems, it does not fix them. |
 | debugger | fable, `effort: high` | Finds the real cause of a hard bug and proves it, with runtime tools (delve, Flutter DTD, Postgres). | Has no Edit or Write tool. It explains, it does not fix. |
 
@@ -247,9 +252,10 @@ folder you start in, so starting from a subfolder turns those rules off.
   for an agent that is not one of the five. This order needs Claude Code 2.1.251 or newer.
   Older versions put the environment variable first.
 - **`haiku` is an official short name.** So is `fable`. Upstream never puts `fable` on a
-  subagent; this fork puts it on exactly two (builder, debugger) because a Fable subagent's
-  file reads and test output die with it, while the same work done inline by a Fable main
-  session stays in that context for every later turn.
+  subagent; this fork puts it on exactly one (debugger), the only subagent that has to
+  reason to a conclusion rather than execute one. A Fable subagent's file reads and
+  command output die with it, while the same work done inline by a Fable main session
+  stays in that context for every later turn.
 - **A tool missing from `tools:` is denied.** The list is "only these". That is why the
   refuter has no Edit or Write. A file with no `tools:` line gets all tools.
 - **Subagents load every CLAUDE.md**: `~/.claude/CLAUDE.md`, the project CLAUDE.md,

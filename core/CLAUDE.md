@@ -27,7 +27,7 @@ final judgment on every important finding.
 |---|---|---|
 | `scout` | opus · low | Locations of files, symbols, call sites via qartez. Never contents (no Read). |
 | `researcher` | opus · xhigh | Facts from source (qartez), library docs (Context7), web (Firecrawl → Exa). Never `WebFetch`/`WebSearch`. |
-| `builder` | fable · high | Implement from a brief, `qartez_impact` before every edit, run tests. |
+| `builder` | opus · xhigh | Implement from a brief that already names the pattern, `qartez_impact` before every edit, run tests. |
 | `refuter` | opus · xhigh | Review diff, rerun tests, ACCEPT or REWORK. Spawned TWICE per change: mandate `correctness` + mandate `security`. |
 | `debugger` | fable · high | Hard root-cause only, with runtime tools. |
 
@@ -38,11 +38,15 @@ Loop: **orchestrate → builder → 2× refuter (parallel) → orchestrate.**
 Resolution order: per-invocation `model` → agent frontmatter (`inherit` = main model) →
 `CLAUDE_CODE_SUBAGENT_MODEL` → main conversation's model.
 
-- **Two models only.** `fable` = the main session, the builder and the debugger, always
-  `effort: high`. `opus` = everything else, `effort: xhigh` (scout `low`: a lookup does
-  not think). Never `sonnet`, never `haiku`.
+- **Two models only, split by what thinks and what executes.** `fable` (`effort: high`)
+  = the main session and the debugger: every decision — what changes, which pattern,
+  which helper, which library, what "done" means — is made here. `opus` (`effort:
+  xhigh`; scout `low`, a lookup does not think) = everything that executes a decision
+  already made: locate, research, build from a brief, review. Never `sonnet`, never
+  `haiku`.
 - Roster agents are pinned. **Anything off-roster gets `model: opus` + `effort: xhigh`
-  explicitly**, unless it writes code or proves a root cause — then `fable` + `high`.
+  explicitly**, unless it must make a design decision or prove a root cause — then
+  `fable` + `high`.
 - Session effort lives in user-settings `modelSettings` (`claude-fable-5-1` high,
   `claude-opus-5` xhigh); off-roster default = `env.CLAUDE_CODE_SUBAGENT_MODEL=opus`.
 - Never set `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` (erases every model pin above) and never
@@ -74,6 +78,13 @@ Six sections, nothing else:
 
 Plus an output contract: "As long as the report needs, no longer. Cite `file:line`. No
 pasted diffs."
+
+- **CONTEXT carries the design, because the builder does not design.** For every change
+  it names the pattern, helper, library and API to use and points at an existing
+  `file:line` that already does it that way (grep first: 3+ files one way = the
+  standard). A brief that leaves a pattern choice to the builder is not finished. I
+  research the pattern myself (researcher for docs, scout for the existing instance)
+  before I write the brief.
 
 - **Banned:** "think deeply", "explore all approaches", "be thorough", project history,
   bundled future tasks.

@@ -51,6 +51,9 @@ The brief names your mandate. Run the mandatory checks below in both; then:
   still in? If yes, it proves nothing. Read every test's assertions against its name; when
   they disagree, the assertions are what was built.
 - **Scope:** does the diff touch anything the brief did not authorize?
+- **Pattern:** does the diff use the pattern, helper and library the brief's CONTEXT
+  named, mirroring the `file:line` it pointed at — and nothing the brief did not name? A
+  different idiom, even a good one, is a MUST-FIX: the orchestrator chose that pattern.
 - **Callers:** `qartez_refs` on every changed symbol. A caller the change did not account
   for is a MUST-FIX.
 - **Silent failure:** empty catch blocks, swallowed errors, success returned over a thrown

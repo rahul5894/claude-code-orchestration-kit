@@ -35,9 +35,10 @@ files = sorted(slash(f) for f in glob.glob('**/*.md', recursive=True))
 print('=== 1. AGENT FRONTMATTER — docs-valid values only ===')
 MODELS = {'sonnet', 'opus', 'haiku', 'fable', 'inherit'}
 EFFORT = {'low', 'medium', 'high', 'xhigh', 'max'}
-# Two-model roster: fable (high) writes code and proves root causes; opus does the rest
-# at xhigh, except the scout, whose lookup does not think.
-PINS = {'scout': ('opus', 'low'), 'researcher': ('opus', 'xhigh'), 'builder': ('fable', 'high'),
+# Two-model roster: fable (high) thinks — the main session decides, the debugger proves
+# root causes; opus (xhigh) executes decisions already made — locate, research, build
+# from a brief that names the pattern, review. The scout runs low: a lookup does not think.
+PINS = {'scout': ('opus', 'low'), 'researcher': ('opus', 'xhigh'), 'builder': ('opus', 'xhigh'),
         'refuter': ('opus', 'xhigh'), 'debugger': ('fable', 'high')}
 COLORS = {'red', 'blue', 'green', 'yellow', 'purple', 'orange', 'pink', 'cyan'}
 AGENTKEYS = {'name', 'description', 'tools', 'disallowedTools', 'model', 'permissionMode',
