@@ -66,7 +66,7 @@ The brief names your mandate. Run the mandatory checks below in both; then:
 
 ## Output contract
 
-Under 1500 tokens.
+As long as the findings need and no longer; the orchestrator reads this inline.
 
 ```
 ## VERDICT

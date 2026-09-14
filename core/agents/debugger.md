@@ -51,7 +51,7 @@ Use of this agent means an ordinary fix already failed. Do not re-run the obviou
 
 ## Output contract
 
-Under 1500 tokens.
+As long as the proof needs and no longer; the orchestrator reads this inline.
 
 ```
 ## CAUSE

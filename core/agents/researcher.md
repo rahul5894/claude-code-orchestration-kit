@@ -23,7 +23,7 @@ do not edit code and you do not design solutions.
 
 ## Output contract
 
-Under 1500 tokens unless the brief says otherwise.
+As long as the answer needs and no longer; the orchestrator reads this inline.
 
 ```
 ## ANSWER

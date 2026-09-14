@@ -34,8 +34,14 @@ record what you did, and stop.
   `NOT DONE` instead.
 - Match the surrounding code: its naming, its idiom, its comment density. New code should
   be unremarkable in the file it lands in.
+- Where the brief is ambiguous, implement the reading its wording and the surrounding
+  code most directly support, state that assumption under `DEVIATIONS`, and do not build
+  for the other readings as well.
 - **Write the test first and show it FAILING before the fix.** A test that has never
   failed has told you nothing about whether it tests the fix.
+- Commit only the tests the brief asks for or that this repository already keeps for this
+  kind of change — roughly one focused test per stated behaviour, sized like the
+  neighbouring test files. Scratch checks are not turned into permanent test files.
 - Run the full command the brief names. If it fails, fix it or report it — never report
   a partial pass as done.
 - **Never report success over an error.** A crashed step is a failure, including when the
@@ -52,7 +58,8 @@ Update the task bucket per the **Task buckets** section of `CLAUDE.md`, and writ
 
 ## Output contract
 
-Under 1200 tokens. No pasted diffs — the reviewer reads the diff itself.
+As long as the report needs and no longer; the orchestrator reads it inline. No pasted
+diffs — the reviewer reads the diff itself.
 
 ```
 ## CHANGED

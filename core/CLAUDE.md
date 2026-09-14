@@ -72,7 +72,8 @@ Six sections, nothing else:
 6. STOP           report found/changed/need-to-know/my actions/blockers, then halt
 ```
 
-Plus an output budget: "Under N tokens. Cite `file:line`. No pasted diffs."
+Plus an output contract: "As long as the report needs, no longer. Cite `file:line`. No
+pasted diffs."
 
 - **Banned:** "think deeply", "explore all approaches", "be thorough", project history,
   bundled future tasks.

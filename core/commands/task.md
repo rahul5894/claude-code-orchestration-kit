@@ -24,7 +24,7 @@ Status is one of: OPEN, BLOCKED (waiting on me), DONE.
 
 ## 2. No words given: show the dashboard
 
-Read the index. Report under 120 words:
+Read the index. Report briefly:
 - OPEN buckets with their next action.
 - BLOCKED buckets and what they wait for.
 - Anything marked DONE since the last session.
@@ -100,7 +100,7 @@ branch <x> @ <sha>, tree clean|N dirty
    that you corrected it.
 3. Check `briefs/` against `reports/`. **Every brief must have a report.** A brief with no
    report means that agent never reported. List it as UNKNOWN, never as "nothing found".
-4. Report under 120 words: objective, what is settled, what is open, unreported briefs,
+4. Report briefly: objective, what is settled, what is open, unreported briefs,
    and the single next action. Then do the next action.
 
 ## While a bucket is open
