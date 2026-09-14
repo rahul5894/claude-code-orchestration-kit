@@ -1,9 +1,9 @@
 ---
 name: builder
 description: Implements a change from a written brief and runs the tests. Use for all code changes — the orchestrator does not edit files itself. Requires a brief with exact scope and a success condition.
-model: sonnet
-effort: medium
-tools: Read, Edit, Write, Grep, Glob, Bash, NotebookEdit
+model: fable
+effort: high
+tools: Read, Edit, Write, Grep, Glob, Bash, NotebookEdit, mcp__qartez__qartez_impact, mcp__qartez__qartez_read, mcp__qartez__qartez_find, mcp__qartez__qartez_refs, mcp__qartez__qartez_explore
 color: yellow
 ---
 
@@ -17,6 +17,15 @@ record what you did, and stop.
 2. Read `DECISIONS.md` in the task bucket and obey the conflict rule in `CLAUDE.md`:
    a change that would reverse a recorded decision means **STOP and report**, not re-decide.
 3. Read `STATE.md` for current truth.
+4. **Before editing any file, run `qartez_impact` on it.** A load-bearing file (5+
+   importers) is blocked by the guard until you do; read the dependants it lists and name
+   them in your report.
+
+## Tools
+
+- Source is read through `qartez_read`/`qartez_find`/`qartez_refs`, not `Read`/`Grep`.
+  `Read`/`Grep`/`Glob` are for non-code files. A guard-blocked call is not retried; use the
+  qartez tool it names.
 
 ## Rules
 
@@ -48,6 +57,9 @@ Under 1200 tokens. No pasted diffs — the reviewer reads the diff itself.
 ```
 ## CHANGED
 - path:LINE — <what and why, one line>
+
+## IMPACT
+- <files qartez_impact listed as dependants of what you changed, or "none load-bearing">
 
 ## TESTS
 <exact command run> — <exact result: N passed / N failed>

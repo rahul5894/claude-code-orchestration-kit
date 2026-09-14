@@ -35,6 +35,10 @@ files = sorted(slash(f) for f in glob.glob('**/*.md', recursive=True))
 print('=== 1. AGENT FRONTMATTER — docs-valid values only ===')
 MODELS = {'sonnet', 'opus', 'haiku', 'fable', 'inherit'}
 EFFORT = {'low', 'medium', 'high', 'xhigh', 'max'}
+# Two-model roster: fable (high) writes code and proves root causes; opus does the rest
+# at xhigh, except the scout, whose lookup does not think.
+PINS = {'scout': ('opus', 'low'), 'researcher': ('opus', 'xhigh'), 'builder': ('fable', 'high'),
+        'refuter': ('opus', 'xhigh'), 'debugger': ('fable', 'high')}
 COLORS = {'red', 'blue', 'green', 'yellow', 'purple', 'orange', 'pink', 'cyan'}
 AGENTKEYS = {'name', 'description', 'tools', 'disallowedTools', 'model', 'permissionMode',
              'maxTurns', 'skills', 'mcpServers', 'hooks', 'memory', 'background', 'effort',
@@ -46,19 +50,24 @@ for p in sorted(glob.glob('core/agents/*.md')):
     chk('name' in d and 'description' in d, f'{n}: required name+description')
     chk(d.get('name') == n[:-3], f'{n}: name matches filename', d.get('name'))
     chk(d.get('model') in MODELS, f'{n}: model is a valid alias', d.get('model'))
-    chk(d.get('model') != 'fable', f'{n}: model is NOT fable')
+    chk(d.get('model') not in {'sonnet', 'haiku'}, f'{n}: model is fable or opus only', d.get('model'))
     chk(d.get('effort') in EFFORT, f'{n}: effort is valid', d.get('effort'))
+    chk((d.get('model'), d.get('effort')) == PINS.get(n[:-3]), f'{n}: pinned to {PINS.get(n[:-3])}',
+        str((d.get('model'), d.get('effort'))))
     chk(d.get('color') in COLORS, f'{n}: color is documented', d.get('color'))
     chk(set(d) <= AGENTKEYS, f'{n}: no unknown keys', str(set(d) - AGENTKEYS))
 
 print()
 print('=== 2. TOOL RESTRICTIONS ARE REAL ===')
+QZ = 'mcp__qartez__qartez_'
 for name, must_lack, must_have in [
-        ('refuter', ['Edit', 'Write', 'NotebookEdit'], ['Read', 'Bash']),
-        ('scout', ['Edit', 'Write', 'Bash'], ['Read', 'Grep']),
-        ('researcher', ['Edit', 'Write'], ['Read']),
-        ('debugger', ['Edit', 'Write'], ['Read', 'Bash']),
-        ('builder', [], ['Edit', 'Write', 'Bash'])]:
+        ('refuter', ['Edit', 'Write', 'NotebookEdit', 'Agent'], ['Read', 'Bash', QZ + 'refs']),
+        ('scout', ['Edit', 'Write', 'Bash', 'Read', 'Agent'], [QZ + 'find', QZ + 'grep', QZ + 'refs']),
+        ('researcher', ['Edit', 'Write', 'WebFetch', 'WebSearch', 'Agent'],
+         ['Read', QZ + 'explore', 'mcp__firecrawl__firecrawl_search', 'mcp__exa__web_search_exa',
+          'mcp__context7__query-docs']),
+        ('debugger', ['Edit', 'Write', 'Agent'], ['Read', 'Bash', QZ + 'locate']),
+        ('builder', ['Agent'], ['Edit', 'Write', 'Bash', QZ + 'impact'])]:
     d, _ = fm(f'core/agents/{name}.md')
     t = [x.strip() for x in d['tools'].split(',')]
     chk(all(m not in t for m in must_lack), f'{name}: lacks {must_lack}', str(t))
@@ -115,7 +124,9 @@ cfg = [f for f in files if 'README' not in f]
 for concept, pat in [('six-section brief', 'CURRENT STATE'),
                      ('banned phrases', 'explore all approaches'),
                      ('model resolution order', 'Resolution order'),
-                     ('roster table', r'`scout`[^|]*\|\s*haiku'),
+                     ('roster table', r'`scout`[^|]*\|\s*opus'),
+                     ('two-model rule', 'Two models only'),
+                     ('two refuters', 'two refuters'),
                      ('bucket protocol rules', 'reverse a decision')]:
     owners = [f for f in cfg if re.search(pat, open(f, encoding='utf-8').read())]
     definers = [f for f in owners if f == 'core/CLAUDE.md']

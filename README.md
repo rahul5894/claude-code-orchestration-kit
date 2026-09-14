@@ -1,5 +1,18 @@
 # Claude Code orchestration kit
 
+> **This fork (2026-09-14): two models, code-intelligence tools, two refuters.**
+> Upstream pins haiku/sonnet/opus and bans `fable` on subagents. This fork runs on a Max
+> plan where Opus quota is not the constraint and Fable quota is, so: `fable` (`effort:
+> high`) on the main session, the **builder** and the **debugger** — the three seats that
+> think and write code, kept out of the main context so its quota lasts; `opus`
+> (`effort: xhigh`) on the researcher and refuter; `opus` `low` on the scout. The scout
+> has no `Read` (it physically cannot return contents) and searches through qartez; the
+> researcher has Firecrawl/Exa/Context7 instead of `WebFetch`/`WebSearch`; the builder
+> must run `qartez_impact` before every edit; the refuter is spawned **twice per change**,
+> once with a `correctness` mandate and once with a `security` mandate, both must ACCEPT.
+> Install is a **merge** into `~/.claude/`, never a replace. `validate_kit.py` pins all
+> of this. Upstream: [SirRuggie/claude-code-orchestration-kit](https://github.com/SirRuggie/claude-code-orchestration-kit).
+
 ## What this is
 
 By default, every subagent runs on the same model as your main session, inherits its
@@ -22,15 +35,16 @@ lowercase letters, numbers, and hyphens, so it is safe as a folder name. Example
 
 ```bash
 mkdir -p ~/.claude/agents ~/.claude/commands
-cp core/CLAUDE.md     ~/.claude/CLAUDE.md      # ⚠ replaces your existing file. Compare first.
-cp core/agents/*.md   ~/.claude/agents/
-cp core/commands/*.md ~/.claude/commands/
+cat core/CLAUDE.md   >> ~/.claude/CLAUDE.md      # append — keep your existing rules
+cp core/agents/*.md     ~/.claude/agents/
+cp core/commands/*.md   ~/.claude/commands/
+# then merge extras/project/.claude/settings.json "env" + "permissions" into ~/.claude/settings.json
 ```
 
 | File | What it is |
 |---|---|
 | `core/CLAUDE.md` | The rules. This is the only place that defines the brief format (six sections), the bucket, and the rule that every agent has a pinned model. |
-| `core/agents/` | The five agents, one file each: scout `haiku`, researcher `sonnet`, builder `sonnet`, refuter `opus`, debugger `opus`. Each file pins the model, the **effort**, and the tools. |
+| `core/agents/` | The five agents, one file each: scout `opus`, researcher `opus`, builder `fable`, refuter `opus`, debugger `fable`. Each file pins the model, the **effort**, and the tools. |
 | `core/commands/task.md` | `/task` shows every open task. `/task <sentence>` continues one or starts a new one. |
 
 The **Response contract** section at the top of `core/CLAUDE.md` is one person's reply
@@ -40,13 +54,13 @@ preferences (answer length, troubleshooting order). Edit it to match yours.
 
 | Agent | Model | What it does | What it cannot do |
 |---|---|---|---|
-| scout | haiku, `effort: low` | Finds where things are in the code. | Cannot edit. Returns file paths only, never file contents. |
-| researcher | sonnet, `effort: medium` | Answers a question from docs or source, with citations. | Cannot edit. |
-| builder | sonnet, `effort: medium` | Writes the code and runs the tests. | The only agent with Edit and Write. |
-| refuter | opus, `effort: high` | Reviews the builder's change and tries to find what is wrong with it. | Has no Edit or Write tool. It reports problems, it does not fix them. |
-| debugger | opus, `effort: high` | Finds the real cause of a hard bug and proves it. | Has no Edit or Write tool. It explains, it does not fix. |
+| scout | opus, `effort: low` | Finds where things are in the code, through qartez. | Cannot edit. Has no `Read`: returns file paths only, never file contents. |
+| researcher | opus, `effort: xhigh` | Answers a question from source (qartez), library docs (Context7) or the web (Firecrawl, Exa), with citations. | Cannot edit. Has no `WebFetch`/`WebSearch`. |
+| builder | fable, `effort: high` | Writes the code and runs the tests; `qartez_impact` before every edit. | The only agent with Edit and Write. |
+| refuter | opus, `effort: xhigh` | Reviews the builder's change and tries to find what is wrong with it. Spawned twice: `correctness` mandate + `security` mandate. | Has no Edit or Write tool. It reports problems, it does not fix them. |
+| debugger | fable, `effort: high` | Finds the real cause of a hard bug and proves it, with runtime tools (delve, Flutter DTD, Postgres). | Has no Edit or Write tool. It explains, it does not fix. |
 
-The normal loop is: **you plan → builder builds → refuter checks → you decide.**
+The normal loop is: **you plan → builder builds → two refuters check in parallel → you decide.**
 
 **None of the five can spawn a subagent.** The `Agent` tool is not in any of their
 tool lists, so it does not exist for them. This is enforced, not just requested. For any
@@ -219,7 +233,10 @@ folder you start in, so starting from a subfolder turns those rules off.
   your main chat's model. So the five agents really are pinned. Pass a model yourself only
   for an agent that is not one of the five. This order needs Claude Code 2.1.251 or newer.
   Older versions put the environment variable first.
-- **`haiku` is an official short name.** So is `fable`. Never put `fable` on a subagent.
+- **`haiku` is an official short name.** So is `fable`. Upstream never puts `fable` on a
+  subagent; this fork puts it on exactly two (builder, debugger) because a Fable subagent's
+  file reads and test output die with it, while the same work done inline by a Fable main
+  session stays in that context for every later turn.
 - **A tool missing from `tools:` is denied.** The list is "only these". That is why the
   refuter has no Edit or Write. A file with no `tools:` line gets all tools.
 - **Subagents load every CLAUDE.md**: `~/.claude/CLAUDE.md`, the project CLAUDE.md,

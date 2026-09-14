@@ -1,20 +1,15 @@
-# Global rules
+# Orchestration rules
 
 Every session, every project. A repo's own `CLAUDE.md` wins on conflict.
 
 Subagents load this file too, so it is **directives only**. The reasoning behind each rule
 lives in the kit README, which nothing loads at runtime.
 
-## Response contract (edit to your own preferences)
+## Response contract
 
-- Answer first, no preamble. Under 150 words for ordinary replies; task output takes what
-  it needs.
-- Technically capable reader. Define only unavoidable jargon.
-- Troubleshooting: likeliest cause first, then the next 1–3 checks with exact commands and
-  expected results.
-- List every finding; 1–2 sentences each, ordered by importance.
-- Label inference vs evidence.
-- Full script when a script changes, never a diff.
+- Answer first, no preamble. Reply in the language the user wrote in (Hinglish stays
+  Hinglish). Task output takes what it needs.
+- Label inference vs evidence. List every finding, ordered by importance.
 - Stop once I have a clear next action.
 
 ## Roles (main session only)
@@ -28,24 +23,30 @@ final judgment on every important finding.
 
 `~/.claude/agents/` — model, effort and tools pinned per file.
 
-| Agent | Model | For |
+| Agent | Model · effort | For |
 |---|---|---|
-| `scout` | haiku | Locations of files, symbols, call sites. Never contents. |
-| `researcher` | sonnet | Facts from docs/source, unverified marked. |
-| `builder` | sonnet | Implement from a brief, run tests. |
-| `refuter` | opus | Review diff, rerun tests, ACCEPT or REWORK. |
-| `debugger` | opus | Hard root-cause only. |
+| `scout` | opus · low | Locations of files, symbols, call sites via qartez. Never contents (no Read). |
+| `researcher` | opus · xhigh | Facts from source (qartez), library docs (Context7), web (Firecrawl → Exa). Never `WebFetch`/`WebSearch`. |
+| `builder` | fable · high | Implement from a brief, `qartez_impact` before every edit, run tests. |
+| `refuter` | opus · xhigh | Review diff, rerun tests, ACCEPT or REWORK. Spawned TWICE per change: mandate `correctness` + mandate `security`. |
+| `debugger` | fable · high | Hard root-cause only, with runtime tools. |
 
-Loop: **orchestrate → builder → refuter → orchestrate.**
+Loop: **orchestrate → builder → 2× refuter (parallel) → orchestrate.**
 
 ## Model pinning
 
 Resolution order: per-invocation `model` → agent frontmatter (`inherit` = main model) →
 `CLAUDE_CODE_SUBAGENT_MODEL` → main conversation's model.
 
-- Roster agents are pinned. **Anything off-roster gets an explicit model and effort.**
-- **Never `fable` on a subagent.**
+- **Two models only.** `fable` = the main session, the builder and the debugger, always
+  `effort: high`. `opus` = everything else, `effort: xhigh` (scout `low`: a lookup does
+  not think). Never `sonnet`, never `haiku`.
+- Roster agents are pinned. **Anything off-roster gets `model: opus` + `effort: xhigh`
+  explicitly**, unless it writes code or proves a root cause — then `fable` + `high`.
+- Never set `CLAUDE_CODE_SUBAGENT_MODEL_FORCE`; it erases every pin above.
 - Subagents do not spawn subagents. They report back.
+- Code search = qartez tools, never `Grep`/`Glob`/`Read` on source. Web = Firecrawl →
+  Exa → Context7, never `WebFetch`/`WebSearch`. The agent tool lists enforce both.
 
 ## Delegation (main session only)
 
@@ -111,11 +112,15 @@ with you.
 ## Verification
 
 - Agents are sent to **refute**, not confirm. Agreement without stated attacks is nothing.
+- **Every builder change gets two refuters, spawned in parallel from the same brief:**
+  one with `mandate: correctness`, one with `mandate: security`. Both must ACCEPT. One
+  REWORK = one new brief carrying both must-fix lists.
 - Each agent gets its own source of truth — two agents reading one file is one agent.
 - **Anything settleable by running it, gets run.**
 - Never accept "done" or "tests pass". The refuter reruns them.
 - Run `git status --short` before and after a refuter or debugger. If the output differs,
-  the agent edited files. Discard its verdict.
+  the agent edited files (they have Bash; no tool list stops a shell write). Discard its
+  verdict.
 - Say which findings came from an agent, which I confirmed, which nobody tested.
 
 ## Long-running work
