@@ -149,6 +149,25 @@ for f in files:
     chk('_BRIEF-TEMPLATE' not in s, f'{f}: no ref to deleted _BRIEF-TEMPLATE.md')
 
 print()
+print('=== 7. USER-SETTINGS FRAGMENT + INSTALLER ===')
+import json
+try:
+    su = json.load(open('core/settings.user.json', encoding='utf-8'))
+except Exception as e:
+    su = {}
+    chk(False, 'settings.user.json parses', str(e))
+env = su.get('env', {})
+chk(env.get('CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH') == '1', 'env: spawn depth 1')
+chk(env.get('CLAUDE_CODE_SUBAGENT_MODEL') == 'opus', 'env: off-roster subagent model opus')
+chk('CLAUDE_CODE_EFFORT_LEVEL' not in env, 'env: CLAUDE_CODE_EFFORT_LEVEL absent (would override frontmatter effort)')
+chk('CLAUDE_CODE_SUBAGENT_MODEL_FORCE' not in env, 'env: _FORCE absent (would erase model pins)')
+ms = su.get('modelSettings', {})
+chk(ms.get('claude-fable-5-1', {}).get('effortLevel') == 'high', 'modelSettings: fable high')
+chk(ms.get('claude-opus-5', {}).get('effortLevel') == 'xhigh', 'modelSettings: opus xhigh')
+chk(all(v.get('effortLevel') != 'max' for v in ms.values()), 'modelSettings: no max (not accepted by the key)')
+chk(os.path.isfile('install.ps1'), 'install.ps1 exists')
+
+print()
 print(f'checks run: {checks}   failures: {len(fails)}')
 for x in fails:
     print('  FAILED: ' + x)

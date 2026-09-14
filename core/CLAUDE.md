@@ -43,8 +43,12 @@ Resolution order: per-invocation `model` → agent frontmatter (`inherit` = main
   not think). Never `sonnet`, never `haiku`.
 - Roster agents are pinned. **Anything off-roster gets `model: opus` + `effort: xhigh`
   explicitly**, unless it writes code or proves a root cause — then `fable` + `high`.
-- Never set `CLAUDE_CODE_SUBAGENT_MODEL_FORCE`; it erases every pin above.
-- Subagents do not spawn subagents. They report back.
+- Session effort lives in user-settings `modelSettings` (`claude-fable-5-1` high,
+  `claude-opus-5` xhigh); off-roster default = `env.CLAUDE_CODE_SUBAGENT_MODEL=opus`.
+- Never set `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` (erases every model pin above) and never
+  `CLAUDE_CODE_EFFORT_LEVEL` (overrides every agent's frontmatter `effort`).
+- Subagents do not spawn subagents (`CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH=1`). They
+  report back.
 - Code search = qartez tools, never `Grep`/`Glob`/`Read` on source. Web = Firecrawl →
   Exa → Context7, never `WebFetch`/`WebSearch`. The agent tool lists enforce both.
 

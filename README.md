@@ -33,22 +33,35 @@ lowercase letters, numbers, and hyphens, so it is safe as a folder name. Example
 
 ## Install
 
-```bash
-mkdir -p ~/.claude/agents ~/.claude/commands
-cat core/CLAUDE.md   >> ~/.claude/CLAUDE.md      # append — keep your existing rules
-cp core/agents/*.md     ~/.claude/agents/
-cp core/commands/*.md   ~/.claude/commands/
-# then merge extras/project/.claude/settings.json "env" + "permissions" into ~/.claude/settings.json
+```powershell
+pwsh ./install.ps1      # idempotent: run after every kit edit and on every new machine
 ```
+
+It copies the agents and `/task`, replaces the `<!-- orchestration-kit -->` block in
+`~/.claude/CLAUDE.md` (appends it the first time, your own rules stay), and deep-merges
+`core/settings.user.json` into `~/.claude/settings.json` (backup written when it changes).
+Needs Claude Code **2.1.267+** (frontmatter `effort` under a model's default-effort hold;
+`/model` switches keep the prompt cache). Then: new session → `/status` shows the settings
+file loaded → `/tasks` while a subagent runs shows its model.
 
 | File | What it is |
 |---|---|
 | `core/CLAUDE.md` | The rules. This is the only place that defines the brief format (six sections), the bucket, and the rule that every agent has a pinned model. |
 | `core/agents/` | The five agents, one file each: scout `opus`, researcher `opus`, builder `fable`, refuter `opus`, debugger `fable`. Each file pins the model, the **effort**, and the tools. |
 | `core/commands/task.md` | `/task` shows every open task. `/task <sentence>` continues one or starts a new one. |
+| `core/settings.user.json` | The user-settings fragment the installer merges: per-model `modelSettings` effort (fable `high`, opus `xhigh`), `env` (`CLAUDE_CODE_SUBAGENT_MODEL=opus` for off-roster agents, `CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH=1`), brief-folder deny rules, push/reset ask rules. |
 
 The **Response contract** section at the top of `core/CLAUDE.md` is one person's reply
-preferences (answer length, troubleshooting order). Edit it to match yours.
+preferences. Edit it to match yours.
+
+**Verified against the official docs on 2026-09-14** (`code.claude.com/docs/en/sub-agents`,
+`model-config`, `settings`): model order = per-invocation → frontmatter →
+`CLAUDE_CODE_SUBAGENT_MODEL` → main (2.1.251+) · effort levels on Fable 5.1 / Opus 5 =
+`low medium high xhigh max`; `modelSettings`/`effortLevel` accept everything but `max` ·
+frontmatter `effort` overrides the session level but **not** `CLAUDE_CODE_EFFORT_LEVEL`, so
+that variable is never set here · `CLAUDE_CODE_SUBAGENT_MODEL` alone leaves the built-in
+Explore/Plan agents on the main model; `_FORCE` moves them but erases every pin, so it is
+never set either.
 
 ## The five agents
 
