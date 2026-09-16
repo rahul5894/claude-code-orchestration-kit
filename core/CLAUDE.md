@@ -109,9 +109,11 @@ pasted diffs."
 ## Task buckets
 
 A bucket is the folder for one task: `.claude/scratch/<slug>/` with `STATE.md` (replaced
-each update), `FINDINGS.md` and `DECISIONS.md` (append-only), `briefs/`, `reports/`. The
-slug is a short name: lowercase, numbers, hyphens, no spaces. `.claude/scratch/INDEX.md`
-lists every bucket with its status and next action.
+each update), `FINDINGS.md` and `DECISIONS.md` (append-only), `briefs/`, `reports/`,
+`RESEARCH.md` when research ran. The slug is a short name: lowercase, numbers, hyphens,
+no spaces. `.claude/scratch/INDEX.md` lists every bucket with its status and next action.
+**One folder per task, nothing elsewhere** — briefs, research notes, reports and status
+snapshots all live in the bucket; a second per-task folder is a bug.
 
 - **One task, one bucket.** Same objective = same bucket. Different objective = new bucket,
   even if the files overlap. Unsure = ask one question.
@@ -140,12 +142,20 @@ with you.
 
 ## Verification
 
-- **Machine gate first, agents second.** Before any refuter is spawned I run the
-  project's fast gate myself (the project `CLAUDE.md` names it — compile, codegen
-  staleness, analyzer, vet; ~1 min, zero agents). Red gate = straight to builder-02 with
-  the gate output as the must-fix list; no refuter, no verifier, the gate re-run is the
-  proof. Green gate = refuter. A must-fix a gate command can prove is closed by re-running
-  the gate; the verifier is only for logic must-fixes.
+- **Machine gate first, agents second — and it runs where it is cheap, never as an
+  extra serial step.** The project `CLAUDE.md` names a fast gate (compile, codegen
+  staleness, analyzer, vet; ~1 min). The builder runs it as its LAST step and pastes the
+  exact last line; the refuter runs it as its FIRST step, before reading a line. I run it
+  myself only when no builder was involved (a batched small change) or right before
+  commit if nothing ran it since the last edit. Red at the builder = it fixes before
+  reporting. Red at the refuter = REWORK with the gate output as the must-fix list, no
+  verifier; the gate re-run is the proof. A must-fix a gate command can prove is closed
+  by re-running the gate; the verifier is only for logic must-fixes.
+- **Expensive manual checks run once, last.** A device drive, emulator E2E, multi-device
+  flow or full-suite run happens AFTER the refuter's ACCEPT (after the verifier on a
+  rework), never before review — a REWORK after a device drive repeats the drive. Order
+  per change: builder → refuter → [builder-02 → verifier] → device/E2E → full suite if
+  warranted → commit → docs. Each step once.
 - Agents are sent to **refute**, not confirm. Agreement without stated attacks is nothing.
 - **Every builder change gets ONE refuter pass** carrying both mandates (correctness +
   security) in the same brief. A separate security-only refuter is spawned in parallel

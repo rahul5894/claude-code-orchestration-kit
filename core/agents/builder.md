@@ -49,6 +49,9 @@ record what you did, and stop.
   neighbouring test files. Scratch checks are not turned into permanent test files.
 - Run the full command the brief names. If it fails, fix it or report it — never report
   a partial pass as done.
+- **Last step before you report: run the project's fast gate** the brief names (e.g.
+  `make gate-fast`) and paste its exact last line under TESTS. A red gate is yours to fix
+  before reporting; never report over it.
 - **Never report success over an error.** A crashed step is a failure, including when the
   work looks finished.
 - If a check could not run, its status is SKIPPED, never passed.
@@ -76,6 +79,7 @@ diffs — the reviewer reads the diff itself.
 ## TESTS
 <exact command run> — <exact result: N passed / N failed>
 Shown failing first: YES/NO
+Gate: <exact gate command> — <exact last line>
 
 ## NOT DONE
 - <anything in scope you could not complete, and why>

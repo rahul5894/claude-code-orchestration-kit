@@ -166,6 +166,13 @@ Known gaps, on purpose:
   analyze`, `go build`, `go vet`). The orchestrator runs it before spawning a refuter. A
   red gate goes straight back to the builder with the gate output; no review agents run
   until it is green.
+- The fast gate runs inside the builder (last step) and the refuter (first step), not
+  as a third serial run by the orchestrator. Device drives, E2E and the full suite run
+  once, after ACCEPT, never before review.
+- One folder per task: `.claude/scratch/<slug>/` holds briefs, research, reports. The
+  kit used to deny writes under `briefs/`, which forced a second folder per task under
+  `.planning/quick/`; that deny rule was removed 2026-09-16 (a brief is still never
+  edited after spawn — a rule, not a permission). `_closed/` stays denied.
 - Permission deny rules must use `Edit(path)`, never `Write(path)`. Claude Code only
   matches file checks against `Edit` rules, and `Edit` rules cover every file-editing
   tool. The kit shipped `Write(...)` entries that did nothing and printed a warning on

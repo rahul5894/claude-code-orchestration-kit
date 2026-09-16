@@ -46,6 +46,9 @@ if it changed.
 
 ## Tests
 
+- **First, run the project's fast gate** the brief names (~1 min: compile, codegen
+  staleness, analyzer, vet). Red = REWORK at once with the gate output as the must-fix
+  list; do not read further. Green = continue.
 - **Run only the test files the brief names** (the builder's test set), **once**. Report
   the exact command and the exact counts. Never run the whole suite unless the brief
   says "full suite" — a full run is the orchestrator's decision, not yours.

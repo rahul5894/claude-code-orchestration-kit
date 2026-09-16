@@ -4,7 +4,6 @@
   },
   "permissions": {
     "deny": [
-      "Edit(.claude/scratch/*/briefs/**)",
       "Edit(.claude/scratch/_closed/**)"
     ],
     "ask": [

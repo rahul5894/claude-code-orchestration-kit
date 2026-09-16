@@ -23,7 +23,6 @@
       "Bash(chmod u+w:*)"
     ],
     "deny": [
-      "Edit(.claude/scratch/*/briefs/**)",
       "Edit(.claude/scratch/_closed/**)"
     ]
   }
