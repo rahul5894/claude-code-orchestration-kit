@@ -32,7 +32,7 @@ pwsh -NoProfile -File .\install.ps1
 Expected output, in this order:
 
 ```
-agents:   builder, debugger, refuter, researcher, scout
+agents:   builder, debugger, refuter, researcher, scout, verifier
 commands: task
 CLAUDE.md: kit block appended        (or "replaced" / "unchanged" on a re-run)
 settings.json: merged (backup written)
