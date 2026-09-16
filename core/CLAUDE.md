@@ -66,6 +66,14 @@ Resolution order: per-invocation `model` → agent frontmatter (`inherit` = main
 - Spawn for: multi-file changes, sweeps, large reads, independent review, parallel research.
 - Do myself: one-line fix, single grep, single read, a question I can answer.
 - Batch related fixes into one brief so large files are read once.
+- **Small change = no agents, note it, review in a batch.** A change of ≤ 2 files and
+  ≤ 40 changed lines with no security surface is done by me and appended as one line to
+  the bucket's `STATE.md` under `## Unreviewed since <sha>` (file, what, why). No refuter
+  runs for it alone. ONE refuter pass reviews the whole unreviewed diff when the first of
+  these fires: (a) commit time, (b) 3 noted changes or 5 files touched, (c) the next
+  builder change lands (its refuter pass covers the batch too), (d) a security surface is
+  touched — that one is reviewed at once, never batched. After the pass the section is
+  cleared and the sha advanced. Batching delays the review, never skips it.
 - Ultracode and large workflows stay off unless you ask; if you ask, cap the agent count.
 
 ## Briefs

@@ -149,7 +149,11 @@ Known gaps, on purpose:
   item: the refuter now runs ONCE per change with both mandates and a `maxTurns: 40`
   cap, and runs only the tests the brief names. A REWORK goes to one builder pass and
   then to the read-only `verifier` (`maxTurns: 8`), which answers FIXED or NOT FIXED
-  per must-fix line. A second REWORK stops the loop. Live test on 2026-09-16: the
+  per must-fix line. A second REWORK stops the loop. Small changes (2 files, 40 lines,
+  no security surface) spawn nothing: they are noted under `## Unreviewed since <sha>`
+  in the bucket's `STATE.md` and reviewed in one batch at commit, at 3 changes or 5
+  files, or with the next builder change. A security-surface change is never batched.
+  Live test on 2026-09-16: the
   verifier confirmed one real fix with three line numbers and refuted one planted fake
   fix with the exact line. Research basis: startdebugging.net (117 transcripts: cost is
   the agent loop, not the startup context), dev.to "6 stages to 1" (a chain that

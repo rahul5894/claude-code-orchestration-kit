@@ -27,6 +27,11 @@
 ## Next action
 <the single next thing, concrete enough to act on cold>
 
+## Unreviewed since <sha>
+<!-- one line per small change done without agents: `path — what — why`.
+     Reviewed in ONE refuter pass at commit, at 3 changes / 5 files, with the next builder
+     change, or at once if a security surface is touched. Clear + advance the sha after. -->
+
 ## Active agents
 
 | Agent | Brief | Launched | Ends when | State |
