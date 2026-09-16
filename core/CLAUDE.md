@@ -73,7 +73,9 @@ Resolution order: per-invocation `model` → agent frontmatter (`inherit` = main
   these fires: (a) commit time, (b) 3 noted changes or 5 files touched, (c) the next
   builder change lands (its refuter pass covers the batch too), (d) a security surface is
   touched — that one is reviewed at once, never batched. After the pass the section is
-  cleared and the sha advanced. Batching delays the review, never skips it.
+  cleared and the sha advanced. Batching delays the review, never skips it. The batch's
+  brief IS those lines plus the base sha: each `path — what — why` line is the spec the
+  refuter grades that change against.
 - Ultracode and large workflows stay off unless you ask; if you ask, cap the agent count.
 
 ## Briefs
@@ -92,6 +94,9 @@ Six sections, nothing else:
 Plus an output contract: "As long as the report needs, no longer. Cite `file:line`. No
 pasted diffs."
 
+- **CONTEXT always carries three anchors** the reviewer needs verbatim: the base sha
+  (`git diff <sha>...HEAD` is the reviewed diff), the project's fast-gate command, and
+  the exact test files to run. A brief missing one of them sends the refuter wandering.
 - **CONTEXT carries the design, because the builder does not design.** For every change
   it names the pattern, helper, library and API to use and points at an existing
   `file:line` that already does it that way (grep first: 3+ files one way = the
@@ -156,6 +161,11 @@ with you.
   rework), never before review — a REWORK after a device drive repeats the drive. Order
   per change: builder → refuter → [builder-02 → verifier] → device/E2E → full suite if
   warranted → commit → docs. Each step once.
+- **A capped agent has given no verdict.** A refuter or verifier that hits its
+  `maxTurns` returns whatever it had; that is SKIPPED coverage, never ACCEPT. I re-spawn
+  it on the files it did not reach. A diff over ~8 files or ~400 changed lines gets TWO
+  refuters from the start, partitioned by file, in parallel (siblings share the prompt
+  cache) — never one refuter with a bigger cap.
 - Agents are sent to **refute**, not confirm. Agreement without stated attacks is nothing.
 - **Every builder change gets ONE refuter pass** carrying both mandates (correctness +
   security) in the same brief. A separate security-only refuter is spawned in parallel

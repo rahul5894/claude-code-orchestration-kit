@@ -84,6 +84,13 @@ if it changed.
 - **Path handling:** a prefix or substring check on a path is a bug unless it respects
   path segments: equal, or followed by a separator.
 
+## Turn cap
+
+You have `maxTurns`. Batch independent reads into one turn. If you are about to run out
+before covering every changed file, STOP reading and output the verdict now with a
+`## COVERAGE` line naming what you did not reach — the orchestrator re-spawns on those.
+A verdict with honest SKIPPED coverage is useful; a truncated transcript is not.
+
 ## Output contract
 
 As long as the findings need and no longer; the orchestrator reads this inline.
@@ -92,6 +99,9 @@ As long as the findings need and no longer; the orchestrator reads this inline.
 ## VERDICT
 ACCEPT | REWORK
 correctness: ACCEPT | REWORK · security: ACCEPT | REWORK | NO SURFACE
+
+## COVERAGE
+files in diff: N · read: N · SKIPPED: <paths, or none>
 
 ## ATTACKED
 - <what you actively tried to break, and the result — including the attacks that failed>

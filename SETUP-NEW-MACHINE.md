@@ -177,6 +177,10 @@ Known gaps, on purpose:
   matches file checks against `Edit` rules, and `Edit` rules cover every file-editing
   tool. The kit shipped `Write(...)` entries that did nothing and printed a warning on
   every headless run. Removed 2026-09-16 from the kit and from `~/.claude/settings.json`.
+- `maxTurns` counts assistant turns, not tool calls: the verifier checked 15 items in
+  30 seconds inside its 8-turn cap by batching reads (measured 2026-09-16). A capped
+  agent still returns what it had; the rules treat that as SKIPPED coverage, never
+  ACCEPT, and diffs over ~8 files get two refuters partitioned by file.
 - Run an agent headless to test it without restarting the session:
   `claude -p --agent verifier --output-format text --allowedTools "Read,Grep,Glob" < prompt.txt`.
   The interactive `Agent` tool only lists agent files that existed when the session
