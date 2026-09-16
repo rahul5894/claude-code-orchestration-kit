@@ -5,9 +5,7 @@
   "permissions": {
     "deny": [
       "Edit(.claude/scratch/*/briefs/**)",
-      "Write(.claude/scratch/*/briefs/**)",
-      "Edit(.claude/scratch/_closed/**)",
-      "Write(.claude/scratch/_closed/**)"
+      "Edit(.claude/scratch/_closed/**)"
     ],
     "ask": [
       "Bash(git push:*)",

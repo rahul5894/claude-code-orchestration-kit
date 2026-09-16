@@ -50,8 +50,9 @@ every kit change. A second run prints `unchanged` and `already registered`.
 
 Checks:
 
-1. `~/.claude/agents/` has 5 files. `builder.md` and `researcher.md` say `effort: high`.
-   `refuter.md` says `effort: xhigh`. `scout.md` says `effort: low`.
+1. `~/.claude/agents/` has 6 files. `builder.md` and `researcher.md` say `effort: high`.
+   `refuter.md` says `effort: xhigh` and `maxTurns: 40`. `scout.md` says `effort: low`.
+   `verifier.md` says `effort: low` and `maxTurns: 8`.
 2. `~/.claude/settings.json` has no `CLAUDE_CODE_EFFORT_LEVEL` and no
    `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` under `env`. Either one silently overrides every
    agent file. The installer warns if it finds them.
@@ -144,6 +145,24 @@ Known gaps, on purpose:
   already names the pattern, so the builder does not need extra thinking. Reviewing
   does. Fable (main session) decides, Opus executes. Opus tokens are not the
   constraint. Fable context size and wall-clock are.
+- Review loop, revised 2026-09-16 after measuring 7 agents and about 37 minutes per
+  item: the refuter now runs ONCE per change with both mandates and a `maxTurns: 40`
+  cap, and runs only the tests the brief names. A REWORK goes to one builder pass and
+  then to the read-only `verifier` (`maxTurns: 8`), which answers FIXED or NOT FIXED
+  per must-fix line. A second REWORK stops the loop. Live test on 2026-09-16: the
+  verifier confirmed one real fix with three line numbers and refuted one planted fake
+  fix with the exact line. Research basis: startdebugging.net (117 transcripts: cost is
+  the agent loop, not the startup context), dev.to "6 stages to 1" (a chain that
+  re-reviews after every fix never reaches zero findings), claude-code issue #89249
+  (built-in `/review` fanned out to 14 agents, so it is not a cheaper substitute).
+- Permission deny rules must use `Edit(path)`, never `Write(path)`. Claude Code only
+  matches file checks against `Edit` rules, and `Edit` rules cover every file-editing
+  tool. The kit shipped `Write(...)` entries that did nothing and printed a warning on
+  every headless run. Removed 2026-09-16 from the kit and from `~/.claude/settings.json`.
+- Run an agent headless to test it without restarting the session:
+  `claude -p --agent verifier --output-format text --allowedTools "Read,Grep,Glob" < prompt.txt`.
+  The interactive `Agent` tool only lists agent files that existed when the session
+  started.
 - Claude Code 2.1.271 adds `omitClaudeMd` to agent frontmatter. It lets a subagent run
   without loading CLAUDE.md files. It fits `scout` (locations only). We were on 2.1.270,
   so it is not applied yet. Apply it to `scout.md` after the upgrade and re-run the
@@ -169,4 +188,5 @@ Known gaps, on purpose:
 - [ ] `qmd search "<anything>" -c <collection> --full-path -n 5` printed `D:\...md:LINE` hits
 - [ ] In a new Claude Code session, asking Claude to read a 300+ line `.md` whole is
       denied and the message names the qmd command
-- [ ] `/next-item` (or any task) shows builder and refuters on Opus in the Agent map
+- [ ] `/next-item` (or any task) shows builder then ONE refuter on Opus in the Agent map;
+      a rework shows builder then verifier, never a second refuter pair

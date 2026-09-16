@@ -39,6 +39,7 @@ EFFORT = {'low', 'medium', 'high', 'xhigh', 'max'}
 # root causes; opus executes decisions already made (refuter xhigh, builder + researcher high)
 # from a brief that names the pattern, review. The scout runs low: a lookup does not think.
 PINS = {'scout': ('opus', 'low'), 'researcher': ('opus', 'high'), 'builder': ('opus', 'high'),
+        'verifier': ('opus', 'low'),
         'refuter': ('opus', 'xhigh'), 'debugger': ('fable', 'high')}
 COLORS = {'red', 'blue', 'green', 'yellow', 'purple', 'orange', 'pink', 'cyan'}
 AGENTKEYS = {'name', 'description', 'tools', 'disallowedTools', 'model', 'permissionMode',
@@ -68,11 +69,16 @@ for name, must_lack, must_have in [
          ['Read', QZ + 'explore', 'mcp__firecrawl__firecrawl_search', 'mcp__exa__web_search_exa',
           'mcp__context7__query-docs']),
         ('debugger', ['Edit', 'Write', 'Agent'], ['Read', 'Bash', QZ + 'locate']),
-        ('builder', ['Agent'], ['Edit', 'Write', 'Bash', QZ + 'impact'])]:
+        ('builder', ['Agent'], ['Edit', 'Write', 'Bash', QZ + 'impact']),
+        ('verifier', ['Edit', 'Write', 'Bash', 'Agent'], ['Read', QZ + 'read', QZ + 'refs'])]:
     d, _ = fm(f'core/agents/{name}.md')
     t = [x.strip() for x in d['tools'].split(',')]
     chk(all(m not in t for m in must_lack), f'{name}: lacks {must_lack}', str(t))
     chk(all(m in t for m in must_have), f'{name}: has {must_have}', str(t))
+
+for name, cap in [('refuter', 40), ('verifier', 8)]:
+    d, _ = fm(f'core/agents/{name}.md')
+    chk(str(d.get('maxTurns')) == str(cap), f'{name}: maxTurns == {cap}', str(d.get('maxTurns')))
 
 print()
 print('=== 3. COMMAND FRONTMATTER ===')
@@ -127,7 +133,7 @@ for concept, pat in [('six-section brief', 'CURRENT STATE'),
                      ('model resolution order', 'Resolution order'),
                      ('roster table', r'`scout`[^|]*\|\s*opus'),
                      ('two-model rule', 'Two models only'),
-                     ('two refuters', 'two refuters'),
+                     ('one refuter pass', 'ONE refuter pass'),
                      ('bucket protocol rules', 'reverse a decision')]:
     owners = [f for f in cfg if re.search(pat, open(f, encoding='utf-8').read())]
     definers = [f for f in owners if f == 'core/CLAUDE.md']

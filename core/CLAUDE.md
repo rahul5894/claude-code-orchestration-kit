@@ -28,10 +28,14 @@ final judgment on every important finding.
 | `scout` | opus · low | Locations of files, symbols, call sites via qartez. Never contents (no Read). |
 | `researcher` | opus · high | Facts from source (qartez), library docs (Context7), web (Firecrawl → Exa). Never `WebFetch`/`WebSearch`. |
 | `builder` | opus · high | Implement from a brief that already names the pattern, `qartez_impact` before every edit, run tests. |
-| `refuter` | opus · xhigh | Review diff, rerun tests, ACCEPT or REWORK. Spawned TWICE per change: mandate `correctness` + mandate `security`. |
+| `refuter` | opus · xhigh | ONE pass per change, correctness AND security in the same brief; runs only the brief's named tests, once; `maxTurns` 40. ACCEPT or REWORK with `path:LINE` must-fixes. |
+| `verifier` | opus · low | After a rework: FIXED / NOT FIXED per must-fix item, read-only, `maxTurns` 8. Replaces a second refuter pass. |
 | `debugger` | fable · high | Hard root-cause only, with runtime tools. |
 
-Loop: **orchestrate → builder → 2× refuter (parallel) → orchestrate.**
+Loop: **orchestrate → builder → refuter (one pass) → ACCEPT: done · REWORK: builder-02 →
+verifier → orchestrate.** A second REWORK, or any NOT FIXED after the verifier, stops the
+loop: I sort it out with you instead of spawning again. Per change that is 2 agents on the
+happy path, 4 at most.
 
 ## Model pinning
 
@@ -43,7 +47,7 @@ Resolution order: per-invocation `model` → agent frontmatter (`inherit` = main
   which helper, which library, what "done" means — is made here. `opus` = everything
   that executes a decision already made: locate, research, build from a brief, review.
   Effort by job: refuter `xhigh` (hunting bugs needs thought), builder + researcher `high`
-  (the brief already carries the pattern; xhigh only burns time), scout `low`. Never `sonnet`, never
+  (the brief already carries the pattern; xhigh only burns time), scout + verifier `low`. Never `sonnet`, never
   `haiku`.
 - Roster agents are pinned. **Anything off-roster gets `model: opus` + `effort: high`
   explicitly** (`xhigh` only when it reviews), unless it must make a design decision or
@@ -129,13 +133,21 @@ with you.
 ## Verification
 
 - Agents are sent to **refute**, not confirm. Agreement without stated attacks is nothing.
-- **Every builder change gets two refuters, spawned in parallel from the same brief:**
-  one with `mandate: correctness`, one with `mandate: security`. Both must ACCEPT. One
-  REWORK = one new brief carrying both must-fix lists.
+- **Every builder change gets ONE refuter pass** carrying both mandates (correctness +
+  security) in the same brief. A separate security-only refuter is spawned in parallel
+  ONLY when the write-set touches a security surface: server auth/chat/media modules,
+  migrations, RLS, `lib/core/security`, `dio_client`, or any client-decidable rule.
+- **Rework is verified, not re-reviewed.** REWORK → one builder-02 brief carrying the
+  must-fix list → `verifier` confirms each item FIXED / NOT FIXED against the code. No
+  second refuter pass. A second REWORK or a NOT FIXED = stop and ask.
+- **Tests run once per pass.** The builder runs its test set; the refuter re-runs only
+  the files the brief names. A full-suite run is my call, at most once per change, right
+  before commit — never inside every agent.
 - Each agent gets its own source of truth — two agents reading one file is one agent.
 - **Anything settleable by running it, gets run.**
-- Never accept "done" or "tests pass". The refuter reruns them.
-- Run `git status --short` before and after a refuter or debugger. If the output differs,
+- Never accept "done" or "tests pass". The refuter reruns the named tests; I run the
+  full suite once before commit when the change warrants it.
+- Run `git status --short` before and after a refuter, verifier or debugger. If the output differs,
   the agent edited files (they have Bash; no tool list stops a shell write). Discard its
   verdict.
 - Say which findings came from an agent, which I confirmed, which nobody tested.

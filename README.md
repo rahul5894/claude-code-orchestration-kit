@@ -1,20 +1,23 @@
 # Claude Code orchestration kit
 
-> **This fork (2026-09-14): two models, code-intelligence tools, two refuters.**
+> **This fork (2026-09-14, loop revised 2026-09-16): two models, code-intelligence tools, one refuter pass + a verifier.**
 > Upstream pins haiku/sonnet/opus and bans `fable` on subagents. This fork runs on a Max
 > plan where Opus quota is not the constraint and Fable quota is. The split is **what
 > thinks vs what executes**: `fable` (`effort: high`) on the main session and the
 > **debugger** — every design decision (what changes, which pattern, which helper, which
-> library) is made there; `opus` (`effort: xhigh`) on the researcher, **builder** and
-> refuter — they execute a decision already written down; `opus` `low` on the scout. The
+> library) is made there; `opus` on the researcher, **builder** (`high`) and refuter
+> (`xhigh`) — they execute a decision already written down; `opus` `low` on the scout and
+> verifier. The
 > brief's CONTEXT therefore names the pattern and points at an existing `file:line` that
 > does it that way; a builder that meets an unsettled choice stops and reports instead of
 > picking, and the refuter fails a diff that uses a pattern the brief did not name. The
 > scout has no `Read` (it physically cannot return contents) and searches through qartez;
 > the researcher has Firecrawl/Exa/Context7 instead of `WebFetch`/`WebSearch`; the
-> builder must run `qartez_impact` before every edit; the refuter is spawned **twice per
-> change**, once with a `correctness` mandate and once with a `security` mandate, both
-> must ACCEPT.
+> builder must run `qartez_impact` before every edit; the refuter runs **once per change**
+> with both mandates (correctness + security) and a `maxTurns` cap, and a rework is
+> checked by the read-only **verifier** (FIXED / NOT FIXED per must-fix), never by a
+> second refuter pass. Why: a review loop that re-reviews everything after every fix
+> never reaches zero findings; measured 2026-09-16 at 7 agents and ~37 min per item.
 > Install is a **merge** into `~/.claude/`, never a replace. `validate_kit.py` pins all
 > of this. Upstream: [SirRuggie/claude-code-orchestration-kit](https://github.com/SirRuggie/claude-code-orchestration-kit).
 
@@ -54,7 +57,7 @@ file loaded → `/tasks` while a subagent runs shows its model.
 | File | What it is |
 |---|---|
 | `core/CLAUDE.md` | The rules. This is the only place that defines the brief format (six sections), the bucket, and the rule that every agent has a pinned model. |
-| `core/agents/` | The five agents, one file each: scout `opus`, researcher `opus`, builder `opus`, refuter `opus`, debugger `fable`. Each file pins the model, the **effort**, and the tools. |
+| `core/agents/` | The six agents, one file each: scout `opus`, researcher `opus`, builder `opus`, refuter `opus`, verifier `opus`, debugger `fable`. Each file pins the model, the **effort**, and the tools. |
 | `core/commands/task.md` | `/task` shows every open task. `/task <sentence>` continues one or starts a new one. |
 | `core/settings.user.json` | The user-settings fragment the installer merges: per-model `modelSettings` effort (fable `high`, opus `xhigh`), `env` (`CLAUDE_CODE_SUBAGENT_MODEL=opus` for off-roster agents, `CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH=1`), brief-folder deny rules, push/reset ask rules. |
 
@@ -70,19 +73,22 @@ that variable is never set here · `CLAUDE_CODE_SUBAGENT_MODEL` alone leaves the
 Explore/Plan agents on the main model; `_FORCE` moves them but erases every pin, so it is
 never set either.
 
-## The five agents
+## The six agents
 
 | Agent | Model | What it does | What it cannot do |
 |---|---|---|---|
 | scout | opus, `effort: low` | Finds where things are in the code, through qartez. | Cannot edit. Has no `Read`: returns file paths only, never file contents. |
-| researcher | opus, `effort: xhigh` | Answers a question from source (qartez), library docs (Context7) or the web (Firecrawl, Exa), with citations. | Cannot edit. Has no `WebFetch`/`WebSearch`. |
-| builder | opus, `effort: xhigh` | Writes the code the brief specifies, in the pattern the brief names, and runs the tests; `qartez_impact` before every edit. | The only agent with Edit and Write. Does not choose patterns: an unsettled choice is a BLOCKER, not a decision. |
-| refuter | opus, `effort: xhigh` | Reviews the builder's change and tries to find what is wrong with it. Spawned twice: `correctness` mandate + `security` mandate. | Has no Edit or Write tool. It reports problems, it does not fix them. |
+| researcher | opus, `effort: high` | Answers a question from source (qartez), library docs (Context7) or the web (Firecrawl, Exa), with citations. | Cannot edit. Has no `WebFetch`/`WebSearch`. |
+| builder | opus, `effort: high` | Writes the code the brief specifies, in the pattern the brief names, and runs the tests; `qartez_impact` before every edit. | The only agent with Edit and Write. Does not choose patterns: an unsettled choice is a BLOCKER, not a decision. |
+| refuter | opus, `effort: xhigh`, `maxTurns: 40` | Reviews the builder's change once, correctness and security in the same pass, running only the tests the brief names. | Has no Edit or Write tool. It reports problems, it does not fix them. |
+| verifier | opus, `effort: low`, `maxTurns: 8` | After a rework, opens each must-fix `path:LINE` and answers FIXED or NOT FIXED. | Read-only, no Bash. It does not review anything outside the list. |
 | debugger | fable, `effort: high` | Finds the real cause of a hard bug and proves it, with runtime tools (delve, Flutter DTD, Postgres). | Has no Edit or Write tool. It explains, it does not fix. |
 
-The normal loop is: **you plan → builder builds → two refuters check in parallel → you decide.**
+The normal loop is: **you plan → builder builds → refuter checks once → you decide.** On
+REWORK: builder fixes the list → verifier confirms each item → you decide. A second REWORK
+stops the loop and comes back to you.
 
-**None of the five can spawn a subagent.** The `Agent` tool is not in any of their
+**None of the six can spawn a subagent.** The `Agent` tool is not in any of their
 tool lists, so it does not exist for them. This is enforced, not just requested. For any
 other subagent you start, set this once so it cannot spawn either. In a terminal:
 
@@ -108,10 +114,11 @@ keeps the bookkeeping.
    bucket for it, names it `broken-settings-menu`, shows the scope, and waits for your go.
 2. Claude writes a brief for the builder and spawns it. You do not see the brief unless you
    ask. The builder makes the change, runs the tests, and writes a report.
-3. Claude spawns the refuter with the same brief. The refuter reads the code change, reruns
-   the tests, and answers ACCEPT or REWORK with a list of must-fix items.
-4. On REWORK, Claude writes a new brief with the must-fix list and goes back to step 2.
-   On ACCEPT, Claude closes the bucket and tells you in one line.
+3. Claude spawns the refuter with the same brief. The refuter reads the code change, runs
+   the named tests, and answers ACCEPT or REWORK with a list of must-fix items.
+4. On REWORK, Claude writes a new brief with the must-fix list, the builder fixes it, and
+   the verifier confirms each item. On ACCEPT, Claude closes the bucket and tells you in
+   one line. A second REWORK is not looped; Claude brings it to you.
 5. Say the next thing: "now the time display is wrong". Claude sees it is a different
    task, opens a new bucket, and starts again. Ten tasks in a day means ten buckets. You
    named none of them.
@@ -129,7 +136,7 @@ about a project go in that project's repo.**
 | File | Why here |
 |---|---|
 | `CLAUDE.md` | Loaded automatically in every session and into every subagent. Your rules follow you to every repo. |
-| `agents/*.md` | The five agents from the table above. One file each, so each one's tool list is enforced. |
+| `agents/*.md` | The six agents from the table above. One file each, so each one's tool list is enforced. |
 | `commands/task.md` | Defines `/task`. The dashboard for every bucket. |
 
 These files describe how *you* like to work. They say nothing about any codebase, so they
@@ -159,9 +166,9 @@ Three reasons:
 - **The tool list is a real limit.** In an agent file, `tools:` lists the only tools that
   agent gets. A tool that is not on the list does not exist for that agent. This is why
   the refuter cannot use Edit or Write. Leave `tools:` out and the agent gets every tool.
-  If all five were described in one text file, that would only be a request. In
+  If all six were described in one text file, that would only be a request. In
   separate files it is enforced.
-- **The file is only loaded when that agent runs.** One big file with all five agents
+- **The file is only loaded when that agent runs.** One big file with all six agents
   would have to be read by your expensive main chat every time. That is the opposite of
   saving money.
 - **The `description:` line is how Claude picks an agent.** It compares your task to each
@@ -181,7 +188,7 @@ Three reasons:
 
 1. **Every agent has a pinned model.** Without one, a subagent uses your main session's
    model, and so do any subagents it spawns. That is what burns quota, not "using
-   subagents". If you spawn an agent that is not one of the five, pass a model yourself.
+   subagents". If you spawn an agent that is not one of the six, pass a model yourself.
 2. **The brief is a file. Write it before you spawn the agent. Never change it after.**
    The refuter checks the work against those exact words. If the words can change, the
    review means nothing.
@@ -250,8 +257,8 @@ folder you start in, so starting from a subfolder turns those rules off.
 
 - **The `model:` line in an agent file is respected.** Order of priority: a model you pass
   when spawning → the agent file's `model:` → `CLAUDE_CODE_SUBAGENT_MODEL` →
-  your main chat's model. So the five agents really are pinned. Pass a model yourself only
-  for an agent that is not one of the five. This order needs Claude Code 2.1.251 or newer.
+  your main chat's model. So the six agents really are pinned. Pass a model yourself only
+  for an agent that is not one of the six. This order needs Claude Code 2.1.251 or newer.
   Older versions put the environment variable first.
 - **`haiku` is an official short name.** So is `fable`. Upstream never puts `fable` on a
   subagent; this fork puts it on exactly one (debugger), the only subagent that has to
@@ -268,7 +275,7 @@ folder you start in, so starting from a subfolder turns those rules off.
   same name twice.
 - **`$1` means the SECOND word**, because counting starts at 0. Every command in this kit
   uses `$ARGUMENTS` and splits the words itself, so this does not affect them.
-- **Subagents can spawn subagents**, three levels deep by default. The five kit agents
+- **Subagents can spawn subagents**, three levels deep by default. The six kit agents
   cannot, because `Agent` is not in their tool lists. `CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH=1`
   closes it for every other subagent.
 
@@ -279,7 +286,7 @@ The docs list 17 settings for an agent file, not just the usual 5 (`name`, `desc
 
 | Setting | Why |
 |---|---|
-| `effort` | `low` to `max`. **If you leave it out, the agent inherits your session's level**, so a cheap model can still be told to think hard. Set on all five agents here. |
+| `effort` | `low` to `max`. **If you leave it out, the agent inherits your session's level**, so a cheap model can still be told to think hard. Set on all six agents here. |
 | `disallowedTools` | A block list, for when "only these tools" is too strict. |
 | `isolation: worktree` | Gives the agent its own git worktree, started from your default branch, not your current branch. Use it when two agents must write at the same time. |
 | `permissionMode` | Permission behavior for that agent only. |
@@ -295,5 +302,5 @@ export CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1
 ```
 
 Every subagent becomes Sonnet, and **every agent file's `model:` is ignored.** You also
-cannot pass a model when spawning. This turns off the five-agent setup completely. Use
+cannot pass a model when spawning. This turns off the six-agent setup completely. Use
 it when quota matters more than choosing the right agent for each job.
