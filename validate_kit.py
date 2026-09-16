@@ -135,6 +135,7 @@ for concept, pat in [('six-section brief', 'CURRENT STATE'),
                      ('two-model rule', 'Two models only'),
                      ('one refuter pass', 'ONE refuter pass'),
                      ('batch review of small changes', 'Unreviewed since'),
+                     ('machine gate before agents', 'Machine gate first'),
                      ('bucket protocol rules', 'reverse a decision')]:
     owners = [f for f in cfg if re.search(pat, open(f, encoding='utf-8').read())]
     definers = [f for f in owners if f == 'core/CLAUDE.md']

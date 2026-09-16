@@ -159,6 +159,13 @@ Known gaps, on purpose:
   the agent loop, not the startup context), dev.to "6 stages to 1" (a chain that
   re-reviews after every fix never reaches zero findings), claude-code issue #89249
   (built-in `/review` fanned out to 14 agents, so it is not a cheaper substitute).
+- Machine gate before any agent. The F-511 rework was for three stale `.g.dart` files,
+  which `dart run build_runner build --only-check` reports in 19 seconds; the agents
+  spent about 19 minutes on it. Each project names a fast gate in its own `CLAUDE.md`
+  (PrideConnect: `make gate-fast`, about a minute: codegen staleness, `flutter
+  analyze`, `go build`, `go vet`). The orchestrator runs it before spawning a refuter. A
+  red gate goes straight back to the builder with the gate output; no review agents run
+  until it is green.
 - Permission deny rules must use `Edit(path)`, never `Write(path)`. Claude Code only
   matches file checks against `Edit` rules, and `Edit` rules cover every file-editing
   tool. The kit shipped `Write(...)` entries that did nothing and printed a warning on

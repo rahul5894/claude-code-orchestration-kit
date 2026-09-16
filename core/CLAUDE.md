@@ -140,6 +140,12 @@ with you.
 
 ## Verification
 
+- **Machine gate first, agents second.** Before any refuter is spawned I run the
+  project's fast gate myself (the project `CLAUDE.md` names it — compile, codegen
+  staleness, analyzer, vet; ~1 min, zero agents). Red gate = straight to builder-02 with
+  the gate output as the must-fix list; no refuter, no verifier, the gate re-run is the
+  proof. Green gate = refuter. A must-fix a gate command can prove is closed by re-running
+  the gate; the verifier is only for logic must-fixes.
 - Agents are sent to **refute**, not confirm. Agreement without stated attacks is nothing.
 - **Every builder change gets ONE refuter pass** carrying both mandates (correctness +
   security) in the same brief. A separate security-only refuter is spawned in parallel
