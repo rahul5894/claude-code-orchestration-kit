@@ -58,4 +58,37 @@ if ($set['env'] -and $set['env']['CLAUDE_CODE_SUBAGENT_MODEL_FORCE']) {
     Write-Warning "settings.json env.CLAUDE_CODE_SUBAGENT_MODEL_FORCE is set. It ignores every agent's model pin. Remove it."
 }
 
+# 5. md-guard hook: copy the script, pin a Python 3.12+ path, register once in settings.json.
+#    Big markdown files must go through qmd; this hook denies whole-file Read / uncapped shell reads.
+New-Item -ItemType Directory -Force (Join-Path $dest 'hooks') | Out-Null
+Copy-Item (Join-Path $kit 'core\hooks\*.py') (Join-Path $dest 'hooks') -Force
+$py = $null
+foreach ($name in 'python3.13', 'python3.12', 'python', 'python3', 'py') {
+    $cmd = Get-Command $name -ErrorAction SilentlyContinue
+    if (-not $cmd) { continue }
+    $v = & $cmd.Source -c 'import sys; print(sys.version_info >= (3, 12))' 2>$null
+    if ($v -eq 'True') { $py = $cmd.Source.Replace('\', '/'); break }
+}
+if (-not $py) { Write-Warning "md-guard: no Python 3.12+ on PATH. Install one (winget install Python.Python.3.12) and re-run."; }
+else {
+    $hookCmd = "$py " + (Join-Path $dest 'hooks\md-guard.py').Replace('\', '/')
+    $set = Get-Content $sf -Raw | ConvertFrom-Json -AsHashtable
+    if (-not $set['hooks']) { $set['hooks'] = [ordered]@{} }
+    if (-not $set['hooks']['PreToolUse']) { $set['hooks']['PreToolUse'] = @() }
+    $entries = @($set['hooks']['PreToolUse'])
+    $mine = $entries | Where-Object { @($_['hooks']) | Where-Object { "$($_['command'])" -like '*md-guard.py*' } }
+    if ($mine) {
+        $changed = $false
+        foreach ($e in $mine) { $e['matcher'] = 'Read|Bash|PowerShell'; foreach ($h in $e['hooks']) { if ($h['command'] -ne $hookCmd) { $h['command'] = $hookCmd; $changed = $true } } }
+        "md-guard: " + $(if ($changed) { 'python path updated' } else { 'already registered' })
+    } else {
+        $entries += [ordered]@{ matcher = 'Read|Bash|PowerShell'; hooks = @([ordered]@{ type = 'command'; command = $hookCmd; timeout = 5000 }) }
+        $set['hooks']['PreToolUse'] = $entries
+        "md-guard: registered in settings.json"
+    }
+    Write-Lf $sf (($set | ConvertTo-Json -Depth 20) + "`n")
+    $t = & $py (Join-Path $dest 'hooks\md-guard_test.py') 2>&1 | Select-Object -Last 1
+    "md-guard self-check: $t"
+}
+
 "done. New sessions pick up the agents; /status confirms the settings file loaded; /tasks shows a running subagent's model."
