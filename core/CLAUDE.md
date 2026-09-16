@@ -26,8 +26,8 @@ final judgment on every important finding.
 | Agent | Model · effort | For |
 |---|---|---|
 | `scout` | opus · low | Locations of files, symbols, call sites via qartez. Never contents (no Read). |
-| `researcher` | opus · xhigh | Facts from source (qartez), library docs (Context7), web (Firecrawl → Exa). Never `WebFetch`/`WebSearch`. |
-| `builder` | opus · xhigh | Implement from a brief that already names the pattern, `qartez_impact` before every edit, run tests. |
+| `researcher` | opus · high | Facts from source (qartez), library docs (Context7), web (Firecrawl → Exa). Never `WebFetch`/`WebSearch`. |
+| `builder` | opus · high | Implement from a brief that already names the pattern, `qartez_impact` before every edit, run tests. |
 | `refuter` | opus · xhigh | Review diff, rerun tests, ACCEPT or REWORK. Spawned TWICE per change: mandate `correctness` + mandate `security`. |
 | `debugger` | fable · high | Hard root-cause only, with runtime tools. |
 
@@ -40,13 +40,14 @@ Resolution order: per-invocation `model` → agent frontmatter (`inherit` = main
 
 - **Two models only, split by what thinks and what executes.** `fable` (`effort: high`)
   = the main session and the debugger: every decision — what changes, which pattern,
-  which helper, which library, what "done" means — is made here. `opus` (`effort:
-  xhigh`; scout `low`, a lookup does not think) = everything that executes a decision
-  already made: locate, research, build from a brief, review. Never `sonnet`, never
+  which helper, which library, what "done" means — is made here. `opus` = everything
+  that executes a decision already made: locate, research, build from a brief, review.
+  Effort by job: refuter `xhigh` (hunting bugs needs thought), builder + researcher `high`
+  (the brief already carries the pattern; xhigh only burns time), scout `low`. Never `sonnet`, never
   `haiku`.
-- Roster agents are pinned. **Anything off-roster gets `model: opus` + `effort: xhigh`
-  explicitly**, unless it must make a design decision or prove a root cause — then
-  `fable` + `high`.
+- Roster agents are pinned. **Anything off-roster gets `model: opus` + `effort: high`
+  explicitly** (`xhigh` only when it reviews), unless it must make a design decision or
+  prove a root cause — then `fable` + `high`.
 - Session effort lives in user-settings `modelSettings` (`claude-fable-5-1` high,
   `claude-opus-5` xhigh); off-roster default = `env.CLAUDE_CODE_SUBAGENT_MODEL=opus`.
 - Never set `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` (erases every model pin above) and never
