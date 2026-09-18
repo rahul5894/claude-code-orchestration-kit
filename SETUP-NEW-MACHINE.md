@@ -111,6 +111,19 @@ variadic, so it swallows the name), and `--scope user` writes `~/.claude.json`, 
 holds live keys — never commit or sync that file. Check with
 `python -c "import json,os;print(sorted(json.load(open(os.path.expanduser('~/.claude.json')))['mcpServers']))"`.
 
+**Set `QARTEZ_READ_DEDUP=0` in the qartez server's `env`.** qartez caches served source per
+*server process*, and **every agent of a session shares that process**, so a second read of a
+symbol returns `// (served earlier by this server: ...; not in YOUR context? fresh=true)`
+instead of the body. Reproduced on 2026-09-18: the orchestrator read a symbol, then a fresh
+verifier asked for the same one and got the stub — its own words, *"any statement I made
+about that function's correctness would have been invention rather than reading."* The saving
+is illusory here because subagents share no context, and the failure is silent. `fresh=true`
+per call is the fallback; the env var is the control, because it cannot be forgotten.
+
+**After any qartez upgrade, restart Claude Code.** `qartez doctor --format json` reports
+`restart_required_after_upgrade`, and `verify_live.py` section C4 fails on it: until the
+restart, every agent is served the *previous* qartez while `qartez --version` says otherwise.
+
 `.mcp.template.json` is the *project* MCP config with every credential replaced by an
 environment variable, for the extra servers a single repo needs (Atlassian, SSH, mssql,
 scrapling, chrome-devtools). The live `.mcp.json` is gitignored on purpose: it carries API

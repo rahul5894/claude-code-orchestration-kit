@@ -5,7 +5,7 @@ Every session, every project. A repo's own `CLAUDE.md` wins on conflict.
 **Every subagent re-pays this file on every spawn, so it holds only what a subagent can act
 on.** The orchestrator's own rules — roster, model pinning, delegation threshold, briefs,
 parallelism, measurement — live in the `orchestrator` output style, which subagents never
-load. Reasons live in `docs/PLAN-2026-09-18.md` and `docs/RESEARCH-2026-09-18.md`.
+load.
 
 ## Tools
 
@@ -20,9 +20,12 @@ load. Reasons live in `docs/PLAN-2026-09-18.md` and `docs/RESEARCH-2026-09-18.md
   an indexed file), **non-indexed file types** and an **unindexed tree**. So an empty result
   proves absence ONLY for a function or class name in a type `qartez_map` reports as indexed:
   `NO MATCHES` only there, `OUT OF INDEX` everywhere else. **Never name which blind spot hid
-  it** — you cannot tell them apart from outside, and a wrong category sends the follow-up
-  grep at the wrong files (measured wrong on three runs of four). Never repeat qartez's "not
-  defined in this repo" wording, and never list the files you searched beside an empty result.
+  it** (measured wrong on three runs of four), never repeat qartez's "not defined in this
+  repo" wording, and never list the files you searched beside an empty result.
+- **A dedup stub is never evidence.** qartez's read cache is per *server*, shared by every
+  agent of a session, so `// (served earlier by this server: ...)` can arrive for a body you
+  have never seen (verified: a fresh verifier got the stub for a symbol the orchestrator had
+  read). Re-read with `fresh=true`; judge nothing you do not hold.
 - **The web is Firecrawl → Exa → Context7**, never `WebFetch`/`WebSearch`.
 - **Never read a document wholesale.** Anything over ~300 lines is reached through qmd or
   qartez windows. An unbounded doc read is how one step costs 80k tokens and returns no code.

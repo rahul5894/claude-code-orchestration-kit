@@ -490,9 +490,15 @@ print()
 print('=== 5. THE PER-SPAWN COST BUDGET ===')
 # Every non-fork subagent re-pays the whole CLAUDE.md hierarchy on every spawn. Claude Code's
 # guidance is under 200 lines, but BYTES are what is actually paid and this file wraps at 90
-# chars, so a line count flatters it. Budget both. 7000 bytes is roughly 1800 tokens; the
-# pre-split file was 12,701 bytes.
-SHARED_BYTE_BUDGET = 7000
+# chars, so a line count flatters it. Budget both. The pre-split file was 12,701 bytes.
+#
+# Raised 7000 -> 7400 on 2026-09-18, once, deliberately, and recorded rather than quietly
+# widened. What bought the extra ~100 tokens per spawn: the qartez read-dedup rule (its cache
+# is per SERVER, shared by every agent of a session, so a reviewer can be handed a stub for a
+# body it has never seen - reproduced live) and the two-verdict search doctrine. Four
+# compression passes came first; both rules prevent an agent asserting something it cannot
+# see, which is worth more than 100 tokens. Compress before raising this again.
+SHARED_BYTE_BUDGET = 7400
 cm_raw = open('core/CLAUDE.md', 'rb').read() if os.path.isfile('core/CLAUDE.md') else b''
 cm = cm_raw.decode('utf-8').splitlines()
 chk(len(cm) <= 200, 'core/CLAUDE.md is <= 200 lines (docs guidance)', str(len(cm)))

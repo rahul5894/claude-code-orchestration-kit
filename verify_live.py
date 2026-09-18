@@ -188,6 +188,29 @@ for _label, _setup, _extra in [
         ok(_r.returncode == 0, f'installer survives {_label}', f'rc={_r.returncode} {_msg}')
     shutil.rmtree(_tmp, ignore_errors=True)
 
+print("\n=== C4. qartez, which every agent's search depends on ===")
+# `qartez doctor --format json` (0.27.0+) reports whether the RUNNING MCP server is the
+# binary now on disk. An upgraded qartez whose server was never restarted serves the old
+# behaviour to every agent while the version string says otherwise - silent, and invisible
+# to every other check here.
+try:
+    _q = subprocess.run(['qartez', 'doctor', '--format', 'json'], capture_output=True,
+                        text=True, encoding='utf-8', errors='replace', timeout=180)
+    _doc = json.loads(_q.stdout or '{}')
+except (OSError, subprocess.TimeoutExpired, ValueError) as e:
+    _doc = None
+    ok(False, 'qartez doctor could run', f'{type(e).__name__}: {e}')
+if _doc:
+    print(f"  NOTE  qartez {_doc.get('version')} · index "
+          f"{(_doc.get('index') or {}).get('symbols')} symbols, "
+          f"coverage {(_doc.get('index') or {}).get('coverage')}")
+    ok(not _doc.get('restart_required_after_upgrade'),
+       'qartez MCP server is running the binary that is on disk',
+       'RESTART Claude Code: agents are being served the pre-upgrade qartez')
+    # A project-local skill silently overrides the global one the kit relies on.
+    ok(not (_doc.get('host_integration') or {}).get('local_skill_shadow'),
+       'no project-local qartez skill shadowing the global one')
+
 print("\n=== D. settings live ===")
 # A missing or hand-broken settings.json is a FAILED CHECK, not a traceback: the setup doc
 # tells a fresh-machine reader this script prints ALL CLEAR or names what is wrong, and a
