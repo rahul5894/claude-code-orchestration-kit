@@ -50,9 +50,13 @@ every kit change. A second run prints `unchanged` and `already registered`.
 
 Checks:
 
-1. `~/.claude/agents/` has 6 files. `builder.md` and `researcher.md` say `effort: high`.
-   `refuter.md` says `effort: high` and `maxTurns: 40`. `Explore.md` says `model: haiku` and has no effort key.
-   `verifier.md` says `effort: low` and `maxTurns: 8`.
+1. `python verify_live.py`. It must print `ALL CLEAR` and exit 0. This reads `~/.claude`,
+   not just the repo, so it is the check that catches a stale install: every installed
+   file byte-identical to the repo, every effort pin and `env` key live in
+   `settings.json`, the roster table in the output style matching the agent files, and no
+   agent holding a tool the qartez guard denies or carrying an order it has no tool for.
+   Every one of its sections is break-tested. Run it after every kit change, not only on
+   a new machine. `python validate_kit.py` is the faster repo-only half and runs inside it.
 2. `~/.claude/settings.json` has no `CLAUDE_CODE_EFFORT_LEVEL` and no
    `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` under `env`. Either one silently overrides every
    agent file. The installer warns if it finds them.
@@ -189,15 +193,23 @@ Known gaps, on purpose:
   already names the pattern, so the builder does not need extra thinking. Reviewing
   does. Fable (main session) decides, Opus executes. Opus tokens are not the
   constraint. Fable context size and wall-clock are.
-- Review loop, revised 2026-09-16 after measuring 7 agents and about 37 minutes per
-  item: the refuter now runs ONCE per change with both mandates and a `maxTurns: 40`
-  cap, and runs only the tests the brief names. A REWORK goes to one builder pass and
-  then to the read-only `verifier` (`maxTurns: 8`), which answers FIXED or NOT FIXED
-  per must-fix line. A second REWORK stops the loop. Small changes (2 files, 40 lines,
-  no security surface) spawn nothing: they are noted under `## Unreviewed since <sha>`
-  in the bucket's `STATE.md` and reviewed in one batch at commit, at 3 changes or 5
-  files, or with the next builder change. A security-surface change is never batched.
-  Live test on 2026-09-16: the
+- Review loop, revised 2026-09-18 after measuring one 310-minute session (63 agents,
+  1,493 model turns). Two things changed. **The refuter no longer runs the gate**: the v1
+  rule "run the fast gate as your FIRST step" made every review agent run the project's
+  full test suite, which is what killed four of five refuters in that session and cost
+  92 minutes of the 528 agent-minutes. The gate's verbatim output now goes in the brief.
+  **And review is split into recall and precision**: the refuter finds and drops nothing,
+  the verifier judges CONFIRMED / PLAUSIBLE / REFUTED and is the only holder of the
+  exclusion list. The binary ACCEPT/REWORK had no PLAUSIBLE state, so an uncertain-but-real
+  bug died at the refuter with no record.
+- Delegation threshold, same revision: a builder plus a refuter runs only on a security
+  surface or above ~400 changed lines / ~8 files. The old threshold was 2 files and 40
+  lines, roughly 10x too strict against the 200-400 LOC window where peer review finds
+  70-90% of defects. Below the threshold the main session does the work and notes it under
+  `## Unreviewed since <sha>` in the bucket's `STATE.md`; one batched refuter pass reviews
+  the accumulated diff at commit, at the threshold, or with the next builder change. A
+  security-surface change is never batched.
+- Earlier live test on 2026-09-16: the
   verifier confirmed one real fix with three line numbers and refuted one planted fake
   fix with the exact line. Research basis: startdebugging.net (117 transcripts: cost is
   the agent loop, not the startup context), dev.to "6 stages to 1" (a chain that
@@ -222,17 +234,25 @@ Known gaps, on purpose:
   tool. The kit shipped `Write(...)` entries that did nothing and printed a warning on
   every headless run. Removed 2026-09-16 from the kit and from `~/.claude/settings.json`.
 - `maxTurns` counts assistant turns, not tool calls: the verifier checked 15 items in
-  30 seconds inside its 8-turn cap by batching reads (measured 2026-09-16). A capped
-  agent still returns what it had; the rules treat that as SKIPPED coverage, never
-  ACCEPT, and diffs over ~8 files get two refuters partitioned by file.
+  30 seconds inside an 8-turn cap by batching reads (measured 2026-09-16). It is now 20.
+  **Do not rely on the cap binding** — measured 2026-09-18, a `maxTurns: 40` refuter made
+  45 tool calls and a `maxTurns: 8` verifier made 22, so read the agent's own coverage
+  line instead. A capped agent still returns what it had, marked partial; **resume it with
+  `SendMessage` rather than re-spawning cold**, because a resumed run keeps its history and
+  reads its own warm cache. Diffs over ~800 lines or ~15 files get two refuters partitioned
+  by file and staggered ~5 seconds apart, since a review's output cap scales with effort
+  and not with diff size.
 - Run an agent headless to test it without restarting the session:
-  `claude -p --agent verifier --output-format text --allowedTools "Read,Grep,Glob" < prompt.txt`.
-  The interactive `Agent` tool only lists agent files that existed when the session
-  started.
-- Claude Code 2.1.271 adds `omitClaudeMd` to agent frontmatter. It lets a subagent run
-  without loading CLAUDE.md files. It fits `scout` (locations only). We were on 2.1.270,
-  so it is not applied yet. Apply it to `scout.md` after the upgrade and re-run the
-  installer.
+  `claude -p --agent verifier --output-format text < prompt.txt`. Do not pass
+  `--allowedTools`: it overrides the agent's own pinned tool list, which is the thing you
+  are testing. The interactive `Agent` tool only lists agent files that existed when the
+  session started.
+- `omitClaudeMd: true` in agent frontmatter launches a subagent without the user, project
+  and local `CLAUDE.md` files. It is set on `Explore`, which needs locations and nothing
+  else. Documented from Claude Code 2.1.271; this machine is on **2.1.270**, so whether it
+  takes effect here is **unverified** — the flag is inert on an older build, never harmful.
+  `Explore` carries the three tool rules in its `initialPrompt` as well, which survives the
+  flag either way.
 
 ## 6. Troubleshooting
 

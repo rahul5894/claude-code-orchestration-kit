@@ -557,6 +557,76 @@ for p in DOCS + ['extras/rejected/README.md', 'extras/prideconnect-section.md']:
     chk(os.path.isfile(p), f'{p} exists')
 
 print()
+print('=== 10. THE USER-FACING DOCS DESCRIBE THE KIT THAT SHIPS ===')
+# README.md and SETUP-NEW-MACHINE.md are what a new machine is set up from, so a stale claim
+# there is a wrong install, not a typo. Three rounds of drift were found by hand on
+# 2026-09-18 - a scout row for a deleted agent, "effort: low" for an agent now on high, and
+# "the refuter runs the gate first" (the rule that killed four refuters). Pin them.
+USER_DOCS = ['README.md', 'SETUP-NEW-MACHINE.md']
+readme = open('README.md', encoding='utf-8').read()
+orch_txt = open('core/output-styles/orchestrator.md', encoding='utf-8').read()
+
+for name in sorted(PINS):
+    d, _ = fmx(f'core/agents/{name}.md')
+    # The README roster row and the orchestrator roster row must both name the real model.
+    for label, txt in (('README', readme), ('orchestrator style', orch_txt)):
+        row = re.search(rf'^\|\s*\*?\*?`?{re.escape(name)}`?\*?\*?\s*\|([^|]*)\|',
+                        txt, re.M)
+        chk(row is not None, f'{label}: has a roster row for {name}')
+        if row:
+            cell = row.group(1)
+            chk(d['model'] in cell,
+                f'{label}: {name} row says model {d["model"]}', cell.strip()[:60])
+            # An effort or maxTurns number quoted in the row must be the one in the file.
+            for key in ('effort', 'maxTurns'):
+                for claimed in re.findall(rf'{key}:\s*(\w+)', cell):
+                    chk(str(d.get(key, '')) == claimed,
+                        f'{label}: {name} row {key} {claimed} matches the file',
+                        f'file says {d.get(key)!r}')
+
+for doc in USER_DOCS:
+    s = open(doc, encoding='utf-8').read()
+    chk(not re.search(r'\bscout\b(?! agent)', s, re.I) or 'retired' in s.lower(),
+        f'{doc}: no live reference to the retired scout agent')
+    # The v1 rule. Its removal is the single largest wall-clock win in the rework. A negated
+    # mention ("the refuter no longer runs the gate") is the correct text, so it is allowed.
+    NEG = ('no longer', 'never', 'not ', "n't", 'zero', 'stopped', 'used to')
+    for pat, why in [(r'refuter[^.]{0,80}runs? the (?:fast )?gate', 'runs the gate'),
+                     (r'refuter[^.]{0,60}full (?:test )?suite', 'runs the full suite')]:
+        hits = [m.group(0) for m in re.finditer(pat, s, re.I)
+                if not any(w in m.group(0).lower() for w in NEG)]
+        chk(not hits, f'{doc}: never says the refuter {why}', str(hits[:1]))
+
+# The delegation threshold is one number with one owner. A doc quoting a different one sends
+# a reader back to spawning a pair for a two-line change.
+thr = re.search(r'~(\d+) changed lines or ~(\d+) files', orch_txt)
+chk(thr is not None, 'orchestrator style states the delegation threshold')
+if thr:
+    want = (thr.group(1), thr.group(2))
+    for doc in USER_DOCS:
+        s = open(doc, encoding='utf-8').read()
+        # EVERY statement of it must agree, not just one of them: README states it twice,
+        # so an "at least one correct mention" check passes with the other one stale.
+        said = re.findall(r'~?(\d+)\s+changed lines\s*(?:or|/)\s*~?(\d+)\s+files', s)
+        chk(said and all(p == want for p in said),
+            f'{doc}: every delegation threshold reads {want[0]} lines / {want[1]} files',
+            str(said))
+# Two refuters must cost MORE than one builder+refuter pair, or every delegated change gets
+# two reviewers. This equalled the delegation threshold until 2026-09-18.
+two = re.search(r'~(\d+) files or ~(\d+) changed lines\*\* gets TWO refuters', orch_txt)
+chk(two is not None, 'orchestrator style states the two-refuter threshold')
+if two and thr:
+    chk(int(two.group(2)) > int(thr.group(1)) and int(two.group(1)) > int(thr.group(2)),
+        'two-refuter threshold is strictly above the delegation threshold',
+        f'{two.group(2)}/{two.group(1)} vs {thr.group(1)}/{thr.group(2)}')
+
+# verify_live.py covers what this file structurally cannot (the installed tree). A setup doc
+# that does not send the reader to it leaves a stale install undetectable.
+chk(os.path.isfile('verify_live.py'), 'verify_live.py exists')
+chk('verify_live.py' in open('SETUP-NEW-MACHINE.md', encoding='utf-8').read(),
+    'SETUP-NEW-MACHINE.md tells the reader to run verify_live.py')
+
+print()
 # Most sections are glob-driven: one that yields nothing contributes zero checks and still
 # prints "failures: 0". The floor makes a silently empty section red.
 MIN_CHECKS = 190

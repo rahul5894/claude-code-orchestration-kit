@@ -1,25 +1,32 @@
 # Claude Code orchestration kit
 
-> **This fork (2026-09-14, loop revised 2026-09-16): two models, code-intelligence tools, one refuter pass + a verifier.**
+> **This fork (2026-09-14, loop revised 2026-09-18): Fable thinks, Opus executes; a finder
+> and a judge instead of one reviewer; delegation above a threshold, not by default.**
 > Upstream pins haiku/sonnet/opus and bans `fable` on subagents. This fork runs on a Max
 > plan where Opus quota is not the constraint and Fable quota is. The split is **what
-> thinks vs what executes**: `fable` (`effort: high`) on the main session and the
-> **debugger** — every design decision (what changes, which pattern, which helper, which
-> library) is made there; `opus` on the researcher, **builder** (`high`) and refuter
-> (`xhigh`) — they execute a decision already written down; `opus` `low` on the scout and
-> verifier. The
-> brief's CONTEXT therefore names the pattern and points at an existing `file:line` that
-> does it that way; a builder that meets an unsettled choice stops and reports instead of
-> picking, and the refuter fails a diff that uses a pattern the brief did not name. The
-> scout has no `Read` (it physically cannot return contents) and searches through qartez;
-> the researcher has Firecrawl/Exa/Context7 instead of `WebFetch`/`WebSearch`; the
-> builder must run `qartez_impact` before every edit; the refuter runs **once per change**
-> with both mandates (correctness + security) and a `maxTurns` cap, and a rework is
-> checked by the read-only **verifier** (FIXED / NOT FIXED per must-fix), never by a
-> second refuter pass. Why: a review loop that re-reviews everything after every fix
-> never reaches zero findings; measured 2026-09-16 at 7 agents and ~37 min per item.
-> Install is a **merge** into `~/.claude/`, never a replace. `validate_kit.py` pins all
-> of this. Upstream: [SirRuggie/claude-code-orchestration-kit](https://github.com/SirRuggie/claude-code-orchestration-kit).
+> thinks vs what executes**. The main session is whatever `/model` says — Fable 5.1 at
+> `high` while its quota lasts, Opus 5 at `xhigh` after — and every design decision (what
+> changes, which pattern, which helper, which library) is made there. The `debugger` is
+> `model: inherit`, so hard root-cause work follows that seat. Everything else is pinned
+> `opus` at `high` — builder, researcher, refuter, verifier all execute a decision already
+> written down — and locating runs on `haiku`. **No agent hard-pins `fable`, so Fable quota
+> running out can never break the loop.**
+>
+> The brief's CONTEXT names the pattern and points at an existing `file:line` that does it
+> that way; a builder that meets an unsettled choice stops and reports instead of picking.
+> Review is split in two, because recall and precision are different jobs: the **refuter**
+> is the finder and drops nothing, the **verifier** is the judge and returns CONFIRMED /
+> PLAUSIBLE / REFUTED with PLAUSIBLE as the default. Only the judge carries the exclusion
+> list. **No review agent runs the gate** — its output is pasted into the brief — which is
+> what four refuters died doing in the measured session that prompted this rework.
+>
+> A builder plus a refuter is the exception, not the default path: it runs when the change
+> touches a security surface or exceeds ~400 changed lines or ~8 files. Below that the main
+> session makes the change itself and the diff is queued for one batched review. Search is
+> qartez, never `Grep`/`Glob`; the web is Firecrawl → Exa → Context7, never
+> `WebFetch`/`WebSearch`. Install is a **merge** into `~/.claude/`, never a replace.
+> `validate_kit.py` pins the repo side of all this and `verify_live.py` pins the installed
+> side. Upstream: [SirRuggie/claude-code-orchestration-kit](https://github.com/SirRuggie/claude-code-orchestration-kit).
 
 ## What this is
 
@@ -80,13 +87,19 @@ never set either.
 | Explore | haiku, no effort (haiku ignores it) | Finds where things are in the code, through qartez. | Cannot edit. Has no `Read`: returns file paths only, never file contents. |
 | researcher | opus, `effort: high` | Answers a question from source (qartez), library docs (Context7) or the web (Firecrawl, Exa), with citations. | Cannot edit. Has no `WebFetch`/`WebSearch`. |
 | builder | opus, `effort: high` | Writes the code the brief specifies, in the pattern the brief names, and runs the tests; `qartez_impact` before every edit. | The only agent with Edit and Write. Does not choose patterns: an unsettled choice is a BLOCKER, not a decision. |
-| refuter | opus, `effort: high`, `maxTurns: 40` | Reviews the builder's change once, correctness and security in the same pass, running only the tests the brief names. | Has no Edit or Write tool. It reports problems, it does not fix them. |
-| verifier | opus, `effort: high`, `maxTurns: 20` | After a rework, opens each must-fix `path:LINE` and answers FIXED or NOT FIXED. | Read-only, no Bash. It does not review anything outside the list. |
+| refuter | opus, `effort: high`, `maxTurns: 40` | **The finder.** Reviews the change once, correctness and security in the same pass, and forwards every candidate it can attach a failure scenario to. | Has no Edit or Write tool. **Never runs the gate** — the gate's output is in its brief. It does not decide which candidates are real. |
+| verifier | opus, `effort: high`, `maxTurns: 20` | **The judge.** Returns CONFIRMED / PLAUSIBLE / REFUTED per candidate, and FIXED / NOT FIXED per must-fix after a rework. The only agent that carries the exclusion list. | Read-only, no Bash, no shell of any kind. REFUTED needs the quoted line that makes the failure impossible; otherwise PLAUSIBLE. |
 | debugger | inherit (the orchestrator's model), `effort: high` | Finds the real cause of a hard bug and proves it, with runtime tools (delve, Flutter DTD, Postgres). | Has no Edit or Write tool. It explains, it does not fix. |
 
-The normal loop is: **you plan → builder builds → refuter checks once → you decide.** On
-REWORK: builder fixes the list → verifier confirms each item → you decide. A second REWORK
-stops the loop and comes back to you.
+The normal loop is: **gate → builder → gate → refuter finds → verifier judges → you
+decide.** CONFIRMED and PLAUSIBLE items become a second builder brief, then the verifier
+answers FIXED or NOT FIXED per item. A second round of must-fixes, or any NOT FIXED, stops
+the loop and comes back to you. Three agents on the happy path, five at most.
+
+**Most changes never enter that loop.** A builder plus a refuter runs only when the change
+touches a security surface, or exceeds ~400 changed lines or ~8 files. Below the threshold
+the main session does the work itself and queues the diff for one batched review. Spawning
+for serial work is the single largest waste of wall-clock in this kit.
 
 **None of the six can spawn a subagent.** The `Agent` tool is not in any of their
 tool lists, so it does not exist for them. This is enforced, not just requested. For any
@@ -286,11 +299,14 @@ The docs list 17 settings for an agent file, not just the usual 5 (`name`, `desc
 
 | Setting | Why |
 |---|---|
-| `effort` | `low` to `max`. **If you leave it out, the agent inherits your session's level**, so a cheap model can still be told to think hard. Set on all six agents here. |
-| `disallowedTools` | A block list, for when "only these tools" is too strict. |
-| `isolation: worktree` | Gives the agent its own git worktree, started from your default branch, not your current branch. Use it when two agents must write at the same time. |
-| `permissionMode` | Permission behavior for that agent only. |
-| `skills`, `hooks`, `memory`, `maxTurns` | Exist, not used here. |
+| `effort` | `low` to `max`. **If you leave it out, the agent inherits your session's level**, so a cheap model can still be told to think hard. Set on every agent here except `Explore`, because haiku has no effort parameter at all. |
+| `disallowedTools` | A block list, for when "only these tools" is too strict. Every read-only agent here carries `Edit, Write, NotebookEdit`. It blocks the edit tools only: an agent that also holds `Bash` can still write through a shell, so its own file forbids that too. |
+| `skills` | Preloads a skill onto one agent. `verifier` gets `review-precision` — the exclusion list belongs to the judge and must never reach the finder. Do not install it globally: skill listings are budgeted at 1% of the context window, and on overflow Claude Code drops the least-invoked descriptions. |
+| `omitClaudeMd` | Launches the agent without the CLAUDE.md hierarchy. Set on `Explore`. Pair it with the tool rules in `initialPrompt`, which survives the flag — an agent that loses "code search is qartez" burns more than the file saved. |
+| `maxTurns` | Set on `refuter` (40) and `verifier` (20). **Measured not to bind**: a 40-turn refuter made 45 tool calls. Treat it as a budget hint, read the agent's coverage line for the truth. |
+| `isolation: worktree` | Gives the agent its own git worktree. It starts from your default branch unless `worktree.baseRef: "head"`, and holds tracked files only — no `node_modules`, no `.venv`, no `.env`. Use it when two agents must write at the same time; keep read-only agents out, because a different working directory forfeits the cached prefix. |
+| `permissionMode` | Permission behavior for that agent only. **Ignored** when the main session runs in `acceptEdits` or `auto`. |
+| `hooks`, `memory` | Exist, not used here. |
 
 ## The one-line quota fix
 

@@ -47,7 +47,10 @@ $cur   = if (Test-Path $md) { Get-Content $md -Raw } else { '' }
 $pat   = '(?s)<!-- orchestration-kit.*?<!-- /orchestration-kit -->\r?\n?'
 $new   = if ($cur -match $pat) { [regex]::Replace($cur, $pat, $block.Replace('$', '$$')) }
          else { $cur.TrimEnd() + "`n`n" + $block }
-if ($new -ne $cur) { Write-Lf $md $new; "CLAUDE.md: kit block " + ($(if ($cur -match $pat) { 'replaced' } else { 'appended' })) }
+# Compare LF-normalized: Write-Lf strips CRLF on write, so a raw compare never matches and
+# the block is rewritten on every run, hiding whether anything actually changed.
+if ($new.Replace("`r`n", "`n") -ne $cur.Replace("`r`n", "`n")) {
+    Write-Lf $md $new; "CLAUDE.md: kit block " + ($(if ($cur -match $pat) { 'replaced' } else { 'appended' })) }
 else { "CLAUDE.md: unchanged" }
 
 # 3. settings.json: deep-merge core/settings.user.json. Objects merge, lists union, scalars win.
