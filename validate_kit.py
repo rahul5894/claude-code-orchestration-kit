@@ -416,6 +416,16 @@ for key in ('CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS', 'subagentPromptCacheTtl'):
     chk(bool(guards) and all('$pre' in l for l in guards),
         f'installer: the {key} guard reads $pre, not the merged result', str(guards)[:160])
 chk(len(DOCS) >= 2, 'docs/ holds the plan and the research notes', str(DOCS))
+# A project template that tells the reviewer to rerun the full suite is how a 7-second gate
+# becomes a 159-second one. The template must demand a measured, test-free fast gate.
+tmpl = open('extras/project/CLAUDE.md', encoding='utf-8').read()
+chk('FAST GATE' in tmpl and 'no test suite' in tmpl,
+    'project template demands a test-free fast gate')
+chk('full test suite is what a refuter reruns' not in tmpl,
+    'project template does NOT tell the reviewer to rerun the full suite')
+chk('Measured' in tmpl, 'project template asks for the gate time to be measured')
+bld = open('core/agents/builder.md', encoding='utf-8').read()
+chk('Never run the whole test suite' in bld, 'builder: forbidden from running the full suite')
 for p in DOCS + ['extras/rejected/README.md', 'extras/prideconnect-section.md']:
     chk(os.path.isfile(p), f'{p} exists')
 

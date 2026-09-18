@@ -13,19 +13,26 @@ dangerous in it, and what it has already got wrong.
 Fill these in. Agents run exactly what is written here, so a wrong command becomes a
 false pass.
 
-| Purpose | Command |
-|---|---|
-| Install | `<...>` |
-| Build | `<...>` |
-| Full test suite | `<...>` |
-| Single test | `<...>` |
-| Lint / format | `<...>` |
-| Type check | `<...>` |
+| Purpose | Command | Measured time |
+|---|---|---|
+| **FAST GATE** (the one agents run) | `<...>` | `<seconds — measure it, do not guess>` |
+| Full test suite (**I run this, not agents**) | `<...>` | `<...>` |
+| Single test file | `<...>` | |
+| Install | `<...>` | |
+| Build | `<...>` | |
+| Lint / format · Type check | `<...>` | |
 
-- The **full test suite** is what a refuter reruns. It must be runnable from a clean
-  checkout with no manual setup.
-- If a command needs credentials or network access an agent does not have, say so here
-  and name what the agent should report instead of a pass.
+**The FAST GATE is the single most important line in this file.** It must be diff-scoped,
+**under ~60 seconds**, and contain **no test suite** — compile, analyzer, lint, type check,
+secret scan, codegen staleness. Measure it once and write the real number above. If this
+line is missing or wrong, an agent will invent a gate, and it will pick the slowest command
+it can find: one measured builder ran the full `pytest` suite **twice at 159 s each**, 5.3
+minutes of a 17.8-minute run, purely because no fast gate was named here.
+
+- **The full test suite is mine to run, not an agent's.** It runs once, at the end, when I
+  say so. A builder runs only the test files its brief names; a review agent runs nothing.
+- If a command needs credentials or network an agent does not have, say so here and name
+  what the agent should report instead of a pass.
 
 ## Layout
 
