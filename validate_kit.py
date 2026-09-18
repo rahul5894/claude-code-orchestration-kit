@@ -235,6 +235,18 @@ verd, ver = fmx('core/agents/verifier.md')
 chk('review-precision' not in str(refd.get('skills')),
     'refuter: does NOT preload review-precision (a finder must not filter itself)',
     str(refd.get('skills')))
+# The sweep caught the verifier being told to run qmd while holding no shell. Any agent
+# without Bash must never be pointed at a CLI - it silently skips the order or invents a
+# workaround, and both are worse than an honest "I cannot reach that".
+for _n in ('verifier', 'researcher', 'Explore'):
+    _d, _ = fmx(f'core/agents/{_n}.md')
+    _tl = [x.strip() for x in _d.get('tools', '').split(',')]
+    _txt = (_d.get('initialPrompt', '') + ' ' +
+            open(f'core/agents/{_n}.md', encoding='utf-8').read())
+    if 'Bash' not in _tl:
+        chk(not re.search(r'qmd(?!.{0,40}cannot)', _txt),
+            f'{_n}: has no shell, so is never told to run qmd')
+
 chk('review-precision' in str(verd.get('skills')),
     'verifier: preloads review-precision (precision lives in the judging stage)',
     str(verd.get('skills')))
