@@ -88,6 +88,21 @@ for p in agentfiles:
 # haiku has no effort parameter, so setting one there is a silent no-op
 d, _ = fmx('core/agents/Explore.md')
 chk('effort' not in d, 'Explore: no effort key (haiku ignores it)', str(d.get('effort')))
+# Measured: Explore reported NO MATCHES for three things that were really in .json/.ps1/.md,
+# because its body said an empty qartez result IS the answer while its initialPrompt said
+# Grep is for non-code files. qartez indexes source only, so the non-code route must be
+# explicit or the agent stops at the wrong index and reports absence that is not real.
+_ex = re.sub(r'\s+', ' ', open('core/agents/Explore.md', encoding='utf-8').read())
+chk('denies them on **every** path' in _ex or 'denies them on' in _ex,
+    'Explore: told that the guard denies Grep/Glob on every path, not only source')
+chk('OUT OF INDEX' in _ex,
+    'Explore: has a verdict for a lookup its tools cannot reach')
+chk('search_bodies=true' in _ex and 'will read as NO MATCHES when it is right there' in _ex,
+    'Explore: search_bodies is a rule for literal-string searches')
+chk('name the file types qartez actually indexed' in _ex,
+    'Explore: must name the indexed file types before reporting NO MATCHES')
+chk('is not' in _ex and 'not in the repository' in _ex,
+    'Explore: told that an empty qartez index is not an empty repository')
 
 print()
 print('=== 2. TOOL RESTRICTIONS ARE REAL ===')
