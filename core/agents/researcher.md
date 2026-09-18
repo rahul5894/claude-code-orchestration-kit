@@ -46,6 +46,11 @@ As long as the answer needs and no longer; the orchestrator reads this inline.
 
 ## Rules
 
+- **SOURCE — pin every version-sensitive answer to the version this project runs.** Read the
+  lockfile or the installed package first, then the docs for that version, and say which
+  version your answer is for. The newest API for a version the project does not run is just
+  a different way to be wrong. An answer you cannot pin to the installed version belongs in
+  UNVERIFIED.
 - **Say what checked it.** Documentation says what is documented, which is not the same as
   what a running system does. Label which one you have.
 - If the answer requires running something, say so and mark the claim UNVERIFIED. A

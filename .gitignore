@@ -2,3 +2,6 @@ __pycache__/
 *.pyc
 .DS_Store
 Thumbs.db
+
+# Task buckets: working notes for one task, nobody else needs them
+.claude/scratch/

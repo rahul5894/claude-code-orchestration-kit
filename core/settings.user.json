@@ -1,16 +1,22 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
   "modelSettings": {
-    "claude-fable-5-1": {
+    "claude-opus-5": {
       "effortLevel": "high"
     },
-    "claude-opus-5": {
-      "effortLevel": "xhigh"
+    "claude-fable-5-1": {
+      "effortLevel": "high"
     }
+  },
+  "outputStyle": "orchestrator",
+  "subagentPromptCacheTtl": "1h",
+  "worktree": {
+    "baseRef": "head"
   },
   "env": {
     "CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH": "1",
-    "CLAUDE_CODE_SUBAGENT_MODEL": "opus"
+    "CLAUDE_CODE_SUBAGENT_MODEL": "opus",
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "0"
   },
   "permissions": {
     "ask": [

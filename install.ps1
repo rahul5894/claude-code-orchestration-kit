@@ -11,12 +11,33 @@ function Write-Lf([string]$path, [string]$text) {
     [IO.File]::WriteAllText($path, $text.Replace("`r`n", "`n"), $utf8)
 }
 
-# 1. Agents + command: plain copy.
-New-Item -ItemType Directory -Force (Join-Path $dest 'agents'), (Join-Path $dest 'commands') | Out-Null
-Copy-Item (Join-Path $kit 'core\agents\*.md')   (Join-Path $dest 'agents')   -Force
-Copy-Item (Join-Path $kit 'core\commands\*.md') (Join-Path $dest 'commands') -Force
-"agents:   " + ((Get-ChildItem (Join-Path $kit 'core\agents\*.md')).BaseName -join ', ')
-"commands: " + ((Get-ChildItem (Join-Path $kit 'core\commands\*.md')).BaseName -join ', ')
+# 1. Agents, commands, skills, output styles: plain copy. Retired agents are removed by name
+#    only — never sweep the folder, you may keep your own agents there.
+$RETIRED_AGENTS = @('scout')         # dropped in v2: the Explore shadow does locating
+$RETIRED_SKILLS = @()                # skill folders a later version renames or drops
+$RETIRED_OUTPUT_STYLES = @()         # output styles a later version renames or drops
+New-Item -ItemType Directory -Force (Join-Path $dest 'agents'), (Join-Path $dest 'commands'),
+    (Join-Path $dest 'skills'), (Join-Path $dest 'output-styles') | Out-Null
+Copy-Item (Join-Path $kit 'core\agents\*.md')        (Join-Path $dest 'agents')        -Force
+Copy-Item (Join-Path $kit 'core\commands\*.md')      (Join-Path $dest 'commands')      -Force
+Copy-Item (Join-Path $kit 'core\output-styles\*.md') (Join-Path $dest 'output-styles') -Force
+Copy-Item (Join-Path $kit 'core\skills\*')           (Join-Path $dest 'skills') -Recurse -Force
+foreach ($r in $RETIRED_AGENTS) {
+    $p = Join-Path $dest "agents\$r.md"
+    if (Test-Path $p) { Remove-Item $p -Force; "agents:   removed retired '$r'" }
+}
+foreach ($r in $RETIRED_SKILLS) {
+    $p = Join-Path $dest "skills\$r"
+    if (Test-Path $p) { Remove-Item $p -Recurse -Force; "skills:   removed retired '$r'" }
+}
+foreach ($r in $RETIRED_OUTPUT_STYLES) {
+    $p = Join-Path $dest "output-styles\$r.md"
+    if (Test-Path $p) { Remove-Item $p -Force; "output-styles: removed retired '$r'" }
+}
+"agents:        " + ((Get-ChildItem (Join-Path $kit 'core\agents\*.md')).BaseName -join ', ')
+"commands:      " + ((Get-ChildItem (Join-Path $kit 'core\commands\*.md')).BaseName -join ', ')
+"skills:        " + ((Get-ChildItem (Join-Path $kit 'core\skills') -Directory).Name -join ', ')
+"output-styles: " + ((Get-ChildItem (Join-Path $kit 'core\output-styles\*.md')).BaseName -join ', ')
 
 # 2. CLAUDE.md: replace the marker block, append it if absent. Your own rules stay.
 $md    = Join-Path $dest 'CLAUDE.md'
@@ -33,6 +54,9 @@ else { "CLAUDE.md: unchanged" }
 $sf   = Join-Path $dest 'settings.json'
 $frag = Get-Content (Join-Path $kit 'core\settings.user.json') -Raw | ConvertFrom-Json -AsHashtable
 $set  = if (Test-Path $sf) { Get-Content $sf -Raw | ConvertFrom-Json -AsHashtable } else { [ordered]@{} }
+# Pre-merge copy of the user's own settings. The guards in step 4 must see what the USER had:
+# the merge below lets the fragment's scalars win, so a conflict is invisible afterwards.
+$pre  = if (Test-Path $sf) { Get-Content $sf -Raw | ConvertFrom-Json -AsHashtable } else { [ordered]@{} }
 function Merge-Into($dst, $src) {
     foreach ($k in $src.Keys) {
         $v = $src[$k]
@@ -50,12 +74,30 @@ if ($json.Replace("`r`n", "`n") -ne $old.Replace("`r`n", "`n")) {
     "settings.json: merged (backup written)"
 } else { "settings.json: unchanged" }
 
-# 4. Guard: the one env var that silently defeats every agent's frontmatter effort.
+# 4. Guards: settings that silently defeat the roster. Each one fails quietly, not loudly.
 if ($set['env'] -and $set['env']['CLAUDE_CODE_EFFORT_LEVEL']) {
     Write-Warning "settings.json env.CLAUDE_CODE_EFFORT_LEVEL is set. It overrides every agent's frontmatter effort. Remove it."
 }
 if ($set['env'] -and $set['env']['CLAUDE_CODE_SUBAGENT_MODEL_FORCE']) {
     Write-Warning "settings.json env.CLAUDE_CODE_SUBAGENT_MODEL_FORCE is set. It ignores every agent's model pin. Remove it."
+}
+if ($set['maxEffortLevel']) {
+    Write-Warning "settings.json maxEffortLevel = '$($set['maxEffortLevel'])' caps every agent's frontmatter effort with no per-agent error. Remove it unless you meant it."
+}
+if ($set['modelSettings']) {
+    foreach ($m in @($set['modelSettings'].Keys)) {
+        if ($set['modelSettings'][$m]['maxEffortLevel']) {
+            Write-Warning "settings.json modelSettings.$m.maxEffortLevel caps that model's effort silently. Remove it unless you meant it."
+        }
+    }
+}
+# These two read $pre, not $set: the kit just overwrote both, so the merged value always
+# agrees with the fragment. What is worth saying is that the overwrite happened.
+if ($pre['env'] -and $pre['env']['CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS'] -eq '1') {
+    Write-Warning "settings.json had env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS = 1; the kit just set it to 0. While teams are on, any subagent Claude names launches as a full teammate session instead, at roughly 7x the tokens."
+}
+if ($pre['subagentPromptCacheTtl'] -and $pre['subagentPromptCacheTtl'] -ne '1h') {
+    Write-Warning "settings.json had subagentPromptCacheTtl = '$($pre['subagentPromptCacheTtl'])'; the kit just set 1h. Subagents get a 5-minute cache TTL by default even on a subscription."
 }
 
 # 5. md-guard hook: copy the script, pin a Python 3.12+ path, register once in settings.json.
@@ -86,9 +128,18 @@ else {
         $set['hooks']['PreToolUse'] = $entries
         "md-guard: registered in settings.json"
     }
-    Write-Lf $sf (($set | ConvertTo-Json -Depth 20) + "`n")
+    # Step 3's backup predates this rewrite, so take our own - and only when we change something.
+    $out  = ($set | ConvertTo-Json -Depth 20) + "`n"
+    $prev = Get-Content $sf -Raw
+    if ($out.Replace("`r`n", "`n") -ne $prev.Replace("`r`n", "`n")) {
+        Copy-Item $sf "$sf.bak-kit-$(Get-Date -Format yyyyMMdd-HHmmss)"
+        Write-Lf $sf $out
+    }
     $t = & $py (Join-Path $dest 'hooks\md-guard_test.py') 2>&1 | Select-Object -Last 1
     "md-guard self-check: $t"
 }
 
-"done. New sessions pick up the agents; /status confirms the settings file loaded; /tasks shows a running subagent's model."
+"done. RESTART Claude Code: agents and output styles are read at startup, so the 'orchestrator'"
+"      style (the main session's own rules) only applies to a new session. Then /output-style"
+"      confirms it is active, /status confirms the settings file loaded, and /context shows"
+"      what the shared CLAUDE.md now costs per spawn."

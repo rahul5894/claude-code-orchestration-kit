@@ -110,10 +110,12 @@ branch <x> @ <sha>, tree clean|N dirty
   Make it read-only (`attrib +R` on Windows, `chmod a-w` elsewhere). Do not show me
   briefs unless I ask.
 - Every brief must name the bucket and require the agent to read `DECISIONS.md` before
-  changing anything, update `FINDINGS.md`, `DECISIONS.md` and `STATE.md`, write
-  `reports/<agent>-NN.md` before it stops, and never edit anything under `briefs/`.
+  changing anything, append to `FINDINGS.md`, and never edit anything under `briefs/`.
+  **Agents do not write `STATE.md` and do not write report files** — the harness may block
+  a subagent from writing a report at all, and two writers to a replaced-not-appended
+  `STATE.md` lose each other's content.
 - Record the launch in `STATE.md` under Active agents. When the agent returns, mark it
-  terminal. If it left no report, write `reports/<agent>-NN.md` yourself and say so.
+  terminal and **write `reports/<agent>-NN.md` yourself from its final message.**
 - Update the bucket's line in the index whenever its status or next action changes.
 - If two rounds start swapping between the same two fixes, **stop the loop**, read
   `DECISIONS.md` yourself, and sort it out with me. Do not let it run.
