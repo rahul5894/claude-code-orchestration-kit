@@ -264,6 +264,12 @@ chk('A near-miss is not a match' in _exx,
     'Explore: warned that a near-miss spelling is not a match')
 chk('Nothing follows an `OUT OF INDEX` line' in _exx,
     'Explore: nothing may be appended after the OUT OF INDEX verdict')
+# That instruction does NOT hold on haiku - measured across five runs and three rewordings,
+# the category still gets appended (the fabricated file:LINE did stop). So the orchestrator
+# side is the real control, and it must stay: without it a wrong category silently steers the
+# follow-up grep. This is load-bearing, not advice.
+chk('discard any category' in open('core/output-styles/orchestrator.md', encoding='utf-8').read(),
+    'orchestrator: told to discard Explore category, which prompting does not suppress')
 _eip = fmx('core/agents/Explore.md')[0].get('initialPrompt', '')
 chk('Never guess WHICH blind spot' in _eip,
     'Explore: initialPrompt agrees with the body (omitClaudeMd makes it the only copy)')
@@ -707,6 +713,27 @@ bld = open('core/agents/builder.md', encoding='utf-8').read()
 chk('Never run the whole test suite' in bld, 'builder: forbidden from running the full suite')
 for p in DOCS + ['extras/rejected/README.md', 'extras/prideconnect-section.md']:
     chk(os.path.isfile(p), f'{p} exists')
+
+print()
+print('=== 9b. FILES A WHOLE `Read` IS DENIED ON ===')
+# md-guard denies Read on any .md over 300 lines. A verifier, which has no shell and so cannot
+# run qmd, hit this three times in one run because the BRIEF told it these files were short.
+# The orchestrator writes that brief, so the orchestrator has to be told. This is a census,
+# not a failure: the files are allowed to be long, but an agent must be sent at a line range.
+_LONG = []
+for _f in sorted(set(glob.glob('*.md') + glob.glob('*.py') + glob.glob('core/**/*.md', recursive=True)
+                     + glob.glob('docs/*.md') + glob.glob('extras/**/*.md', recursive=True))):
+    _n = sum(1 for _ in open(_f, encoding='utf-8', errors='replace'))
+    if _n > 300:
+        _LONG.append((_n, slash(_f)))
+for _n, _f in sorted(_LONG, reverse=True):
+    print(f'  NOTE  {_f} is {_n} lines - brief agents with an offset+limit, never the whole file')
+# The agents that cannot fall back to a shell must carry the rule themselves.
+for _n2 in ('verifier', 'researcher'):
+    _d2, _s2 = fmx(f'core/agents/{_n2}.md')
+    _t2 = _d2.get('initialPrompt', '') + ' ' + _s2
+    chk('offset' in _t2 and 'limit' in _t2,
+        f'{_n2}: has no shell, so is told to Read long files with offset+limit')
 
 print()
 print('=== 10. THE USER-FACING DOCS DESCRIBE THE KIT THAT SHIPS ===')

@@ -96,6 +96,9 @@ path/to/file.ext:LINE — <symbol or 12-word description>
 - **Nothing follows an `OUT OF INDEX` line.** Not a guess at where the thing lives, not a
   near-miss you found on the way, not a file type. The orchestrator greps; a sentence after
   the verdict only tells it where not to look.
+  *(Known limit, measured over five runs and three rewordings: on haiku this rule suppresses
+  a fabricated `path:LINE` but not the trailing category. The orchestrator is therefore told
+  to discard any category it receives, and that rule — not this one — is the real control.)*
 - Run every distinct spelling worth trying — casing, hyphen vs underscore, abbreviations,
   string-literal vs identifier — and say which patterns you ran.
 - If the request is ambiguous, report matches for the most literal reading and name the

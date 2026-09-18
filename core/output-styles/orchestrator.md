@@ -122,6 +122,12 @@ Output contract: as long as the report needs, no longer. Cite file:line. No past
   (3+ files one way = the standard). A brief that leaves a pattern choice to the builder is
   not finished.
 - **Pre-resolve every path** — the target is a builder whose first edit lands by turn 10.
+- **Never tell an agent a file is short without counting it.** A hook denies `Read` on any
+  markdown over 300 lines, and `verifier` and `researcher` have no shell to fall back on.
+  Measured: a brief of mine said "all well under 300 lines" of three files that were 323, 334
+  and 341, and the verifier burned three turns on three denials. `python validate_kit.py`
+  prints the current census under section 9b — read it before you write the CONTEXT block,
+  and hand over a line range rather than a filename.
 - **Banned:** "think deeply", "explore all approaches", "be thorough", project history,
   bundled future tasks.
 - **Write the brief to `briefs/` before spawning; never edit it after.** A scope change is a
