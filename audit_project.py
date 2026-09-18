@@ -77,8 +77,11 @@ if txt:
     # An ORDER is the defect ("use Grep for markdown"), not a mention. The kit's own template
     # says "`Grep` and `Glob` are denied on every path" - a mention-with-negation-after that a
     # window-before heuristic misread as an order. Match the imperative shape only.
+    # "Do NOT use Grep" is a prohibition, not an order - it tripped this on ticketing-system.
+    # A negation right before the verb exempts the match.
     orders = [txt[max(0, m.start() - 10):m.end() + 30].replace('\n', ' ')
-              for m in re.finditer(r'\b(?:use|run|call|try|prefer|via|with)\s+`?(?:Grep|Glob)`?\b', txt)]
+              for m in re.finditer(r'(?<!not )(?<!NOT )(?<!never )(?<!Never )'
+                                   r'\b(?:use|run|call|try|prefer|via|with)\s+`?(?:Grep|Glob)`?\b', txt)]
     ok(not orders, 'does not order agents to use Grep/Glob (denied everywhere)', str(orders[:2]))
     named = {t for t in re.findall(r'(?<![\w/])qartez_[a-z_]+', txt)} - REACHABLE
     ok(not named, 'names only qartez tools Claude Code can reach', str(sorted(named)))
