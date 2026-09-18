@@ -58,6 +58,25 @@ Checks:
    agent file. The installer warns if it finds them.
 3. Start a new Claude Code session. `/status` shows the settings file loaded.
 
+## 2b. MCP servers
+
+`.mcp.template.json` is the project MCP config with every credential replaced by an
+environment variable. The live `.mcp.json` is gitignored on purpose: it carries API keys, and
+a key that reaches git history is leaked for good.
+
+On a new machine:
+
+1. Set these in the user environment (System Properties > Environment Variables, or
+   `setx`): `CONTEXT7_API_KEY`, `FIRECRAWL_API_KEY`, `EXA_API_KEY`, `EXPRESSVPN_TOKEN`,
+   `ATLASSIAN_API_TOKEN`, `DANTE_SSH_KEY`.
+2. `Copy-Item .mcp.template.json .mcp.json`
+3. Start Claude Code from the repo root; `/mcp` lists what connected.
+
+Two entries are machine-specific and will not resolve until their paths exist: `mssql`
+(`D:\sql2019-setup\mssql-environments.json`) and `emclient`
+(`d:/Projects/my-scraper-project/tools/emclient_mcp.py`). Remove them from `.mcp.json` on a
+machine that does not have those, or the servers show as failed to connect.
+
 ## 3. qmd (local markdown search)
 
 qmd is the search engine that keeps big markdown docs out of the context window. It

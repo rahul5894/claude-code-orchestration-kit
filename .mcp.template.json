@@ -1,0 +1,114 @@
+{
+  "mcpServers": {
+    "context7": {
+      "type": "http",
+      "url": "https://mcp.context7.com/mcp",
+      "headers": {
+        "CONTEXT7_API_KEY": "${CONTEXT7_API_KEY}"
+      }
+    },
+    "chrome-devtools": {
+      "command": "npx",
+      "args": [
+        "chrome-devtools-mcp@latest",
+        "--no-usage-statistics",
+        "--autoConnect"
+      ]
+    },
+    "ssh-mpc-server": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@fangjunjie/ssh-mcp-server",
+        "--host",
+        "srv859582.hstgr.cloud",
+        "--port",
+        "22",
+        "--username",
+        "root",
+        "--privateKey",
+        "${DANTE_SSH_KEY}"
+      ],
+      "env": {
+        "NODE_OPTIONS": "--network-family-autoselection-attempt-timeout=3000"
+      }
+    },
+    "firecrawl": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "firecrawl-mcp"
+      ],
+      "env": {
+        "FIRECRAWL_API_KEY": "${FIRECRAWL_API_KEY}"
+      }
+    },
+    "exa": {
+      "type": "http",
+      "url": "https://mcp.exa.ai/mcp?tools=web_search_exa,web_fetch_exa,web_search_advanced_exa,get_code_context_exa,deep_researcher_start,deep_researcher_check,agent_run",
+      "headers": {
+        "x-api-key": "${EXA_API_KEY}"
+      }
+    },
+    "exa-websets": {
+      "type": "http",
+      "url": "https://websetsmcp.exa.ai/mcp?exaApiKey=${EXA_API_KEY}"
+    },
+    "markitdown": {
+      "command": "uvx",
+      "args": [
+        "--python",
+        "3.12",
+        "markitdown-mcp"
+      ]
+    },
+    "mssql": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@connorbritain/mssql-mcp-server@latest"
+      ],
+      "env": {
+        "ENVIRONMENTS_CONFIG_PATH": "D:\\sql2019-setup\\mssql-environments.json"
+      }
+    },
+    "mcp-atlassian": {
+      "command": "uvx",
+      "args": [
+        "mcp-atlassian"
+      ],
+      "env": {
+        "JIRA_URL": "https://northpointnine.atlassian.net",
+        "JIRA_USERNAME": "rahulsharma@northpointnine.com",
+        "JIRA_API_TOKEN": "${ATLASSIAN_API_TOKEN}",
+        "JIRA_PROJECTS_FILTER": "NPN",
+        "CONFLUENCE_URL": "https://northpointnine.atlassian.net/wiki",
+        "CONFLUENCE_USERNAME": "rahulsharma@northpointnine.com",
+        "CONFLUENCE_API_TOKEN": "${ATLASSIAN_API_TOKEN}"
+      }
+    },
+    "expressvpn": {
+      "type": "http",
+      "url": "http://127.0.0.1:20098/mcp?token=${EXPRESSVPN_TOKEN}"
+    },
+    "scrapling": {
+      "command": "scrapling",
+      "args": [
+        "mcp"
+      ]
+    },
+    "emclient": {
+      "command": "uv",
+      "args": [
+        "run",
+        "--with",
+        "mcp",
+        "python",
+        "d:/Projects/my-scraper-project/tools/emclient_mcp.py"
+      ],
+      "env": {
+        "EMCLIENT_DEFAULT_ACCOUNT": "northpointnine"
+      }
+    }
+  }
+}

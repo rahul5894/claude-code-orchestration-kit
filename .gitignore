@@ -5,3 +5,6 @@ Thumbs.db
 
 # Task buckets: working notes for one task, nobody else needs them
 .claude/scratch/
+
+# Live MCP config carries API keys; commit the template, keep the real one local
+.mcp.json
