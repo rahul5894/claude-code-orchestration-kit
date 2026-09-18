@@ -27,6 +27,14 @@ HOME = pathlib.Path(os.path.expanduser('~/.claude'))
 os.chdir(KIT)
 bad = []
 
+# A Windows console is cp1252, so printing a tool's UTF-8 output raises UnicodeEncodeError and
+# kills the script mid-report. It happened here while reporting a real failure: the check
+# caught the defect and then crashed trying to say so, which reads exactly like a pass.
+try:
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+except (AttributeError, OSError):
+    pass
+
 
 def ok(cond, label, detail=''):
     print(f"  {'PASS' if cond else 'FAIL'}  {label}" + ('' if cond else f'   -> {detail}'))
@@ -51,11 +59,15 @@ def norm(s):
 
 
 def install():
-    """Run the installer. A machine with only Windows PowerShell 5.1 has no `pwsh`, and the
+    """Run the installer. Reads output as UTF-8 because Windows decodes subprocess pipes as
+    cp1252 by default: one box-drawing character kills the reader thread and hands back an
+    EMPTY stdout, which reads as "the tool said nothing" rather than as an error.
+
+    A machine with only Windows PowerShell 5.1 has no `pwsh`, and the
     resulting FileNotFoundError used to end the whole script with a traceback and no section
     list - on exactly the fresh machine this file exists to check."""
     try:
-        return subprocess.run(['pwsh', '-File', 'install.ps1'], capture_output=True, text=True)
+        return subprocess.run(['pwsh', '-File', 'install.ps1'], capture_output=True, text=True, encoding='utf-8', errors='replace')
     except OSError as e:
         ok(False, 'pwsh (PowerShell 7+) is on PATH to run install.ps1', str(e))
         return subprocess.CompletedProcess([], 1, '', str(e))
@@ -119,6 +131,25 @@ if was_stale:
 ok(not drifted(), f"all {len(pairs)} installed files byte-identical to repo after install",
    str(drifted()[:3]))
 
+print("\n=== C2. Claude Code itself accepts every installed component ===")
+# The authoritative loader, not our parser. Two agents once shipped with an unquoted ": " in
+# initialPrompt: valid to a line-splitter, a nested mapping to YAML, and per this command
+# "at runtime this agent does not load at all". Two of six agents would simply not exist in
+# the next session, with every other check green.
+try:
+    _v = subprocess.run(['claude', 'plugin', 'validate', str(HOME)],
+                        capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=300)
+    # `or ''` on both streams: a shim that writes nothing leaves these None, and the crash
+    # that follows is the same defect this file was just fixed for - an unhandled failure
+    # mode reported as a traceback instead of a named FAIL.
+    _out = (_v.stdout or '') + (_v.stderr or '')
+    _errs = [l.strip() for l in _out.splitlines() if '❯' in l and 'symlink' not in l]
+    ok('Validation passed' in _out and not _errs,
+       'claude plugin validate accepts the installed agents, skills and commands',
+       str(_errs[:2]) if _errs else _out.strip()[-200:] or 'no output from the validator')
+except (OSError, subprocess.TimeoutExpired) as e:
+    ok(False, 'claude plugin validate could run', f'{type(e).__name__}: {e}')
+
 print("\n=== D. settings live ===")
 # A missing or hand-broken settings.json is a FAILED CHECK, not a traceback: the setup doc
 # tells a fresh-machine reader this script prints ALL CLEAR or names what is wrong, and a
@@ -153,7 +184,7 @@ for p in sorted(glob.glob('core/agents/*.md')):
        row.group(1) if row else 'no row')
 
 print("\n=== F. gate, installer idempotency ===")
-r = subprocess.run([sys.executable, 'validate_kit.py'], capture_output=True, text=True)
+r = subprocess.run([sys.executable, 'validate_kit.py'], capture_output=True, text=True, encoding='utf-8', errors='replace')
 tally = [l for l in r.stdout.splitlines() if l.startswith('checks run')]
 ok(r.returncode == 0, f"validate_kit.py exits 0 -- {tally[-1] if tally else 'no tally line'}",
    r.stdout.strip().splitlines()[-3:])

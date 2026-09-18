@@ -36,6 +36,12 @@ import pathlib
 import re
 import sys
 
+# The summary line uses '·'; a cp1252 console raises on it and the totals never print.
+try:
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+except (AttributeError, OSError):
+    pass
+
 PROJECTS = pathlib.Path(os.path.expanduser('~/.claude/projects'))
 # A Bash command that runs a whole suite or a gate. Deliberately broad: a false positive here
 # costs a glance, a false negative hides the exact regression this column exists to catch.

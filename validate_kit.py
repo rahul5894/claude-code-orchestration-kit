@@ -60,6 +60,36 @@ for _f in sorted(glob.glob('*.py') + glob.glob('*.ps1') + glob.glob('core/**/*.m
     chk(not _found, f'{_f}: no literal control characters', str(_found))
 
 print()
+print('=== 0b. FRONTMATTER IS VALID YAML ===')
+# The line-splitting parser below is forgiving; Claude Code's is not. Two agents shipped with
+# an unquoted ": " inside initialPrompt, which YAML reads as a nested mapping. `claude plugin
+# validate` said "At runtime this agent does not load at all" - two of six agents would have
+# been silently absent from the next session, while every check here stayed green because the
+# parser used for checking was not the parser used for loading.
+try:
+    import yaml as _yaml
+except ImportError:
+    _yaml = None
+for _f in sorted(glob.glob('core/agents/*.md') + glob.glob('core/commands/*.md')
+                 + glob.glob('core/skills/*/SKILL.md') + glob.glob('core/output-styles/*.md')):
+    _head = open(_f, encoding='utf-8').read().split('\n---', 1)[0].lstrip('-\n')
+    if _yaml:
+        try:
+            _parsed = _yaml.safe_load(_head)
+            _err = None if isinstance(_parsed, dict) else f'parsed as {type(_parsed).__name__}'
+        except Exception as e:
+            _err = str(e).split('\n')[0]
+        chk(_err is None, f'{_f}: frontmatter is valid YAML', str(_err))
+    else:
+        # No PyYAML: catch the one construct that actually broke it. An unquoted scalar
+        # containing ": " is a nested mapping to YAML and a parse error in practice.
+        _bad = [ln.split(':', 1)[0].strip() for ln in _head.splitlines()
+                if ':' in ln and ln.split(':', 1)[1].strip()[:1] not in ('"', "'", '[', '{',
+                                                                        '|', '>', '')
+                and ': ' in ln.split(':', 1)[1]]
+        chk(not _bad, f'{_f}: no unquoted ": " in frontmatter (breaks YAML)', str(_bad))
+
+print()
 print('=== 1. AGENT FRONTMATTER - docs-valid values only ===')
 MODELS = {'sonnet', 'opus', 'haiku', 'fable', 'inherit'}
 EFFORT = {'low', 'medium', 'high', 'xhigh', 'max'}
