@@ -55,6 +55,9 @@ else { "CLAUDE.md: unchanged" }
 
 # 3. settings.json: deep-merge core/settings.user.json. Objects merge, lists union, scalars win.
 $sf   = Join-Path $dest 'settings.json'
+# Did the USER have a settings.json before this run? Both backup decisions below hang on it:
+# backing up a file the installer itself just wrote only litters the directory.
+$sfPre = Test-Path $sf
 $frag = Get-Content (Join-Path $kit 'core\settings.user.json') -Raw | ConvertFrom-Json -AsHashtable
 $set  = if (Test-Path $sf) { Get-Content $sf -Raw | ConvertFrom-Json -AsHashtable } else { [ordered]@{} }
 # Pre-merge copy of the user's own settings. The guards in step 4 must see what the USER had:
@@ -72,9 +75,13 @@ Merge-Into $set $frag
 $json = ($set | ConvertTo-Json -Depth 20) + "`n"
 $old  = if (Test-Path $sf) { Get-Content $sf -Raw } else { '' }
 if ($json.Replace("`r`n", "`n") -ne $old.Replace("`r`n", "`n")) {
-    if (Test-Path $sf) { Copy-Item $sf "$sf.bak-kit-$(Get-Date -Format yyyyMMdd-HHmmss)" }
+    # Report the backup only when one was actually taken: on a fresh machine there is no
+    # settings.json to copy, and claiming a backup that does not exist is how someone
+    # edits confidently and finds nothing to roll back to.
+    $backed = Test-Path $sf
+    if ($backed) { Copy-Item $sf "$sf.bak-kit-$(Get-Date -Format yyyyMMdd-HHmmss)" }
     Write-Lf $sf $json
-    "settings.json: merged (backup written)"
+    "settings.json: " + $(if ($backed) { 'merged (backup written)' } else { 'created' })
 } else { "settings.json: unchanged" }
 
 # 4. Guards: settings that silently defeat the roster. Each one fails quietly, not loudly.
@@ -131,11 +138,13 @@ else {
         $set['hooks']['PreToolUse'] = $entries
         "md-guard: registered in settings.json"
     }
-    # Step 3's backup predates this rewrite, so take our own - and only when we change something.
+    # Step 3's backup predates this rewrite, so take our own - and only when we change
+    # something the user could want back. On a fresh machine the file here is the one step 3
+    # just wrote, so a backup of it preserves nothing.
     $out  = ($set | ConvertTo-Json -Depth 20) + "`n"
     $prev = Get-Content $sf -Raw
     if ($out.Replace("`r`n", "`n") -ne $prev.Replace("`r`n", "`n")) {
-        Copy-Item $sf "$sf.bak-kit-$(Get-Date -Format yyyyMMdd-HHmmss)"
+        if ($sfPre) { Copy-Item $sf "$sf.bak-kit-$(Get-Date -Format yyyyMMdd-HHmmss)" }
         Write-Lf $sf $out
     }
     $t = & $py (Join-Path $dest 'hooks\md-guard_test.py') 2>&1 | Select-Object -Last 1
