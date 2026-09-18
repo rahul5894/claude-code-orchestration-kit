@@ -165,8 +165,18 @@ Optional, when the repo has a docs folder: `qmd collection add <repo>/docs --nam
 **Never add to a project what the kit already provides globally.** `audit_project.py`
 flags it: a `## Qartez MCP` section, a restated web-tool order, an `outputStyle` in
 `.claude/settings.local.json` (local beats user — it switched the orchestrator off in one
-repo for weeks), a `.mcp.json` entry for a server already at user scope. Each is re-paid by
-every subagent on every spawn and drifts from the global text.
+repo for weeks), a `.mcp.json` entry for a server already at user scope, and a
+`.claude/skills/<name>` that shadows a global skill of the same name (a June copy of
+`firecrawl` was silently beating the August global one). Each is re-paid by every subagent
+on every spawn and drifts from the global text.
+
+**A skill two repos share is a global skill.** `prompt-master`, `session-handoff` and
+`resume-handoff` were hand-copied into both repos and one pair had already diverged; they
+now live in `~/.claude/skills/` once. Tool cheat-sheets about qartez/Firecrawl/Exa belong to
+those tools' own global skills and docs, never in a repo's `docs/`. What a project keeps in
+`.claude/skills/` is only what is true of that codebase alone (PrideConnect: `phone-test`,
+`crypto-media-audit`, `mcp-tools` for its Maestro/postgres servers; the scraper:
+`county-onboarding`).
 
 ## 3. qmd (local markdown search)
 

@@ -97,6 +97,19 @@ for rel in ('.claude/settings.json', '.claude/settings.local.json'):
                                   'CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS')),
        f'{rel}: no env key that defeats the model pins', str(sorted(env)))
 
+# 3b. Project skills must not shadow global ones. Found 2026-09-19: a project-local
+# `.claude/skills/firecrawl` from June was overriding the newer global skill in that repo,
+# and three skills were copied into two repos by hand (one had already diverged).
+skills_dir = root / '.claude' / 'skills'
+if skills_dir.exists():
+    global_skills = {p.name for p in (HOME / 'skills').iterdir()} if (HOME / 'skills').exists() else set()
+    local = {p.name for p in skills_dir.iterdir() if p.is_dir()}
+    shadow = sorted(local & global_skills)
+    ok(not shadow, '.claude/skills shadows no global skill (the local copy silently wins)', str(shadow))
+    stray = sorted(p.name for p in skills_dir.iterdir() if p.is_file())
+    ok(not stray, '.claude/skills holds no loose files (Claude Code ignores them; they are dead weight)',
+       str(stray))
+
 # 4. Project MCP config must not re-define a user-scope server.
 user_servers = set(((load_json(USER_JSON) or {}).get('mcpServers') or {}))
 proj = load_json(root / '.mcp.json')
