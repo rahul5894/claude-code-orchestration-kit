@@ -11,6 +11,15 @@ function Write-Lf([string]$path, [string]$text) {
     [IO.File]::WriteAllText($path, $text.Replace("`r`n", "`n"), $utf8)
 }
 
+# `Get-Content -Raw` returns $null for a 0-byte file, not ''. Under $ErrorActionPreference =
+# 'Stop' the next .TrimEnd() or .Replace() throws "cannot call a method on a null-valued
+# expression" and aborts the install. Verified: a 0-byte CLAUDE.md gave rc=1 before this.
+function Read-Text([string]$path) {
+    if (-not (Test-Path $path)) { return '' }
+    $t = Get-Content $path -Raw
+    if ($null -eq $t) { '' } else { $t }
+}
+
 # 1. Agents, commands, skills, output styles: plain copy. Retired agents are removed by name
 #    only — never sweep the folder, you may keep your own agents there.
 $RETIRED_AGENTS = @('scout')         # dropped in v2: the Explore shadow does locating
@@ -43,7 +52,7 @@ foreach ($r in $RETIRED_OUTPUT_STYLES) {
 $md    = Join-Path $dest 'CLAUDE.md'
 $block = "<!-- orchestration-kit (fork of SirRuggie/claude-code-orchestration-kit, source $kit) -->`n" +
          (Get-Content (Join-Path $kit 'core\CLAUDE.md') -Raw) + "<!-- /orchestration-kit -->`n"
-$cur   = if (Test-Path $md) { Get-Content $md -Raw } else { '' }
+$cur   = Read-Text $md
 $pat   = '(?s)<!-- orchestration-kit.*?<!-- /orchestration-kit -->\r?\n?'
 $new   = if ($cur -match $pat) { [regex]::Replace($cur, $pat, $block.Replace('$', '$$')) }
          else { $cur.TrimEnd() + "`n`n" + $block }
@@ -59,10 +68,10 @@ $sf   = Join-Path $dest 'settings.json'
 # backing up a file the installer itself just wrote only litters the directory.
 $sfPre = Test-Path $sf
 $frag = Get-Content (Join-Path $kit 'core\settings.user.json') -Raw | ConvertFrom-Json -AsHashtable
-$set  = if (Test-Path $sf) { Get-Content $sf -Raw | ConvertFrom-Json -AsHashtable } else { [ordered]@{} }
+$set  = if ((Read-Text $sf).Trim()) { Read-Text $sf | ConvertFrom-Json -AsHashtable } else { [ordered]@{} }
 # Pre-merge copy of the user's own settings. The guards in step 4 must see what the USER had:
 # the merge below lets the fragment's scalars win, so a conflict is invisible afterwards.
-$pre  = if (Test-Path $sf) { Get-Content $sf -Raw | ConvertFrom-Json -AsHashtable } else { [ordered]@{} }
+$pre  = if ((Read-Text $sf).Trim()) { Read-Text $sf | ConvertFrom-Json -AsHashtable } else { [ordered]@{} }
 function Merge-Into($dst, $src) {
     foreach ($k in $src.Keys) {
         $v = $src[$k]
@@ -73,7 +82,7 @@ function Merge-Into($dst, $src) {
 }
 Merge-Into $set $frag
 $json = ($set | ConvertTo-Json -Depth 20) + "`n"
-$old  = if (Test-Path $sf) { Get-Content $sf -Raw } else { '' }
+$old  = Read-Text $sf
 if ($json.Replace("`r`n", "`n") -ne $old.Replace("`r`n", "`n")) {
     # Report the backup only when one was actually taken: on a fresh machine there is no
     # settings.json to copy, and claiming a backup that does not exist is how someone
@@ -127,7 +136,7 @@ foreach ($name in 'python3.13', 'python3.12', 'python', 'python3', 'py') {
 if (-not $py) { Write-Warning "md-guard: no Python 3.12+ on PATH. Install one (winget install Python.Python.3.12) and re-run."; }
 else {
     $hookCmd = "$py " + (Join-Path $dest 'hooks\md-guard.py').Replace('\', '/')
-    $set = Get-Content $sf -Raw | ConvertFrom-Json -AsHashtable
+    $set = if ((Read-Text $sf).Trim()) { Read-Text $sf | ConvertFrom-Json -AsHashtable } else { [ordered]@{} }
     if (-not $set['hooks']) { $set['hooks'] = [ordered]@{} }
     if (-not $set['hooks']['PreToolUse']) { $set['hooks']['PreToolUse'] = @() }
     $entries = @($set['hooks']['PreToolUse'])
@@ -145,7 +154,7 @@ else {
     # something the user could want back. On a fresh machine the file here is the one step 3
     # just wrote, so a backup of it preserves nothing.
     $out  = ($set | ConvertTo-Json -Depth 20) + "`n"
-    $prev = Get-Content $sf -Raw
+    $prev = Read-Text $sf
     if ($out.Replace("`r`n", "`n") -ne $prev.Replace("`r`n", "`n")) {
         if ($sfPre) { Copy-Item $sf "$sf.bak-kit-$(Get-Date -Format yyyyMMdd-HHmmss-fff)" }
         Write-Lf $sf $out

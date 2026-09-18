@@ -150,6 +150,44 @@ try:
 except (OSError, subprocess.TimeoutExpired) as e:
     ok(False, 'claude plugin validate could run', f'{type(e).__name__}: {e}')
 
+print("\n=== C3. the installer survives the states a real machine arrives in ===")
+# Each of these was a crash or a silent loss before it was tested. They run against a throwaway
+# HOME, never yours.
+import shutil        # noqa: E402  - local to this section
+import tempfile      # noqa: E402
+
+
+def install_into(setup):
+    """Install into a scratch HOME prepared by `setup(dir)`; return (rc, stderr, dir)."""
+    tmp = tempfile.mkdtemp(prefix='kit-probe-')
+    d = pathlib.Path(tmp) / '.claude'
+    d.mkdir(parents=True)
+    setup(d)
+    env = dict(os.environ, CLAUDE_CONFIG_DIR=str(d), USERPROFILE=tmp, HOME=tmp)
+    r = subprocess.run(['pwsh', '-File', 'install.ps1'], capture_output=True, text=True,
+                       encoding='utf-8', errors='replace', env=env)
+    return r, d, tmp
+
+
+for _label, _setup, _extra in [
+        ('a machine with nothing installed yet', lambda d: None, None),
+        # Get-Content -Raw yields $null here, not '': every later .Replace() threw.
+        ('an empty CLAUDE.md', lambda d: (d / 'CLAUDE.md').write_bytes(b''), None),
+        ('an empty settings.json', lambda d: (d / 'settings.json').write_bytes(b''), None),
+        # A file we cannot parse must be backed up and reported, never quietly discarded.
+        ('a corrupt settings.json',
+         lambda d: (d / 'settings.json').write_text('{ not json', encoding='utf-8'),
+         'not json')]:
+    _r, _d, _tmp = install_into(_setup)
+    _msg = (_r.stderr or '').strip().replace('\n', ' ')[:150]
+    if _extra:
+        _kept = any(_extra in p.read_text(encoding='utf-8', errors='replace')
+                    for p in _d.glob('settings.json*'))
+        ok(_kept, f'installer preserves {_label} somewhere it can be recovered from', _msg)
+    else:
+        ok(_r.returncode == 0, f'installer survives {_label}', f'rc={_r.returncode} {_msg}')
+    shutil.rmtree(_tmp, ignore_errors=True)
+
 print("\n=== D. settings live ===")
 # A missing or hand-broken settings.json is a FAILED CHECK, not a traceback: the setup doc
 # tells a fresh-machine reader this script prints ALL CLEAR or names what is wrong, and a
