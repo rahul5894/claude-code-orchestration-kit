@@ -90,17 +90,36 @@ Checks:
 
 ## 2b. MCP servers
 
-`.mcp.template.json` is the project MCP config with every credential replaced by an
-environment variable. The live `.mcp.json` is gitignored on purpose: it carries API keys, and
-a key that reaches git history is leaked for good.
+**The four servers the agents actually need live at USER scope, not per project.** `qartez`
+backs every agent's search; `firecrawl`, `exa` and `context7` are the researcher's only web
+tools, because it has no `WebFetch`/`WebSearch` on purpose. A project-scoped config would
+leave the researcher mute in every repo you forgot to copy it into, so put them in
+`~/.claude.json` once:
+
+```
+claude mcp add --scope user --transport http context7 https://mcp.context7.com/mcp --header "CONTEXT7_API_KEY: $env:CONTEXT7_API_KEY"
+claude mcp add --scope user --transport http exa "https://mcp.exa.ai/mcp?tools=web_search_exa,web_fetch_exa" --header "x-api-key: $env:EXA_API_KEY"
+claude mcp add --scope user firecrawl -e FIRECRAWL_API_KEY=$env:FIRECRAWL_API_KEY -- npx -y firecrawl-mcp
+```
+
+Two syntax traps, both hit here on 2026-09-18: the **server name comes before `-e`** (it is
+variadic, so it swallows the name), and `--scope user` writes `~/.claude.json`, which then
+holds live keys — never commit or sync that file. Check with
+`python -c "import json,os;print(sorted(json.load(open(os.path.expanduser('~/.claude.json')))['mcpServers']))"`.
+
+`.mcp.template.json` is the *project* MCP config with every credential replaced by an
+environment variable, for the extra servers a single repo needs (Atlassian, SSH, mssql,
+scrapling, chrome-devtools). The live `.mcp.json` is gitignored on purpose: it carries API
+keys, and a key that reaches git history is leaked for good.
 
 On a new machine:
 
 1. Set these in the user environment (System Properties > Environment Variables, or
    `setx`): `CONTEXT7_API_KEY`, `FIRECRAWL_API_KEY`, `EXA_API_KEY`, `EXPRESSVPN_TOKEN`,
    `ATLASSIAN_API_TOKEN`, `DANTE_SSH_KEY`.
-2. `Copy-Item .mcp.template.json .mcp.json`
-3. Start Claude Code from the repo root; `/mcp` lists what connected.
+2. Run the three `claude mcp add --scope user` commands above.
+3. Only if this repo needs the extras: `Copy-Item .mcp.template.json .mcp.json`
+4. Start Claude Code from the repo root; `/mcp` lists what connected.
 
 Two entries are machine-specific and will not resolve until their paths exist: `mssql`
 (`D:\sql2019-setup\mssql-environments.json`) and `emclient`
