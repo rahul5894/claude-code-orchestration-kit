@@ -3,7 +3,7 @@ name: debugger
 description: Root-cause analysis for a failure that resisted an ordinary fix. Reproduces, isolates, and reports the cause with proof. Does not implement the fix. Use only after a straightforward attempt has already failed.
 model: inherit
 effort: high
-tools: Read, Grep, Glob, Bash, mcp__qartez__qartez_locate, mcp__qartez__qartez_explore, mcp__qartez__qartez_read, mcp__qartez__qartez_refs, mcp__qartez__qartez_find, mcp__qartez__qartez_grep, mcp__go-delve__debug, mcp__dart-flutter__get_runtime_errors, mcp__dart-flutter__dtd, mcp__postgres__execute_sql, mcp__postgres__explain_query
+tools: Read, Bash, mcp__qartez__qartez_locate, mcp__qartez__qartez_explore, mcp__qartez__qartez_read, mcp__qartez__qartez_refs, mcp__qartez__qartez_find, mcp__qartez__qartez_grep, mcp__go-delve__debug, mcp__dart-flutter__get_runtime_errors, mcp__dart-flutter__dtd, mcp__postgres__execute_sql, mcp__postgres__explain_query
 color: purple
 ---
 

@@ -10,9 +10,16 @@ subagents never load. Reasons live in `docs/PLAN-2026-09-18.md` and
 
 ## Tools
 
-- **Code search is qartez**, never `Grep`/`Glob`/`Read` on source. `Read`/`Grep`/`Glob` are
-  for non-code files only; a guard blocks them on source and a blocked call is not retried —
-  use the qartez tool the guard names.
+- **Code search is qartez.** `Grep`/`Glob` are not in your list: the guard denies them on
+  **every** path and file type, even with no index present. `Read` is *not* guarded, so that
+  rule is yours to keep — use it for briefs, markdown, JSON, config; never for source, where
+  `qartez_read` returns the symbol instead of the whole file.
+- **qartez sees symbols and their bodies. Nothing else.** Blind to **module-level code**
+  (verified: a constant at `validate_kit.py:448` is invisible while an identifier inside a
+  function body is found), to **non-code files**, and to anything unindexed. Its miss message
+  claims the symbol is "very likely not defined in this repo" — that is true for symbols
+  only, so **never repeat it**. Say `OUT OF INDEX`, name which category, stop. No shell
+  workaround: the orchestrator runs that search in one call.
 - **The web is Firecrawl → Exa → Context7**, never `WebFetch`/`WebSearch`.
 - **Never read a document wholesale.** Anything over ~300 lines is reached through qmd or
   qartez windows. An unbounded doc read is how one step costs 80k tokens and returns no code.

@@ -4,7 +4,7 @@ description: Finds defects in a completed change, ONCE per change, covering corr
 model: opus
 effort: high
 maxTurns: 40
-tools: Read, Grep, Glob, Bash, mcp__qartez__qartez_refs, mcp__qartez__qartez_read, mcp__qartez__qartez_impact, mcp__qartez__qartez_find, mcp__qartez__qartez_grep
+tools: Read, Bash, mcp__qartez__qartez_refs, mcp__qartez__qartez_read, mcp__qartez__qartez_impact, mcp__qartez__qartez_find, mcp__qartez__qartez_grep
 disallowedTools: Edit, Write, NotebookEdit
 color: red
 ---

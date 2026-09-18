@@ -3,7 +3,7 @@ name: researcher
 description: Reads source, docs or specs and reports facts with citations. Marks anything it could not verify as UNVERIFIED. Use to answer "how does X actually work" without pulling the files into the main context.
 model: opus
 effort: high
-tools: Read, Grep, Glob, mcp__qartez__qartez_explore, mcp__qartez__qartez_read, mcp__qartez__qartez_find, mcp__qartez__qartez_refs, mcp__qartez__qartez_outline, mcp__qartez__qartez_grep, mcp__firecrawl__firecrawl_search, mcp__firecrawl__firecrawl_scrape, mcp__firecrawl__firecrawl_map, mcp__exa__web_search_exa, mcp__exa__web_fetch_exa, mcp__context7__resolve-library-id, mcp__context7__query-docs
+tools: Read, mcp__qartez__qartez_explore, mcp__qartez__qartez_read, mcp__qartez__qartez_find, mcp__qartez__qartez_refs, mcp__qartez__qartez_outline, mcp__qartez__qartez_grep, mcp__firecrawl__firecrawl_search, mcp__firecrawl__firecrawl_scrape, mcp__firecrawl__firecrawl_map, mcp__exa__web_search_exa, mcp__exa__web_fetch_exa, mcp__context7__resolve-library-id, mcp__context7__query-docs
 color: green
 ---
 

@@ -3,7 +3,7 @@ name: builder
 description: Implements a change from a written brief and runs the tests. Use for changes above the delegation threshold — a security surface, or roughly 400 changed lines or 8 files. Requires a brief with pre-resolved paths, the pattern named, and a success condition.
 model: opus
 effort: high
-tools: Read, Edit, Write, Grep, Glob, Bash, NotebookEdit, mcp__qartez__qartez_impact, mcp__qartez__qartez_read, mcp__qartez__qartez_find, mcp__qartez__qartez_refs, mcp__qartez__qartez_explore, mcp__qartez__qartez_grep
+tools: Read, Edit, Write, Bash, NotebookEdit, mcp__qartez__qartez_impact, mcp__qartez__qartez_read, mcp__qartez__qartez_find, mcp__qartez__qartez_refs, mcp__qartez__qartez_explore, mcp__qartez__qartez_grep
 color: yellow
 ---
 

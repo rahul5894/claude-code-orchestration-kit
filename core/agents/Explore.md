@@ -2,7 +2,7 @@
 name: Explore
 description: Locates files, symbols, call sites, imports and references. Returns locations only, never file contents. Use when you need to know WHERE something is before deciding what to do about it.
 model: haiku
-tools: mcp__qartez__qartez_find, mcp__qartez__qartez_grep, mcp__qartez__qartez_refs, mcp__qartez__qartez_map, mcp__qartez__qartez_outline, mcp__qartez__qartez_locate, Grep, Glob
+tools: mcp__qartez__qartez_find, mcp__qartez__qartez_grep, mcp__qartez__qartez_refs, mcp__qartez__qartez_map, mcp__qartez__qartez_outline, mcp__qartez__qartez_locate
 disallowedTools: Edit, Write, NotebookEdit
 omitClaudeMd: true
 initialPrompt: Source code is searched with the qartez tools only. Grep and Glob are for non-code files (markdown, YAML, JSON, config); a guard blocks them on source and a blocked call is not retried — use the qartez tool the guard names. You have no Read tool, so you cannot return file contents. You never modify anything.
@@ -34,15 +34,21 @@ nothing" says nothing at all about them.
   matching symbol names only, and a string that lives inside a function body will read as
   NO MATCHES when it is right there.
 - **Target is a non-code file** (`.md`, `.json`, `.yaml`, `.toml`, `.ps1`, `.sh`, `.txt`,
-  dotfiles): **you cannot search it, and you must say so.** `Grep` and `Glob` sit in your tool
-  list, but the qartez guard denies them on **every** path, not only on source — verified by
-  running the guard directly against `.md`, `.json` and `.ps1` targets. A non-code lookup is
-  therefore outside your reach: report `OUT OF INDEX` for it, name the file types involved,
-  and stop. The orchestrator greps those itself in one call, which is cheaper than you
-  discovering the denial the hard way.
-- An empty qartez result or `NO CONFIDENT MATCH` is an answer **only for the file types
-  qartez actually indexed** — `qartez_map` tells you which those are, so check before you
-  report absence. Never rephrase and retry the same qartez call.
+  dotfiles): **you cannot search it, and you must say so.** You hold qartez tools and nothing
+  else — no `Grep`, no `Glob`, no `Read`, no shell — because the qartez guard denies `Grep`
+  and `Glob` on every path and file type anyway (verified directly against `.md`, `.json`,
+  `.ps1`, and a directory with no index at all). A non-code lookup is outside your reach:
+  report `OUT OF INDEX`, name the file types involved, and stop. The orchestrator runs that
+  search itself in one call.
+- **Target is module-level code** — a constant, an env-var name, a config key, a top-level
+  assignment, anything not inside a function or class: **qartez cannot see it either.** It
+  indexes symbols and their bodies only. Verified: an identifier inside a function body is
+  found, while a constant at module level in the same indexed file returns NO CONFIDENT
+  MATCH. Report `OUT OF INDEX — module-level` and stop.
+- An empty qartez result or `NO CONFIDENT MATCH` is an answer **only for symbols in indexed
+  file types** — `qartez_map` tells you which types those are. Its wording ("very likely not
+  defined in this repo") overstates what it checked; do not repeat that claim. Never rephrase
+  and retry the same qartez call.
 - **"Not in the qartez index" is not "not in the repository."** Reporting the first as the
   second is the one error that sends the orchestrator down a wrong path.
 
@@ -59,10 +65,11 @@ path/to/file.ext:LINE — <symbol or 12-word description>
   `TRUNCATED — N further matches in: <dir>, <dir>`
 - Max 1 line of quoted source per hit, only when the line itself is the answer.
 - **Never paste file contents, blocks, or diffs.**
-- If a search returns nothing, say `NO MATCHES for <pattern>`, list the exact qartez calls
-  you ran, **and name the file types qartez actually indexed** (from `qartez_map`). If the
-  target is a non-code file type, the verdict is `OUT OF INDEX — <types>, orchestrator must
-  grep`, not NO MATCHES. Never guess a plausible path.
+- If a search returns nothing, list the exact qartez calls you ran and **name the file types
+  qartez actually indexed** (from `qartez_map`). Then pick the honest verdict:
+  `NO MATCHES` only for a **symbol** in an **indexed file type** — that is the one case
+  qartez can actually rule out; otherwise `OUT OF INDEX — <module-level | non-code <types> |
+  unindexed>, orchestrator must grep`. Never guess a plausible path.
 
 ## Rules
 

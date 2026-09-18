@@ -93,8 +93,8 @@ chk('effort' not in d, 'Explore: no effort key (haiku ignores it)', str(d.get('e
 # Grep is for non-code files. qartez indexes source only, so the non-code route must be
 # explicit or the agent stops at the wrong index and reports absence that is not real.
 _ex = re.sub(r'\s+', ' ', open('core/agents/Explore.md', encoding='utf-8').read())
-chk('denies them on **every** path' in _ex or 'denies them on' in _ex,
-    'Explore: told that the guard denies Grep/Glob on every path, not only source')
+chk('denies `Grep` and `Glob` on every path' in _ex,
+    'Explore: told the guard denies Grep/Glob on every path and file type')
 chk('OUT OF INDEX' in _ex,
     'Explore: has a verdict for a lookup its tools cannot reach')
 chk('search_bodies=true' in _ex and 'will read as NO MATCHES when it is right there' in _ex,
@@ -109,7 +109,7 @@ print('=== 2. TOOL RESTRICTIONS ARE REAL ===')
 QZ = 'mcp__qartez__qartez_'
 for name, must_lack, must_have in [
         ('refuter', ['Edit', 'Write', 'NotebookEdit', 'Agent'], ['Read', 'Bash', QZ + 'refs']),
-        ('Explore', ['Edit', 'Write', 'Bash', 'Read', 'Agent'],
+        ('Explore', ['Edit', 'Write', 'Bash', 'Read', 'Agent', 'Grep', 'Glob'],
          [QZ + 'find', QZ + 'grep', QZ + 'refs']),
         ('researcher', ['Edit', 'Write', 'WebFetch', 'WebSearch', 'Agent'],
          ['Read', QZ + 'explore', 'mcp__firecrawl__firecrawl_search', 'mcp__exa__web_search_exa',
@@ -134,6 +134,18 @@ for name, cap in [('refuter', 40), ('verifier', 20)]:
     d, _ = fmx(f'core/agents/{name}.md')
     chk(str(d.get('maxTurns')) == str(cap), f'{name}: maxTurns == {cap}', str(d.get('maxTurns')))
 
+# Grep and Glob are denied by the qartez guard on EVERY path and file type - verified by
+# running qartez-guard.exe directly against a source dir, *.md, a .json, a .ps1, and a
+# directory with no qartez index at all. Granting a tool that can never run costs the agent a
+# turn to discover the denial and re-plan, and it made two different models report a false
+# NO MATCHES rather than admit the lookup was out of reach.
+for _p in agentfiles:
+    _d, _ = fm(_p)
+    _tl = [x.strip() for x in _d.get('tools', '').split(',')]
+    chk('Grep' not in _tl and 'Glob' not in _tl,
+        f'{os.path.basename(_p)}: no Grep/Glob (the guard denies both unconditionally)',
+        str([x for x in _tl if x in ('Grep', 'Glob')]))
+
 print()
 print('=== 2b. EVERY MANDATE HAS THE TOOL IT NEEDS ===')
 # The rule says "code search is qartez, never Grep on source", and the guard denies Grep on
@@ -152,6 +164,21 @@ for name in ['refuter', 'researcher', 'builder', 'debugger', 'verifier', 'Explor
 shared_txt = open('core/CLAUDE.md', encoding='utf-8').read()
 chk('If you can write' in shared_txt and 'If you cannot' in shared_txt,
     'shared: the FINDINGS.md order is scoped to agents that can actually write')
+_sh = re.sub(r'\s+', ' ', shared_txt)
+chk('denies them on **every** path and file type' in _sh,
+    'shared: says the guard denies Grep/Glob everywhere, not just on source')
+chk('`Read` is *not* guarded, so that rule is yours to keep' in _sh,
+    'shared: admits Read is unenforced, so the agent owns that rule')
+# qartez asserts "very likely not defined in this repo" on any miss. Measured: an identifier
+# inside a function body is found; a constant at module level in the SAME indexed file is not.
+# An agent that repeats qartez's claim turns a blind spot into a false negative.
+chk('module-level code' in _sh and 'never repeat it' in _sh,
+    "shared: names the module-level blind spot and bans repeating qartez absence claims")
+_exx = re.sub(r'\s+', ' ', open('core/agents/Explore.md', encoding='utf-8').read())
+chk('OUT OF INDEX - module-level' in _exx.replace(chr(8212), '-'),
+    'Explore: has a verdict for the module-level blind spot')
+chk('overstates what it checked' in _exx,
+    "Explore: told not to repeat qartez over-claiming absence message")
 
 print()
 print('=== 2c. THE FINDER IS NEVER TOLD TO FILTER ===')
