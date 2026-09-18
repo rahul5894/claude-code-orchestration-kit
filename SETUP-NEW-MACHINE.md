@@ -5,13 +5,26 @@ It takes about 20 minutes. Every step has a check. Do not skip a check.
 
 Last verified: 2026-09-18 on Windows 11, Claude Code 2.1.276, qmd 2.8.3, Python 3.12.10.
 
-**Keep Claude Code current.** `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` turns auto-update
-off as a side effect, so this machine sat on 2.1.270 from 2026-08-27 while 2.1.276 shipped.
-That mattered: **2.1.274 fixed "sub-agents and background agents being reported as failed,
-with their result never delivered"** — the exact symptom of a fan-out where half the agents
-come back empty, reported upstream on this same OS with a trigger around five concurrent
-agents. Run `claude update` by hand, or unset that env var to let it update itself (which
-also re-enables telemetry and feature flags).
+**`claude --version` is not the version your session is running.** Measured 2026-09-18: the
+CLI binary at `~/.local/bin/claude.exe` reported **2.1.270** while the running VS Code
+session's own transcripts recorded **2.1.274** — the editor manages its build separately.
+Read the truth from a transcript, not from the CLI:
+
+```
+python -c "import json;print(json.load(open(r'<transcript>.jsonl'))['version'])"
+```
+
+or the first line of any `~/.claude/projects/*/*/subagents/agent-*.jsonl`. Trusting the CLI
+number sent one upgrade down a wrong diagnosis here.
+
+**Keep Claude Code current anyway.** `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` turns
+auto-update off as a side effect, so the CLI binary sat unchanged from 2026-08-27. Two
+releases in that gap matter to this kit: **2.1.271 added `omitClaudeMd`**, and **2.1.274
+fixed "sub-agents and background agents being reported as failed, with their result never
+delivered"** — the exact symptom of a fan-out where half the agents come back empty,
+reported upstream on this same OS with a trigger around five concurrent agents. Run
+`claude update` by hand, or unset that env var to let it update itself (which also
+re-enables telemetry and feature flags).
 
 ## 1. Prerequisites
 
@@ -262,11 +275,12 @@ Known gaps, on purpose:
   session started.
 - `omitClaudeMd: true` in agent frontmatter launches a subagent without the user, project
   and local `CLAUDE.md` files. It is set on `Explore`, which needs locations and nothing
-  else. Added in Claude Code **2.1.271**, so it was inert while this machine sat on 2.1.270.
-  **Verified working on 2.1.276** (2026-09-18): five `Explore` agents were asked whether
-  their context held the shared orchestration rules and all five answered NO, while still
-  locating their symbol correctly in two tool calls. That saves roughly **2,460 tokens per
-  `Explore` spawn** — the shared block plus the user preamble.
+  else. Added in Claude Code **2.1.271**. **Verified working on 2.1.276** (2026-09-18): five
+  `Explore` agents were asked whether their context held the shared orchestration rules and
+  all five answered NO, while still locating their symbol correctly in two tool calls. That
+  saves roughly **2,460 tokens per `Explore` spawn** — the shared block plus the user
+  preamble. No before-measurement exists, so *when* it started working here is UNVERIFIED;
+  the session was already on 2.1.274, so it was most likely never inert at all.
   The flag only pays off because `Explore` carries its tool rules in `initialPrompt`, which
   survives it. **Never set `omitClaudeMd` on an agent without moving its tool rules there
   first**: an agent that loses "code search is qartez" falls back to guard-denied tools and
