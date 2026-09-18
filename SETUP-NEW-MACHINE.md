@@ -3,7 +3,15 @@
 This page is for you, on a fresh Windows machine. Follow it top to bottom.
 It takes about 20 minutes. Every step has a check. Do not skip a check.
 
-Last verified: 2026-09-16 on Windows 11, Claude Code 2.1.270, qmd 2.8.3, Python 3.12.10.
+Last verified: 2026-09-18 on Windows 11, Claude Code 2.1.276, qmd 2.8.3, Python 3.12.10.
+
+**Keep Claude Code current.** `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` turns auto-update
+off as a side effect, so this machine sat on 2.1.270 from 2026-08-27 while 2.1.276 shipped.
+That mattered: **2.1.274 fixed "sub-agents and background agents being reported as failed,
+with their result never delivered"** — the exact symptom of a fan-out where half the agents
+come back empty, reported upstream on this same OS with a trigger around five concurrent
+agents. Run `claude update` by hand, or unset that env var to let it update itself (which
+also re-enables telemetry and feature flags).
 
 ## 1. Prerequisites
 
@@ -254,10 +262,15 @@ Known gaps, on purpose:
   session started.
 - `omitClaudeMd: true` in agent frontmatter launches a subagent without the user, project
   and local `CLAUDE.md` files. It is set on `Explore`, which needs locations and nothing
-  else. Documented from Claude Code 2.1.271; this machine is on **2.1.270**, so whether it
-  takes effect here is **unverified** — the flag is inert on an older build, never harmful.
-  `Explore` carries the three tool rules in its `initialPrompt` as well, which survives the
-  flag either way.
+  else. Added in Claude Code **2.1.271**, so it was inert while this machine sat on 2.1.270.
+  **Verified working on 2.1.276** (2026-09-18): five `Explore` agents were asked whether
+  their context held the shared orchestration rules and all five answered NO, while still
+  locating their symbol correctly in two tool calls. That saves roughly **2,460 tokens per
+  `Explore` spawn** — the shared block plus the user preamble.
+  The flag only pays off because `Explore` carries its tool rules in `initialPrompt`, which
+  survives it. **Never set `omitClaudeMd` on an agent without moving its tool rules there
+  first**: an agent that loses "code search is qartez" falls back to guard-denied tools and
+  burns more than the file saved.
 
 ## 6. Troubleshooting
 
