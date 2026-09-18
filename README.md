@@ -273,11 +273,12 @@ folder you start in, so starting from a subfolder turns those rules off.
   your main chat's model. So the six agents really are pinned. Pass a model yourself only
   for an agent that is not one of the six. This order needs Claude Code 2.1.251 or newer.
   Older versions put the environment variable first.
-- **`haiku` is an official short name.** So is `fable`. Upstream never puts `fable` on a
-  subagent; this fork puts it on exactly one (debugger), the only subagent that has to
-  reason to a conclusion rather than execute one. A Fable subagent's file reads and
-  command output die with it, while the same work done inline by a Fable main session
-  stays in that context for every later turn.
+- **`haiku` is an official short name.** So is `fable`, and **this fork hard-pins it on
+  nothing.** The `debugger` is `model: inherit`, so hard reasoning follows whichever seat the
+  orchestrator is on — Fable while its quota lasts, Opus after — and Fable running out can
+  never break an agent. A Fable subagent's file reads and command output die with it anyway,
+  while the same work done inline by a Fable main session stays in that context for every
+  later turn.
 - **A tool missing from `tools:` is denied.** The list is "only these". That is why the
   refuter has no Edit or Write. A file with no `tools:` line gets all tools.
 - **Subagents load every CLAUDE.md**: `~/.claude/CLAUDE.md`, the project CLAUDE.md,

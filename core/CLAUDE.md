@@ -3,26 +3,26 @@
 Every session, every project. A repo's own `CLAUDE.md` wins on conflict.
 
 **Every subagent re-pays this file on every spawn, so it holds only what a subagent can act
-on.** The orchestrator's own rules — roster, model pinning, the delegation threshold,
-brief authoring, parallelism, measurement — live in the `orchestrator` output style, which
-subagents never load. Reasons live in `docs/PLAN-2026-09-18.md` and
-`docs/RESEARCH-2026-09-18.md`, which nothing loads at runtime.
+on.** The orchestrator's own rules — roster, model pinning, delegation threshold, briefs,
+parallelism, measurement — live in the `orchestrator` output style, which subagents never
+load. Reasons live in `docs/PLAN-2026-09-18.md` and `docs/RESEARCH-2026-09-18.md`.
 
 ## Tools
 
 - **Code search is qartez.** `Grep`/`Glob` are not in your list: the guard denies them on
   **every** path and file type, even with no index present. `Read` is *not* guarded, so that
-  rule is yours to keep — use it for briefs, markdown, JSON, config; never for source, where
-  `qartez_read` returns the symbol instead of the whole file.
-  Every qartez path is **relative to the project root**; an absolute one is rejected.
-- **qartez sees symbols and their bodies. Nothing else.** Blind to **module-level code**, to
-  **non-code files**, and to anything unindexed. **Judge by the target's shape, not by the
-  result:** a `SCREAMING_SNAKE_CASE` name, env var, config key, flag or string literal is
-  module-level shape, so an empty result there means `OUT OF INDEX — module-level` even in a
-  fully indexed file (verified on `PONYTAIL_SUBAGENT_MATCHER` in `validate_kit.py`). Only a
-  function or class name can ever yield a true `NO MATCHES`. Never repeat qartez's own "not
-  defined in this repo" wording, and never list the files you searched beside an empty
-  result — that implies the same false claim.
+  rule is yours — briefs, markdown, JSON, config only, never source, where `qartez_read`
+  returns the symbol instead of the whole file. Every qartez path is **relative to the
+  project root**; an absolute one is rejected.
+- **qartez indexes symbol definitions and their bodies. Nothing else.** For a literal —
+  constant, env var, flag, message — use `qartez_grep` with `search_bodies=true`, which does
+  reach text inside a function. Blind, however you search, to **module-level code** (even in
+  an indexed file), **non-indexed file types** and an **unindexed tree**. So an empty result
+  proves absence ONLY for a function or class name in a type `qartez_map` reports as indexed:
+  `NO MATCHES` only there, `OUT OF INDEX` everywhere else. **Never name which blind spot hid
+  it** — you cannot tell them apart from outside, and a wrong category sends the follow-up
+  grep at the wrong files (measured wrong on three runs of four). Never repeat qartez's "not
+  defined in this repo" wording, and never list the files you searched beside an empty result.
 - **The web is Firecrawl → Exa → Context7**, never `WebFetch`/`WebSearch`.
 - **Never read a document wholesale.** Anything over ~300 lines is reached through qmd or
   qartez windows. An unbounded doc read is how one step costs 80k tokens and returns no code.
@@ -52,8 +52,8 @@ A bucket is one task's folder: `.claude/scratch/<slug>/` with `STATE.md`, `FINDI
   instead — the orchestrator files it. Never reach for a shell to get around a tool you
   were not given.
 - **Your final message IS your report. Never write `STATE.md` and never write a report
-  file** — the orchestrator owns the snapshot and files your report, because `STATE.md` is
-  replaced rather than appended and two writers lose each other's content.
+  file** — the orchestrator owns the snapshot and files your report; `STATE.md` is replaced
+  rather than appended, so two writers lose each other's content.
 
 ## The gate
 
@@ -70,9 +70,8 @@ suite**, codegen staleness included.
 ## Review: recall and precision are different jobs
 
 - **The finder drops nothing.** Report every candidate you can attach a concrete failure
-  scenario to, at any confidence, and mark your confidence. "No candidates" is a valid,
-  useful verdict. A finder that half-believes something and says nothing is the main way
-  real defects escape.
+  scenario to, at any confidence, and mark it. "No candidates" is a valid, useful verdict. A
+  finder that half-believes something and says nothing is how real defects escape.
 - **The judge decides.** CONFIRMED / PLAUSIBLE / REFUTED, **PLAUSIBLE by default**; REFUTED
   needs the line, constant, guard or spec decision that makes the failure impossible. The
   exclusion list belongs to the judge alone, and it never excludes a correctness finding.
@@ -104,12 +103,11 @@ fewer.
 ## Read-only agents
 
 `disallowedTools: Edit, Write, NotebookEdit` blocks the edit tools only. Some read-only
-agents also hold `Bash`, so a shell write is still mechanically possible — **the prohibition
-in your own file is what stops it**, and a verdict that arrived with a tree change is
-discarded whole. Do not modify the tree by any means: shell redirection, `sed -i` and `tee`
-included.
+agents also hold `Bash`, so a shell write stays mechanically possible — **the prohibition in
+your own file is what stops it**, and a verdict that arrived with a tree change is discarded
+whole. Shell redirection, `sed -i` and `tee` included.
 
 ## Git
 
-Conventional Commits, imperative, <=72 chars, subject only. Commit only when the brief
-authorizes it, and never push.
+Conventional Commits, imperative, <=72 chars, subject only. Commit only when the brief says
+so, and never push.

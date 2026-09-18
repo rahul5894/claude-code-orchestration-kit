@@ -210,7 +210,7 @@ chk('If you can write' in shared_txt and 'If you cannot' in shared_txt,
 _sh = re.sub(r'\s+', ' ', shared_txt)
 chk('denies them on **every** path and file type' in _sh,
     'shared: says the guard denies Grep/Glob everywhere, not just on source')
-chk('`Read` is *not* guarded, so that rule is yours to keep' in _sh,
+chk('`Read` is *not* guarded, so that rule is yours' in _sh,
     'shared: admits Read is unenforced, so the agent owns that rule')
 # qartez asserts "very likely not defined in this repo" on any miss. Measured: an identifier
 # inside a function body is found; a constant at module level in the SAME indexed file is not.
@@ -222,8 +222,11 @@ chk('module-level' in _sh and re.search(r'[Nn]ever repeat', _sh),
 # Live 2026-09-18: Explore knew the rule and still answered "likely external to this repo"
 # for PONYTAIL_SUBAGENT_MATCHER, because nothing told it HOW to recognise a module-level
 # target before running. The shape test is what makes the rule applicable.
-chk('SCREAMING_SNAKE_CASE' in _sh,
-    'shared: gives a shape test for spotting a module-level target up front')
+# The shape test used to pick a CATEGORY, which three live runs out of four got wrong. What
+# the shared file must carry now is the opposite: the two-verdict rule, and the ban on naming
+# the blind spot at all.
+chk('NO MATCHES' in _sh and 'OUT OF INDEX' in _sh and 'Never name which blind spot' in _sh,
+    'shared: two verdicts, and no guessing which blind spot hid the target')
 _exx = re.sub(r'\s+', ' ', open('core/agents/Explore.md', encoding='utf-8').read())
 chk('OUT OF INDEX' in _exx, 'Explore: has an OUT OF INDEX verdict distinct from NO MATCHES')
 chk('SCREAMING_SNAKE_CASE' in _exx, 'Explore: carries the same shape test')
@@ -253,6 +256,14 @@ chk(_eraw.count(VERDICT) >= 3,
 # unfindable" rule would stop the agent searching for something the index holds.
 chk('search_bodies=true' in _exx and 'before concluding anything' in _exx,
     'Explore: told to spend the search_bodies call before declaring OUT OF INDEX')
+# Live smoke test: asked for the PowerShell function `Read-Text`, Explore gave the right
+# verdict and then appended "referenced at verify_live.py:108" - a Python `read_text(` call on
+# an unrelated line, in a file where the string `Read-Text` does not occur at all. A fabricated
+# path:LINE is worse than no answer, because it looks checkable.
+chk('A near-miss is not a match' in _exx,
+    'Explore: warned that a near-miss spelling is not a match')
+chk('Nothing follows an `OUT OF INDEX` line' in _exx,
+    'Explore: nothing may be appended after the OUT OF INDEX verdict')
 _eip = fmx('core/agents/Explore.md')[0].get('initialPrompt', '')
 chk('Never guess WHICH blind spot' in _eip,
     'Explore: initialPrompt agrees with the body (omitClaudeMd makes it the only copy)')
@@ -281,9 +292,19 @@ for f in sorted(glob.glob('core/agents/*.md')):
         for sent in re.split(r'(?<=[.;:!?])\s+|\n\s*\n', txt):
             low = sent.lower()
             for tool in NAMEABLE:
-                if tool in held or not re.search(rf'\b{tool}\b', sent):
+                # `\b` treats a hyphen as a boundary, so `\bRead\b` matched the PowerShell
+                # name `Read-Text` and flagged prose that never mentions the Read tool.
+                # Exclude a hyphen or underscore on either side: those make a different token.
+                m = re.search(rf'(?<![\w-]){tool}(?![\w-])', sent)
+                if tool in held or not m:
                     continue
-                if not any(w in low for w in DENIES):
+                # The negation has to reach THIS tool, so look only at the ~30 characters
+                # BEFORE the name: English puts it there ("no Grep", "the guard denies Grep",
+                # "never run qmd"). Sentence scope exempted every tool in any sentence holding
+                # any negation - "`Read` is not guarded, so use Grep for markdown" cleared
+                # both names on the strength of one "not" - and a symmetric window still did.
+                before = low[max(0, m.start() - 30):m.start()]
+                if not any(w in before for w in DENIES):
                     dead.append(f'{where}: {tool} in {sent.strip()[:60]!r}')
     chk(not dead, f'{os.path.basename(f)}: names no tool it was not given', str(dead[:2]))
 # omitClaudeMd strips the shared tool rules, so the initialPrompt is the compensating move.

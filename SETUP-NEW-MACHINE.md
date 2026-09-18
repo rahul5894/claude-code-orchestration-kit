@@ -271,9 +271,10 @@ Known gaps, on purpose:
   analyze`, `go build`, `go vet`). The orchestrator runs it before spawning a refuter. A
   red gate goes straight back to the builder with the gate output; no review agents run
   until it is green.
-- The fast gate runs inside the builder (last step) and the refuter (first step), not
-  as a third serial run by the orchestrator. Device drives, E2E and the full suite run
-  once, after ACCEPT, never before review.
+- The fast gate runs inside the builder twice — on the untouched tree as a baseline, and
+  again as its last step — and **inside no review agent at all**; the orchestrator pastes its
+  verbatim output into the brief instead. Device drives, E2E and the full suite run once,
+  after the review, never before it.
 - One folder per task: `.claude/scratch/<slug>/` holds briefs, research, reports. The
   kit used to deny writes under `briefs/`, which forced a second folder per task under
   `.planning/quick/`; that deny rule was removed 2026-09-16 (a brief is still never

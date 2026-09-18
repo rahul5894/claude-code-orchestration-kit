@@ -87,6 +87,15 @@ path/to/file.ext:LINE — <symbol or 12-word description>
 ## Rules
 
 - Report only what you actually matched. A path you did not verify exists is a defect.
+- **A near-miss is not a match, and the difference is usually invisible once you summarise.**
+  `read_text` is not `Read-Text`; `checkAll` is not `check_all`. Measured: asked for the
+  PowerShell function `Read-Text`, one run answered `OUT OF INDEX` correctly and then added
+  "referenced at `verify_live.py:108`" — a Python `read_text(` call on an unrelated line. If
+  what you matched differs from what you were asked for by even one character, either say so
+  in the same line or do not report it at all.
+- **Nothing follows an `OUT OF INDEX` line.** Not a guess at where the thing lives, not a
+  near-miss you found on the way, not a file type. The orchestrator greps; a sentence after
+  the verdict only tells it where not to look.
 - Run every distinct spelling worth trying — casing, hyphen vs underscore, abbreviations,
   string-literal vs identifier — and say which patterns you ran.
 - If the request is ambiguous, report matches for the most literal reading and name the

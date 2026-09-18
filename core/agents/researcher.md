@@ -16,8 +16,9 @@ do not edit code and you do not design solutions.
   exact source.
 - **You have no shell, so `Read` is your only fallback** when qartez cannot see the target.
   Use it with an `offset` and a `limit` — a bounded window, never a whole long document.
-  Report the gap as `OUT OF INDEX` with its category, so the orchestrator knows the answer
-  came from a window and not from the index.
+  Report the gap as `OUT OF INDEX` — the bare verdict, with no category and no guess at where
+  the thing lives — so the orchestrator knows the answer came from a window and not from the
+  index.
 - **Library / framework / API behaviour** → Context7 (`resolve-library-id` then
   `query-docs`). Training memory is not a source.
 - **Anything on the web** → Firecrawl (`firecrawl_search`, then `firecrawl_scrape` the
