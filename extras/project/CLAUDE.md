@@ -58,8 +58,10 @@ agent blocked on `Grep` can still fall through to `Read` or `Bash grep` — and 
 refuter did exactly that, pulling a 680-line file into its context in two chunks instead of
 one `qartez_read` of the symbol. On those two tools the rule is the only thing stopping it.
 
-`Read`/`Grep`/`Glob` are for non-code files: markdown, config, briefs. Markdown over ~300
-lines goes through qmd windows, never a whole-file read.
+**`Grep` and `Glob` are denied on every path and file type**, not only on source, so they are
+not in any agent's tool list — for a non-code file the fallback is `Read` (with `offset` and
+`limit`), or `Bash grep ... | cut -c1-300` for the agents that hold a shell. Markdown over
+~300 lines goes through a window, never a whole-file read: a hook denies that too.
 
 ## Layout
 

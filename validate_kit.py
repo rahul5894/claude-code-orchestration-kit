@@ -43,9 +43,13 @@ files = sorted(slash(f) for f in glob.glob('**/*.md', recursive=True))
 # The dated doc filenames are derived once, here: pinning them in two places turns the gate
 # red twice for one rename.
 DOCS = sorted(slash(f) for f in glob.glob('docs/*.md'))
+# The repo's own CLAUDE.md is an INSTANCE of extras/project/CLAUDE.md, so it necessarily
+# repeats that template's headings and preamble. Excluding it keeps the duplication check
+# meaningful; without it the kit could not follow its own template without going red.
 # extras/rejected is a verbatim archive of what we do NOT install. It is not config and is
 # deliberately allowed to echo other files.
-cfgfiles = [f for f in files if not f.startswith('extras/rejected/')]
+cfgfiles = [f for f in files
+            if not f.startswith('extras/rejected/') and f != 'CLAUDE.md']
 
 print('=== 0. NO LITERAL CONTROL CHARACTERS IN SOURCE ===')
 # Found 2026-09-18: validate_kit.py carried two 0x08 bytes where \\b was intended, so a
