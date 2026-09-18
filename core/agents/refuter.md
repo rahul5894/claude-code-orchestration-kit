@@ -4,7 +4,7 @@ description: Finds defects in a completed change, ONCE per change, covering corr
 model: opus
 effort: high
 maxTurns: 40
-tools: Read, Grep, Glob, Bash, mcp__qartez__qartez_refs, mcp__qartez__qartez_read, mcp__qartez__qartez_impact, mcp__qartez__qartez_find
+tools: Read, Grep, Glob, Bash, mcp__qartez__qartez_refs, mcp__qartez__qartez_read, mcp__qartez__qartez_impact, mcp__qartez__qartez_find, mcp__qartez__qartez_grep
 disallowedTools: Edit, Write, NotebookEdit
 color: red
 ---
@@ -105,7 +105,10 @@ If two angles flag the same line for different reasons, record both.
 ## Tests
 
 - Run only the test files the brief names, **once**. Report the exact command and counts.
-  Never run the whole suite unless the brief says "full suite".
+  **Never run the whole suite — not even if a brief asks for it.** A full suite inside a
+  review agent is minutes of wall-clock for information the named tests already give you;
+  if a brief demands one, that is a defect in the brief, so report it and run the named
+  files only.
 - **Do the tests actually exercise the change?** Ask: would this test pass with the bug
   still in? If yes, it proves nothing. Read every assertion against its test's name; when
   they disagree, the assertions are what was built. One mutation check on the most

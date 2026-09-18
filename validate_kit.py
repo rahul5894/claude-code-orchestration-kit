@@ -120,6 +120,47 @@ for name, cap in [('refuter', 40), ('verifier', 20)]:
     chk(str(d.get('maxTurns')) == str(cap), f'{name}: maxTurns == {cap}', str(d.get('maxTurns')))
 
 print()
+print('=== 2b. EVERY MANDATE HAS THE TOOL IT NEEDS ===')
+# The rule says "code search is qartez, never Grep on source", and the guard denies Grep on
+# source. An agent expected to search source therefore needs qartez_grep, or it has no legal
+# way to do it at all. Measured consequence when this was missing: a refuter fell through to
+# `Bash grep` (three agents had nothing whatsoever).
+for name in ['refuter', 'researcher', 'builder', 'debugger', 'verifier', 'Explore']:
+    d, _ = fmx(f'core/agents/{name}.md')
+    t = [x.strip() for x in d.get('tools', '').split(',')]
+    chk(QZ + 'grep' in t,
+        f'{name}: has qartez_grep (Grep is denied on source, so this is its only legal search)',
+        str([x for x in t if 'qartez' in x]))
+
+# An order an agent cannot carry out is worse than no order: it either gets silently skipped
+# or routed through a shell, and a shell write discards the whole verdict.
+shared_txt = open('core/CLAUDE.md', encoding='utf-8').read()
+chk('If you can write' in shared_txt and 'If you cannot' in shared_txt,
+    'shared: the FINDINGS.md order is scoped to agents that can actually write')
+
+print()
+print('=== 2c. THE FINDER IS NEVER TOLD TO FILTER ===')
+# The single highest-confidence defect both A/B arms found: a precision rule sitting in the
+# shared file reached the finder, whose entire mandate is to drop nothing.
+chk('never the finder' in shared_txt,
+    'shared: "do not chase every finding" is scoped away from the finder')
+_rf = open('core/agents/refuter.md', encoding='utf-8').read()
+chk('not even if a brief asks for it' in _rf,
+    'refuter: no full-suite escape hatch, not even via the brief')
+_orch = open('core/output-styles/orchestrator.md', encoding='utf-8').read()
+# Two refuters at the SAME number as the delegation threshold means every delegated change
+# gets two reviewers, and "three agents on the happy path" becomes impossible.
+chk('~15 files or ~800 changed lines' in _orch,
+    'orchestrator: the two-refuter threshold sits above the delegation threshold')
+chk('git status --short` before and after every read-only agent' in _orch,
+    'orchestrator: the git-status write detector exists (a tool list cannot stop a shell write)')
+chk('ACCEPT' not in _orch.split('## Verification order')[-1].split('## Measurement')[0],
+    'orchestrator: no stale ACCEPT vocabulary in the verification order')
+_vf = open('core/agents/verifier.md', encoding='utf-8').read()
+chk('CONFIRMED(conf%)' in _vf,
+    'verifier: the JUDGED contract has a slot for the confidence its skill demands')
+
+print()
 print('=== 3. THE TWO-STAGE REVIEW IS WIRED CORRECTLY ===')
 refd, ref = fmx('core/agents/refuter.md')
 verd, ver = fmx('core/agents/verifier.md')

@@ -37,7 +37,10 @@ A bucket is one task's folder: `.claude/scratch/<slug>/` with `STATE.md`, `FINDI
 
 - **Read `DECISIONS.md` before changing anything.** A change that would reverse a decision
   recorded there means **stop and report**, never re-decide.
-- Append what you find to `FINDINGS.md`, when you find it, one line per entry.
+- **If you can write** (builder), append what you find to `FINDINGS.md` as you find it, one
+  line per entry. **If you cannot** (every read-only agent), put it in your final message
+  instead — the orchestrator files it. Never reach for a shell to get around a tool you
+  were not given.
 - **Your final message IS your report. Never write `STATE.md` and never write a report
   file** — the orchestrator owns the snapshot and files your report, because `STATE.md` is
   replaced rather than appended and two writers lose each other's content.
@@ -64,8 +67,10 @@ suite**, codegen staleness included.
   needs the line, constant, guard or spec decision that makes the failure impossible. The
   exclusion list belongs to the judge alone, and it never excludes a correctness finding.
 - Agents are sent to **refute**, not confirm. Agreement without stated attacks is nothing.
-- **Do not chase every finding.** A reviewer asked to find gaps will report some even when
-  the work is sound; flag what affects correctness or the stated requirements.
+- **Judge and orchestrator only — never the finder:** do not chase every finding. A
+  reviewer asked to find gaps will report some even when the work is sound, so the judge
+  keeps what affects correctness or the stated requirements. **If you are the finder this
+  rule is not yours**: report it and let the judge drop it.
 
 A **security surface** is: anything deciding authorization or entitlement; a server route,
 handler or RPC; a DB read, write or migration; an RLS or access-control policy; auth,

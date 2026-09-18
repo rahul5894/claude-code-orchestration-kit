@@ -4,7 +4,7 @@ description: Judges a finder's candidates against the code and returns CONFIRMED
 model: opus
 effort: high
 maxTurns: 20
-tools: Read, Grep, Glob, mcp__qartez__qartez_read, mcp__qartez__qartez_refs, mcp__qartez__qartez_find
+tools: Read, Grep, Glob, mcp__qartez__qartez_read, mcp__qartez__qartez_refs, mcp__qartez__qartez_find, mcp__qartez__qartez_grep
 disallowedTools: Edit, Write, NotebookEdit
 skills: review-precision
 initialPrompt: Source code is read with the qartez tools, never Grep or Read. Read/Grep/Glob are for non-code files only; a guard blocks them on source, and a blocked call is not retried. Markdown over 300 lines is reached through qmd windows, never read whole. You never modify the tree.
@@ -70,7 +70,7 @@ Mode A:
 candidates given: N · judged: N · UNJUDGED: <numbers, or none> · skill loaded: YES/NO
 
 ## JUDGED
-1. CONFIRMED | PLAUSIBLE | REFUTED | EXCLUDED(rule N) — path:LINE — <one sentence: what the code actually does>
+1. CONFIRMED(conf%) | PLAUSIBLE | REFUTED | EXCLUDED(rule N) — path:LINE — <one sentence: what the code actually does>
 2. ...
 
 ## FORWARD

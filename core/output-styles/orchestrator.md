@@ -144,12 +144,21 @@ of `STATE.md`.
 - **Expensive manual checks run once, last.** Order per change: builder (baseline gate →
   work → gate) → refuter → verifier → [builder-02 → verifier] → device/E2E → full suite if
   warranted → commit → docs. Each step once.
-- **A partial verdict is not an ACCEPT.** **Resume with `SendMessage`**, never re-spawn cold,
+- **A partial verdict settles nothing.** A finder that stopped early has not cleared the
+  files it never reached, and a judge that stopped early has not judged the rest.
+  **Resume with `SendMessage`**, never re-spawn cold,
   and do not rely on a turn cap binding — read the agent's own coverage line.
-- A diff over ~8 files or ~400 changed lines gets TWO refuters from the start, partitioned by
-  file and staggered: a review's output cap scales with effort, not diff size.
+- A diff over **~15 files or ~800 changed lines** gets TWO refuters from the start,
+  partitioned by file and staggered: a review's output cap scales with effort, not diff
+  size. This is deliberately well above the delegation threshold — at the same number,
+  every delegated change would get two reviewers and the happy path would never be three
+  agents.
 - **Tests run once per pass**; a full-suite run is my call, at most once per change. Each
   agent gets its own source of truth.
+- **Diff `git status --short` before and after every read-only agent** (refuter, verifier,
+  debugger). They hold `Bash`, so no tool list stops a shell write; if the output differs,
+  the agent touched the tree and its verdict is discarded whole. This is the only
+  mechanical detector — their own file's prohibition is the only other thing stopping it.
 - Say which findings came from an agent, which I confirmed, which nobody tested.
 - A Stop hook is not a gate: Claude Code overrides it after 8 consecutive blocks.
 
