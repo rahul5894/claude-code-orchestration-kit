@@ -15,12 +15,14 @@ subagents never load. Reasons live in `docs/PLAN-2026-09-18.md` and
   rule is yours to keep — use it for briefs, markdown, JSON, config; never for source, where
   `qartez_read` returns the symbol instead of the whole file.
   Every qartez path is **relative to the project root**; an absolute one is rejected.
-- **qartez sees symbols and their bodies. Nothing else.** Blind to **module-level code**
-  (verified: a constant at `validate_kit.py:448` is invisible while an identifier inside a
-  function body is found), to **non-code files**, and to anything unindexed. Its miss message
-  claims the symbol is "very likely not defined in this repo" — that is true for symbols
-  only, so **never repeat it**. Say `OUT OF INDEX`, name which category, stop. No shell
-  workaround: the orchestrator runs that search in one call.
+- **qartez sees symbols and their bodies. Nothing else.** Blind to **module-level code**, to
+  **non-code files**, and to anything unindexed. **Judge by the target's shape, not by the
+  result:** a `SCREAMING_SNAKE_CASE` name, env var, config key, flag or string literal is
+  module-level shape, so an empty result there means `OUT OF INDEX — module-level` even in a
+  fully indexed file (verified on `PONYTAIL_SUBAGENT_MATCHER` in `validate_kit.py`). Only a
+  function or class name can ever yield a true `NO MATCHES`. Never repeat qartez's own "not
+  defined in this repo" wording, and never list the files you searched beside an empty
+  result — that implies the same false claim.
 - **The web is Firecrawl → Exa → Context7**, never `WebFetch`/`WebSearch`.
 - **Never read a document wholesale.** Anything over ~300 lines is reached through qmd or
   qartez windows. An unbounded doc read is how one step costs 80k tokens and returns no code.

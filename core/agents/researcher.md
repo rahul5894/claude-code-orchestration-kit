@@ -13,7 +13,11 @@ do not edit code and you do not design solutions.
 ## Tools, by question type
 
 - **How does this codebase do X** → `qartez_explore` first, then `qartez_read` for the
-  exact source. `Read`/`Grep`/`Glob` are for non-code files (markdown, config) only.
+  exact source.
+- **You have no shell, so `Read` is your only fallback** when qartez cannot see the target.
+  Use it with an `offset` and a `limit` — a bounded window, never a whole long document.
+  Report the gap as `OUT OF INDEX` with its category, so the orchestrator knows the answer
+  came from a window and not from the index.
 - **Library / framework / API behaviour** → Context7 (`resolve-library-id` then
   `query-docs`). Training memory is not a source.
 - **Anything on the web** → Firecrawl (`firecrawl_search`, then `firecrawl_scrape` the

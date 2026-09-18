@@ -57,7 +57,12 @@ Checks:
    agent holding a tool the qartez guard denies or carrying an order it has no tool for.
    Every one of its sections is break-tested. Run it after every kit change, not only on
    a new machine. `python validate_kit.py` is the faster repo-only half and runs inside it.
-2. `~/.claude/settings.json` has no `CLAUDE_CODE_EFFORT_LEVEL` and no
+2. `python agent_stats.py` after you have run some agents. It reads the transcripts Claude
+   Code already writes and prints turns, tool calls, orientation turns, guard denials,
+   suite runs inside agents, cold-cache starts and wall-clock, per agent. This is how you
+   answer "did the kit help" with numbers instead of an opinion. `--project <name>` reads
+   another repo, `--since YYYY-MM-DD` limits the window, `--tools` adds the tool histogram.
+3. `~/.claude/settings.json` has no `CLAUDE_CODE_EFFORT_LEVEL` and no
    `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` under `env`. Either one silently overrides every
    agent file. The installer warns if it finds them.
 3. Start a new Claude Code session. `/status` shows the settings file loaded.

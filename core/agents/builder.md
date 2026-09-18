@@ -35,9 +35,10 @@ the repository for it.
 
 ## Tools
 
-- Source is read through `qartez_read`/`qartez_find`/`qartez_refs`, not `Read`/`Grep`.
-  `Read`/`Grep`/`Glob` are for non-code files. A guard-blocked call is not retried; use the
-  qartez tool it names.
+- Source is read through `qartez_read`/`qartez_find`/`qartez_refs`, never `Read`.
+- **Your fallback for everything qartez cannot see is `Bash grep`** — non-code files,
+  module-level code, an unindexed tree. You hold `Bash`, so an `OUT OF INDEX` answer is
+  never where you stop; it is where you switch tool.
 - Respect the brief's tool-call budget. If you are well past it, you are solving a
   different problem than the one briefed — stop and report.
 

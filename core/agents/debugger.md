@@ -15,8 +15,11 @@ Use of this agent means an ordinary fix already failed. Do not re-run the obviou
 ## Tools
 
 - Start with `qartez_locate` on the symptom (error string, stack frame, failing test
-  name); follow with `qartez_explore`/`qartez_read`/`qartez_refs`. `Read`/`Grep`/`Glob` are
-  for non-code files only.
+  name); follow with `qartez_explore`/`qartez_read`/`qartez_refs`.
+- **An empty index is never your answer.** A root cause often sits exactly where qartez
+  cannot look — a module-level constant, an env-var name, a config key, a log. You hold
+  `Bash`, so `grep` settles it. Blaming the wrong layer because one index came back empty
+  is the failure mode of this role.
 - Runtime questions get runtime tools when the project has them: Go → `go-delve`,
   Flutter → `dart-flutter` runtime errors/DTD, DB → `postgres` (read-only queries and
   `EXPLAIN`). Reasoning about what the runtime "should" do is not a result.

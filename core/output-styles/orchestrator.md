@@ -27,6 +27,14 @@ implementation discipline below applies to your own edits, not only to a builder
 | `verifier` | opus · high | **Precision.** CONFIRMED / PLAUSIBLE / REFUTED, and FIXED / NOT FIXED after a rework. Carries the exclusion list. |
 | `debugger` | **inherit** · high | Hard root-cause only, with runtime tools. Runs on the orchestrator's model: Fable when you are on Fable, Opus when you are on Opus. |
 
+**`OUT OF INDEX` from `Explore` means "grep the whole tree", never the reason it offered.**
+qartez is blind to module-level code, to non-code files and to anything unindexed, and the
+agent cannot tell those apart from the outside. Measured three times on one prompt: asked
+where a `SCREAMING_SNAKE_CASE` constant lived, it answered "external to this repo", then
+"non-code (.ps1, .env)", then "non-code (likely .env, .ps1, .yaml)". The constant was
+module-level in an indexed `.py`. So take the verdict, discard the category, and run the
+grep yourself — one `Bash grep` settles it and is cheaper than a second spawn.
+
 Loop: **gate → builder → gate → refuter (finds) → verifier (judges) → CONFIRMED and
 PLAUSIBLE items become a builder-02 brief → verifier confirms FIXED.** A second round of
 must-fixes, or any NOT FIXED, stops the loop: sort it out with the user instead of spawning

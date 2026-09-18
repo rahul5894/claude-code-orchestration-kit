@@ -172,13 +172,70 @@ chk('`Read` is *not* guarded, so that rule is yours to keep' in _sh,
 # qartez asserts "very likely not defined in this repo" on any miss. Measured: an identifier
 # inside a function body is found; a constant at module level in the SAME indexed file is not.
 # An agent that repeats qartez's claim turns a blind spot into a false negative.
-chk('module-level code' in _sh and 'never repeat it' in _sh,
+# Matched on meaning, not on one sentence: an earlier version pinned the exact wording and
+# went red on a rewrite that said the same thing better.
+chk('module-level' in _sh and re.search(r'[Nn]ever repeat', _sh),
     "shared: names the module-level blind spot and bans repeating qartez absence claims")
+# Live 2026-09-18: Explore knew the rule and still answered "likely external to this repo"
+# for PONYTAIL_SUBAGENT_MATCHER, because nothing told it HOW to recognise a module-level
+# target before running. The shape test is what makes the rule applicable.
+chk('SCREAMING_SNAKE_CASE' in _sh,
+    'shared: gives a shape test for spotting a module-level target up front')
 _exx = re.sub(r'\s+', ' ', open('core/agents/Explore.md', encoding='utf-8').read())
-chk('OUT OF INDEX - module-level' in _exx.replace(chr(8212), '-'),
-    'Explore: has a verdict for the module-level blind spot')
-chk('overstates what it checked' in _exx,
+chk('OUT OF INDEX' in _exx, 'Explore: has an OUT OF INDEX verdict distinct from NO MATCHES')
+chk('SCREAMING_SNAKE_CASE' in _exx, 'Explore: carries the same shape test')
+chk(re.search(r'not defined in this repo|overstates what it checked', _exx),
     "Explore: told not to repeat qartez over-claiming absence message")
+# Measured twice on the same prompt: forced to name WHICH blind spot hid the target, Explore
+# guessed "external to this repo", then "non-code (.ps1, .env)". Both wrong - it is
+# module-level in an indexed .py. A category it cannot verify points the follow-up grep at
+# the wrong files, so the contract must forbid the guess rather than demand it.
+chk('Do not guess WHICH blind spot' in _exx,
+    'Explore: forbidden from guessing which blind spot hid the target')
+chk('Do not append a category' in _exx,
+    'Explore: output contract does not ask for a category it cannot verify')
+_eip = fmx('core/agents/Explore.md')[0].get('initialPrompt', '')
+chk('Never guess WHICH blind spot' in _eip,
+    'Explore: initialPrompt agrees with the body (omitClaudeMd makes it the only copy)')
+
+print()
+print('=== 2bb. NO AGENT IS TOLD TO USE A TOOL IT DOES NOT HOLD ===')
+# Found 2026-09-18 by auditing text against tool lists: four agents still carried
+# "`Read`/`Grep`/`Glob` are for non-code files" after Grep and Glob were removed from their
+# lists. Explore was the dangerous one - it runs omitClaudeMd, so its initialPrompt is the
+# only tool rule it ever sees, and that prompt named two tools the guard denies everywhere.
+# An agent that follows a dead instruction burns a turn and learns its search "failed".
+NAMEABLE = ['Read', 'Write', 'Edit', 'NotebookEdit', 'Grep', 'Glob', 'Bash',
+            'WebFetch', 'WebSearch']
+# A sentence that DENIES the tool is the correct text and must stay legal.
+DENIES = ('no ', 'not ', 'never', "n't", 'cannot', 'without', 'instead of', 'denies',
+          'denied', 'blocks', 'blocked', 'forbid', 'rather than', 'unavailable',
+          'removed', 'lack')
+for f in sorted(glob.glob('core/agents/*.md')):
+    d, s = fmx(f)
+    held = {t.strip() for t in d.get('tools', '').split(',')}
+    body = s.split('\n---', 1)[1] if '\n---' in s else s
+    dead = []
+    for where, txt in (('initialPrompt', d.get('initialPrompt', '')), ('body', body)):
+        # Sentence-scoped, not window-scoped: a negation in the PREVIOUS sentence does not
+        # make the next sentence's instruction true. That is how the builder's line survived.
+        for sent in re.split(r'(?<=[.;:!?])\s+|\n\s*\n', txt):
+            low = sent.lower()
+            for tool in NAMEABLE:
+                if tool in held or not re.search(rf'\b{tool}\b', sent):
+                    continue
+                if not any(w in low for w in DENIES):
+                    dead.append(f'{where}: {tool} in {sent.strip()[:60]!r}')
+    chk(not dead, f'{os.path.basename(f)}: names no tool it was not given', str(dead[:2]))
+# omitClaudeMd strips the shared tool rules, so the initialPrompt is the compensating move.
+# Without it the agent loses "code search is qartez" and falls back to guard-denied tools.
+for f in sorted(glob.glob('core/agents/*.md')):
+    d, _ = fmx(f)
+    if d.get('omitClaudeMd') == 'true':
+        ip = d.get('initialPrompt', '')
+        chk('qartez' in ip and len(ip) > 200,
+            f'{os.path.basename(f)}: omitClaudeMd, so initialPrompt carries the tool rules',
+            f'{len(ip)} chars')
 
 print()
 print('=== 2c. THE FINDER IS NEVER TOLD TO FILTER ===')
@@ -622,9 +679,12 @@ if two and thr:
 
 # verify_live.py covers what this file structurally cannot (the installed tree). A setup doc
 # that does not send the reader to it leaves a stale install undetectable.
-chk(os.path.isfile('verify_live.py'), 'verify_live.py exists')
-chk('verify_live.py' in open('SETUP-NEW-MACHINE.md', encoding='utf-8').read(),
-    'SETUP-NEW-MACHINE.md tells the reader to run verify_live.py')
+_setup = open('SETUP-NEW-MACHINE.md', encoding='utf-8').read()
+for script, why in [
+        ('verify_live.py', 'checks the installed tree, which this file cannot see'),
+        ('agent_stats.py', 'turns the scoreboard into numbers read off the transcripts')]:
+    chk(os.path.isfile(script), f'{script} exists ({why})')
+    chk(script in _setup, f'SETUP-NEW-MACHINE.md tells the reader to run {script}')
 
 print()
 # Most sections are glob-driven: one that yields nothing contributes zero checks and still
