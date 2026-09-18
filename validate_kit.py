@@ -424,6 +424,14 @@ chk('FAST GATE' in tmpl and 'no test suite' in tmpl,
 chk('full test suite is what a refuter reruns' not in tmpl,
     'project template does NOT tell the reviewer to rerun the full suite')
 chk('Measured' in tmpl, 'project template asks for the gate time to be measured')
+# Each of these is a lesson a real run paid for. If a future edit drops one, a new project
+# silently loses it, and the next agent repeats the same mistake.
+for frag, why in [
+        ('Agents never run these', 'names the commands agents must not run'),
+        ('Security surfaces in THIS repo', 'asks the project to name its own security surfaces'),
+        ('it does not cover', 'warns that the qartez guard misses Read and Bash'),
+        ('Past defects', 'keeps a past-defects table the reviewer reads')]:
+    chk(frag in tmpl, f'project template {why}')
 bld = open('core/agents/builder.md', encoding='utf-8').read()
 chk('Never run the whole test suite' in bld, 'builder: forbidden from running the full suite')
 for p in DOCS + ['extras/rejected/README.md', 'extras/prideconnect-section.md']:

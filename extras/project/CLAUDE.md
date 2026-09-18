@@ -1,38 +1,65 @@
 # <PROJECT NAME> — working rules
 
-Repo-specific rules only. General orchestration, model routing, agent roster, brief
-format and reporting rules live in `~/.claude/CLAUDE.md` and apply here too.
+Repo-specific rules only. The orchestration loop, model routing, agent roster, brief format
+and reporting rules live in `~/.claude/CLAUDE.md` and the `orchestrator` output style, and
+apply here too.
 
-Keep this file about **this codebase**: how to build it, how to test it, what is
-dangerous in it, and what it has already got wrong.
+Keep this file about **this codebase**: how to check it, how to build it, what is dangerous
+in it, and what it has already got wrong. Every line is re-paid by every subagent on every
+spawn, so a line that would not change what Claude does is a line to delete.
 
 ---
 
-## Commands
+## Commands — the gate agents run, and the ones they must not
 
-Fill these in. Agents run exactly what is written here, so a wrong command becomes a
-false pass.
-
-| Purpose | Command | Measured time |
+| Purpose | Command | Measured |
 |---|---|---|
-| **FAST GATE** (the one agents run) | `<...>` | `<seconds — measure it, do not guess>` |
-| Full test suite (**I run this, not agents**) | `<...>` | `<...>` |
+| **FAST GATE — agents run this** | `<...>` | `<seconds — measure it, never guess>` |
+| Full test suite (**I run this**) | `<...>` | `<...>` |
 | Single test file | `<...>` | |
-| Install | `<...>` | |
-| Build | `<...>` | |
-| Lint / format · Type check | `<...>` | |
+| Auto-fix lint | `<...>` | |
+| Install · Build | `<...>` | |
 
-**The FAST GATE is the single most important line in this file.** It must be diff-scoped,
+**The FAST GATE line is the most important line in this file.** It must be diff-scoped,
 **under ~60 seconds**, and contain **no test suite** — compile, analyzer, lint, type check,
-secret scan, codegen staleness. Measure it once and write the real number above. If this
-line is missing or wrong, an agent will invent a gate, and it will pick the slowest command
-it can find: one measured builder ran the full `pytest` suite **twice at 159 s each**, 5.3
-minutes of a 17.8-minute run, purely because no fast gate was named here.
+secret scan, codegen staleness. Measure it once and write the real number.
 
-- **The full test suite is mine to run, not an agent's.** It runs once, at the end, when I
-  say so. A builder runs only the test files its brief names; a review agent runs nothing.
-- If a command needs credentials or network an agent does not have, say so here and name
-  what the agent should report instead of a pass.
+If this line is missing, an agent invents a gate and picks the slowest command it can find.
+Measured: one builder ran the full `pytest` suite **twice at 159 s each** — 5.3 minutes of a
+17.8-minute run — purely because no fast gate was named here, while the project's own
+`--fast` gate took **7.7 s**.
+
+### Agents never run these
+
+- **The full test suite.** Mine to run, once, at the end, when I ask. A builder runs only the
+  test files its brief names; a review agent runs no checks at all — the gate's output is
+  pasted into its brief.
+- `<any DB advisor, migration, seed, deploy, or long-running audit command>` — name them here.
+  Anything over ~60 s belongs on this list.
+- If a command needs credentials or network an agent does not have, say so and name what the
+  agent must report instead of a pass.
+
+## Security surfaces in THIS repo
+
+`~/.claude/CLAUDE.md` defines the general list. Name the concrete files and paths here, so a
+reviewer does not have to guess. A change touching any of these is reviewed at once, never
+batched.
+
+- `<path>` — <auth / entitlement / RLS / upload / secrets / client-decidable rule>
+- `<...>`
+
+## Code navigation — the rule the guard does not enforce
+
+Source is read and searched with **qartez**, never `Grep`/`Glob`/`Read` on code.
+
+`qartez-guard` denies `Grep`, `Glob`, `Edit` and `Write` on source, **but it does not cover
+`Read` or `Bash`** (verified: a `Read` on a `.py` file returns nothing from the guard). So an
+agent blocked on `Grep` can still fall through to `Read` or `Bash grep` — and one measured
+refuter did exactly that, pulling a 680-line file into its context in two chunks instead of
+one `qartez_read` of the symbol. On those two tools the rule is the only thing stopping it.
+
+`Read`/`Grep`/`Glob` are for non-code files: markdown, config, briefs. Markdown over ~300
+lines goes through qmd windows, never a whole-file read.
 
 ## Layout
 
@@ -41,7 +68,7 @@ minutes of a 17.8-minute run, purely because no fast gate was named here.
 <dir>/     <one line>
 ```
 
-Name the three or four files most changes touch, so scouts start in the right place.
+Name the three or four files most changes touch, so a locate agent starts in the right place.
 
 ## Conventions
 
@@ -58,42 +85,38 @@ The things in this repo that cause real damage. One line each, direct.
 
 ## Authorization
 
-- I authorize: deploys, production writes, migrations, anything touching a live system.
-  An agent that believes it needs one of these **stops and reports**.
+I authorize deploys, production writes, migrations, and anything touching a live system. An
+agent that believes it needs one of these **stops and reports**.
 
 ## Task buckets
 
-Multi-agent work in this repo uses buckets under `.claude/scratch/<slug>/`, opened by
-Claude when a new task starts, or by `/task <sentence>`. Buckets are git-ignored; nothing operational, no credentials
+Multi-agent work uses buckets under `.claude/scratch/<slug>/`, opened by Claude when a task
+starts or by `/task <sentence>`. Buckets are gitignored; nothing operational, no credentials
 and no production data goes in them, or in any tracked doc.
 
 ## Handoff
 
-`docs/HANDOFF.md` (create it if it does not exist) is the current session state — **read
-it at session start and verify it before relying on it.** Check its recorded branch, HEAD and dirty-tree state against the
-repo, and spot-check the claims you are about to act on. Where the handoff and the repo
-disagree, **the repo is right**: correct the handoff and say plainly that you corrected it.
+`docs/HANDOFF.md` is the current session state — **read it at session start and verify it
+before relying on it.** Check its recorded branch, HEAD and dirty-tree state against the repo.
+Where the handoff and the repo disagree, **the repo is right**: correct the handoff and say
+plainly that you corrected it. Replace stale state; never append a session log. Under ~100
+lines.
 
-Replace stale state; do not append a session log. Keep it under ~100 lines — a handoff
-nobody finishes reading is a handoff nobody reads.
-
-Record: timestamp, branch, exact HEAD, dirty-tree state, current objective, material
-changes, verification that actually ran with its real numbers, checks that did not run or
-failed, unresolved decisions, known risks, the recommended next action, and what needs a
-human.
+Record: timestamp, branch, exact HEAD, dirty-tree state, current objective, material changes,
+verification that actually ran with its real numbers, checks that did not run or failed,
+unresolved decisions, known risks, the recommended next action, and what needs a human.
 
 ## Backlog
 
-Before ending any response, every newly identified later action, deferred fix,
-investigation or dependency goes in `docs/BACKLOG.md` (create it if it does not exist).
-Update the existing entry rather
-than duplicating it. A chat message is not a record. Confirm to me that it was recorded;
-if recording failed, say that instead of claiming it is saved.
+Every newly identified later action, deferred fix, investigation or dependency goes in
+`docs/BACKLOG.md` before the response ends. Update the existing entry rather than duplicating
+it. A chat message is not a record. Confirm it was written; if writing failed, say so instead
+of claiming it is saved.
 
 ## Past defects — what this repo has already got wrong
 
-Every entry is a rule added after a real defect, not a principle someone liked. Add to it whenever
-a defect escapes review; the refuter reads this list.
+Every entry is a rule added after a real defect, not a principle someone liked. Add to it
+whenever a defect escapes review; the reviewer reads this list.
 
 | # | Defect | Rule it earned |
 |---|---|---|

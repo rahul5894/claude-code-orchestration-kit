@@ -77,6 +77,31 @@ Two entries are machine-specific and will not resolve until their paths exist: `
 (`d:/Projects/my-scraper-project/tools/emclient_mcp.py`). Remove them from `.mcp.json` on a
 machine that does not have those, or the servers show as failed to connect.
 
+## 2c. A new project: the four things that matter
+
+Copy the template and fill it in. Everything else in the kit is already global.
+
+```bash
+cp extras/project/CLAUDE.md             <repo>/CLAUDE.md
+cp extras/project/.claude/settings.json <repo>/.claude/settings.json
+cat extras/project/.gitignore-snippet  >> <repo>/.gitignore
+qmd collection add <repo>/docs --name <repo-name>
+```
+
+Then fill four things in `<repo>/CLAUDE.md`, in this order. Nothing else is urgent.
+
+1. **The FAST GATE row.** Run the command, time it, write the real number. Diff-scoped,
+   under ~60 s, no test suite. This one line is what stops an agent inventing a gate and
+   running your whole test suite instead.
+2. **"Agents never run these".** The full suite, plus every DB advisor, migration, seed,
+   deploy or audit command over ~60 s. Name them explicitly.
+3. **Security surfaces in THIS repo.** Concrete paths. A change touching one is reviewed at
+   once and never batched, so a vague list means either missed reviews or pointless ones.
+4. **The Layout block.** The three or four files most changes touch.
+
+The rest — Danger list, Past defects, Handoff, Backlog — fills itself in as the project
+teaches you. Leave the placeholders until then.
+
 ## 3. qmd (local markdown search)
 
 qmd is the search engine that keeps big markdown docs out of the context window. It
