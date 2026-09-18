@@ -71,6 +71,12 @@ for p in sorted(glob.glob('core/agents/*.md')):
     tools = [t.strip() for t in d.get('tools', '').split(',')]
     ok('Grep' not in tools and 'Glob' not in tools, f"{os.path.basename(p)}: no dead Grep/Glob")
 
+# Install first, so the sections below judge the kit rather than an out-of-date copy of it.
+# Section F then runs the installer again: only a SECOND run can prove idempotency, because
+# the first legitimately reports "replaced" whenever the repo moved since the last install.
+first_install = subprocess.run(['pwsh', '-File', 'install.ps1'], capture_output=True, text=True)
+ok(first_install.returncode == 0, 'install.ps1 exits 0', first_install.stderr.strip()[:200])
+
 print("\n=== C. installed == repo ===")
 pairs = [(p, HOME / 'agents' / os.path.basename(p)) for p in glob.glob('core/agents/*.md')]
 pairs += [(p, HOME / 'commands' / os.path.basename(p)) for p in glob.glob('core/commands/*.md')]
@@ -111,6 +117,8 @@ ok(r.returncode == 0, f"validate_kit.py exits 0 -- {tally[-1] if tally else 'no 
    r.stdout.strip().splitlines()[-3:])
 # The installer must report what it actually did. It compared raw text against an
 # LF-normalized file once, so it rewrote the block every run and "replaced" meant nothing.
+# This is the run AFTER the one at the top of this script, so it is the one that can prove
+# idempotency: a tree already installed must report unchanged.
 r2 = subprocess.run(['pwsh', '-File', 'install.ps1'], capture_output=True, text=True)
 said = [l for l in r2.stdout.splitlines() if 'unchanged' in l or 'kit block' in l or 'settings.json' in l]
 ok(r2.returncode == 0 and sum('unchanged' in l for l in said) == 2,

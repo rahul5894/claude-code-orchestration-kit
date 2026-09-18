@@ -14,6 +14,7 @@ subagents never load. Reasons live in `docs/PLAN-2026-09-18.md` and
   **every** path and file type, even with no index present. `Read` is *not* guarded, so that
   rule is yours to keep — use it for briefs, markdown, JSON, config; never for source, where
   `qartez_read` returns the symbol instead of the whole file.
+  Every qartez path is **relative to the project root**; an absolute one is rejected.
 - **qartez sees symbols and their bodies. Nothing else.** Blind to **module-level code**
   (verified: a constant at `validate_kit.py:448` is invisible while an identifier inside a
   function body is found), to **non-code files**, and to anything unindexed. Its miss message
