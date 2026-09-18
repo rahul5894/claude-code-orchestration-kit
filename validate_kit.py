@@ -362,6 +362,13 @@ chk(env.get('CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH') == '1', 'env: spawn depth 1'
 chk(env.get('CLAUDE_CODE_SUBAGENT_MODEL') == 'opus', 'env: off-roster subagent model opus')
 chk(env.get('CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS') == '0',
     'env: agent teams pinned off (a named subagent would become a ~7x-token teammate)')
+# The ponytail plugin's own SubagentStart hook has no matcher, so unscoped it injects ~1,347
+# tokens into EVERY spawn. It earns that in an agent that writes or diagnoses code; a finder
+# and a judge write none. The main session keeps it in full - SessionStart ignores this var.
+pm = env.get('PONYTAIL_SUBAGENT_MATCHER', '')
+chk(pm and all(a in pm for a in ('builder', 'debugger'))
+    and not any(a in pm for a in ('refuter', 'verifier', 'Explore', 'researcher')),
+    'env: ponytail scoped to the agents that touch code', repr(pm))
 chk('CLAUDE_CODE_EFFORT_LEVEL' not in env,
     'env: CLAUDE_CODE_EFFORT_LEVEL absent (would override frontmatter effort)')
 chk('CLAUDE_CODE_SUBAGENT_MODEL_FORCE' not in env, 'env: _FORCE absent (would erase model pins)')
