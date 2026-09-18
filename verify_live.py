@@ -6,8 +6,11 @@
 a stale install, a settings key the merge dropped, a roster row that drifted from the
 agent file, an instruction no agent can carry out with the tools it holds.
 
-Run it after `install.ps1`, and after any change to an agent file or to the installer.
-It writes nothing except through `install.ps1`, which it runs once to prove idempotency.
+Run it after any change to an agent file or to the installer. It writes nothing of its own,
+but it does run `install.ps1` **twice**: once up front so the sections below judge the kit
+rather than a stale copy of it, and once at the end, because only a second run can show the
+installer reporting "unchanged". Budget for that: on a machine that already had a
+`settings.json`, the first run may leave one `.bak-kit-*` file.
 
     python verify_live.py        # exits 0 on ALL CLEAR, 1 otherwise
 """
@@ -47,6 +50,17 @@ def norm(s):
     return s.replace('\r\n', '\n')
 
 
+def install():
+    """Run the installer. A machine with only Windows PowerShell 5.1 has no `pwsh`, and the
+    resulting FileNotFoundError used to end the whole script with a traceback and no section
+    list - on exactly the fresh machine this file exists to check."""
+    try:
+        return subprocess.run(['pwsh', '-File', 'install.ps1'], capture_output=True, text=True)
+    except OSError as e:
+        ok(False, 'pwsh (PowerShell 7+) is on PATH to run install.ps1', str(e))
+        return subprocess.CompletedProcess([], 1, '', str(e))
+
+
 print("=== A. every instruction is executable with the tools the agent holds ===")
 # An order to run a CLI, or to read git, is dead text in an agent with no shell. Both have
 # shipped before. A nearby disclaimer ("you have no shell, so you cannot run qmd") is fine.
@@ -71,25 +85,49 @@ for p in sorted(glob.glob('core/agents/*.md')):
     tools = [t.strip() for t in d.get('tools', '').split(',')]
     ok('Grep' not in tools and 'Glob' not in tools, f"{os.path.basename(p)}: no dead Grep/Glob")
 
-# Install first, so the sections below judge the kit rather than an out-of-date copy of it.
-# Section F then runs the installer again: only a SECOND run can prove idempotency, because
-# the first legitimately reports "replaced" whenever the repo moved since the last install.
-first_install = subprocess.run(['pwsh', '-File', 'install.ps1'], capture_output=True, text=True)
-ok(first_install.returncode == 0, 'install.ps1 exits 0', first_install.stderr.strip()[:200])
-
-print("\n=== C. installed == repo ===")
 pairs = [(p, HOME / 'agents' / os.path.basename(p)) for p in glob.glob('core/agents/*.md')]
 pairs += [(p, HOME / 'commands' / os.path.basename(p)) for p in glob.glob('core/commands/*.md')]
 pairs += [(p, HOME / 'output-styles' / os.path.basename(p))
           for p in glob.glob('core/output-styles/*.md')]
 pairs += [(p, HOME / 'skills' / pathlib.Path(p).parent.name / 'SKILL.md')
           for p in glob.glob('core/skills/*/SKILL.md')]
-stale = [str(dst) for src, dst in pairs
-         if not dst.exists() or norm(pathlib.Path(src).read_text(encoding='utf-8')) != norm(dst.read_text(encoding='utf-8'))]
-ok(not stale, f"all {len(pairs)} installed files byte-identical to repo", stale[:3])
+
+
+def drifted():
+    return [dst.name for src, dst in pairs
+            if not dst.exists()
+            or norm(pathlib.Path(src).read_text(encoding='utf-8')) != norm(
+                dst.read_text(encoding='utf-8'))]
+
+
+# Snapshot BEFORE installing. Taken afterwards, this check could only ever prove the copy
+# succeeded - it would repair a three-version-old install and then report "no stale install",
+# which is the one thing it exists to tell you about.
+was_stale = drifted()
+
+# Install now, so every section below judges the kit rather than an out-of-date copy of it.
+# Section F then runs the installer again: only a SECOND run can prove idempotency, because
+# the first legitimately reports "replaced" whenever the repo moved since the last install.
+first_install = install()
+ok(first_install.returncode == 0, 'install.ps1 exits 0', first_install.stderr.strip()[:200])
+
+print("\n=== C. installed == repo ===")
+if was_stale:
+    print(f"  NOTE  {len(was_stale)} file(s) were stale before this run and have been "
+          f"reinstalled: {', '.join(was_stale[:4])}"
+          + (f" (+{len(was_stale) - 4} more)" if len(was_stale) > 4 else ''))
+ok(not drifted(), f"all {len(pairs)} installed files byte-identical to repo after install",
+   str(drifted()[:3]))
 
 print("\n=== D. settings live ===")
-s = json.loads((HOME / 'settings.json').read_text(encoding='utf-8'))
+# A missing or hand-broken settings.json is a FAILED CHECK, not a traceback: the setup doc
+# tells a fresh-machine reader this script prints ALL CLEAR or names what is wrong, and a
+# stack trace names nothing and skips every section after it.
+try:
+    s = json.loads((HOME / 'settings.json').read_text(encoding='utf-8'))
+except (OSError, ValueError) as e:
+    s = {}
+    ok(False, 'settings.json exists and parses', f'{type(e).__name__}: {e}')
 for label, got, want in [
         ('outputStyle', s.get('outputStyle'), 'orchestrator'),
         ('fable effort', s.get('modelSettings', {}).get('claude-fable-5-1', {}).get('effortLevel'), 'high'),
@@ -98,8 +136,12 @@ for label, got, want in [
         ('agent teams off', s.get('env', {}).get('CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS'), '0'),
         ('spawn depth', s.get('env', {}).get('CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH'), '1')]:
     ok(got == want, f"{label} = {want}", str(got))
-# maxEffortLevel caps every frontmatter pin with no per-agent error.
-ok('maxEffortLevel' not in s, 'no maxEffortLevel silently capping the pins')
+# maxEffortLevel caps every frontmatter pin with no per-agent error. Checking only the top
+# level missed it nested under a model, which is exactly where it would be set.
+_caps = (['(top level)'] if 'maxEffortLevel' in s else []) + [
+    f'modelSettings.{k}' for k, v in (s.get('modelSettings') or {}).items()
+    if isinstance(v, dict) and 'maxEffortLevel' in v]
+ok(not _caps, 'no maxEffortLevel silently capping the pins', str(_caps))
 
 print("\n=== E. roster table matches every agent file ===")
 orch = (HOME / 'output-styles' / 'orchestrator.md').read_text(encoding='utf-8')
@@ -119,7 +161,7 @@ ok(r.returncode == 0, f"validate_kit.py exits 0 -- {tally[-1] if tally else 'no 
 # LF-normalized file once, so it rewrote the block every run and "replaced" meant nothing.
 # This is the run AFTER the one at the top of this script, so it is the one that can prove
 # idempotency: a tree already installed must report unchanged.
-r2 = subprocess.run(['pwsh', '-File', 'install.ps1'], capture_output=True, text=True)
+r2 = install()
 said = [l for l in r2.stdout.splitlines() if 'unchanged' in l or 'kit block' in l or 'settings.json' in l]
 ok(r2.returncode == 0 and sum('unchanged' in l for l in said) == 2,
    'installer reports unchanged on an already-installed tree', said)

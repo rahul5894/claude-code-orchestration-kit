@@ -39,6 +39,9 @@ the repository for it.
 - **Your fallback for everything qartez cannot see is `Bash grep`** — non-code files,
   module-level code, an unindexed tree. You hold `Bash`, so an `OUT OF INDEX` answer is
   never where you stop; it is where you switch tool.
+  **Always cap the columns: `grep -n "<anchor>" <file> | cut -c1-300`.** A hook denies an
+  uncapped shell read of any markdown file over 300 lines, and one paragraph-line in a doc
+  once returned 123 KB into an agent's context.
 - Respect the brief's tool-call budget. If you are well past it, you are solving a
   different problem than the one briefed — stop and report.
 

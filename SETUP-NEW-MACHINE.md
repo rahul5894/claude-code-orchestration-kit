@@ -11,8 +11,12 @@ session's own transcripts recorded **2.1.274** — the editor manages its build 
 Read the truth from a transcript, not from the CLI:
 
 ```
-python -c "import json;print(json.load(open(r'<transcript>.jsonl'))['version'])"
+python -c "import json;print(json.loads(open(r'<transcript>.jsonl').readline())['version'])"
 ```
+
+`json.loads(...readline())`, not `json.load(...)`: a `.jsonl` is one JSON object **per line**,
+so `json.load` on the whole file raises `JSONDecodeError: Extra data: line 2 column 1` and
+sends you back to the CLI number this section exists to distrust.
 
 or the first line of any `~/.claude/projects/*/*/subagents/agent-*.jsonl`. Trusting the CLI
 number sent one upgrade down a wrong diagnosis here.
@@ -284,7 +288,7 @@ Known gaps, on purpose:
   45 tool calls and a `maxTurns: 8` verifier made 22, so read the agent's own coverage
   line instead. A capped agent still returns what it had, marked partial; **resume it with
   `SendMessage` rather than re-spawning cold**, because a resumed run keeps its history and
-  reads its own warm cache. Diffs over ~800 lines or ~15 files get two refuters partitioned
+  reads its own warm cache. A diff over ~15 files or ~800 changed lines gets two refuters partitioned
   by file and staggered ~5 seconds apart, since a review's output cap scales with effort
   and not with diff size.
 - Run an agent headless to test it without restarting the session:

@@ -47,6 +47,19 @@ DOCS = sorted(slash(f) for f in glob.glob('docs/*.md'))
 # deliberately allowed to echo other files.
 cfgfiles = [f for f in files if not f.startswith('extras/rejected/')]
 
+print('=== 0. NO LITERAL CONTROL CHARACTERS IN SOURCE ===')
+# Found 2026-09-18: validate_kit.py carried two 0x08 bytes where \\b was intended, so a
+# regex read as a word boundary searched for a literal backspace, matched nothing, and the
+# check built on it could never fail. A patch script written with a non-raw Python string
+# turns \\b, \\f, \\a and \\v into control bytes silently; nothing else in the toolchain
+# complains, and the line still LOOKS right in an editor.
+CTRL = {0x08: 'backspace', 0x0c: 'formfeed', 0x07: 'bell', 0x0b: 'vtab', 0x00: 'NUL'}
+for _f in sorted(glob.glob('*.py') + glob.glob('*.ps1') + glob.glob('core/**/*.md', recursive=True)):
+    _b = open(_f, 'rb').read()
+    _found = sorted({CTRL[c] for c in set(_b) & set(CTRL)})
+    chk(not _found, f'{_f}: no literal control characters', str(_found))
+
+print()
 print('=== 1. AGENT FRONTMATTER - docs-valid values only ===')
 MODELS = {'sonnet', 'opus', 'haiku', 'fable', 'inherit'}
 EFFORT = {'low', 'medium', 'high', 'xhigh', 'max'}
@@ -184,9 +197,12 @@ chk('SCREAMING_SNAKE_CASE' in _sh,
 _exx = re.sub(r'\s+', ' ', open('core/agents/Explore.md', encoding='utf-8').read())
 chk('OUT OF INDEX' in _exx, 'Explore: has an OUT OF INDEX verdict distinct from NO MATCHES')
 chk('SCREAMING_SNAKE_CASE' in _exx, 'Explore: carries the same shape test')
-chk(re.search(r'not defined in this repo|overstates what it checked', _exx),
+# Presence of the phrase is not prohibition of it: an earlier version passed on any file
+# CONTAINING "not defined in this repo", so rewriting Explore to ORDER that sentence would
+# have gone green. Require the negation to sit next to it.
+chk(re.search(r'Never write "not defined in this repo"', _exx),
     "Explore: told not to repeat qartez over-claiming absence message")
-# Measured twice on the same prompt: forced to name WHICH blind spot hid the target, Explore
+# Measured on one prompt run four times: forced to name WHICH blind spot hid the target, Explore
 # guessed "external to this repo", then "non-code (.ps1, .env)". Both wrong - it is
 # module-level in an indexed .py. A category it cannot verify points the follow-up grep at
 # the wrong files, so the contract must forbid the guess rather than demand it.
@@ -194,6 +210,19 @@ chk('Do not guess WHICH blind spot' in _exx,
     'Explore: forbidden from guessing which blind spot hid the target')
 chk('Do not append a category' in _exx,
     'Explore: output contract does not ask for a category it cannot verify')
+# Explore states the same verdict in THREE places - initialPrompt, the Tools section and the
+# output contract. A reviewer found two of them disagreeing (one said "symbol definitions
+# only", another added a category clause the third forbade), and no check saw it because each
+# check read one place. Pin the sentence itself, everywhere it appears.
+VERDICT = 'symbol definitions and bodies only. Orchestrator must grep.'
+_eraw = open('core/agents/Explore.md', encoding='utf-8').read()
+chk(_eraw.count(VERDICT) >= 3,
+    'Explore: the OUT OF INDEX verdict is identical in initialPrompt, body and contract',
+    f'found {_eraw.count(VERDICT)} copies, need 3')
+# search_bodies reaches literals inside function bodies, so a "not symbol shape means
+# unfindable" rule would stop the agent searching for something the index holds.
+chk('search_bodies=true' in _exx and 'before concluding anything' in _exx,
+    'Explore: told to spend the search_bodies call before declaring OUT OF INDEX')
 _eip = fmx('core/agents/Explore.md')[0].get('initialPrompt', '')
 chk('Never guess WHICH blind spot' in _eip,
     'Explore: initialPrompt agrees with the body (omitClaudeMd makes it the only copy)')
@@ -295,14 +324,29 @@ chk('review-precision' not in str(refd.get('skills')),
 # The sweep caught the verifier being told to run qmd while holding no shell. Any agent
 # without Bash must never be pointed at a CLI - it silently skips the order or invents a
 # workaround, and both are worse than an honest "I cannot reach that".
+# Every non-trivial pattern in this file is proved against a string it MUST match and one it
+# must not, before anything depends on it. Two shipped versions of the qmd pattern matched
+# nothing at all and the check built on them passed for weeks. A regex is code; untested code
+# in a checker is worse than no checker, because it reports green.
+QMD_RE = re.compile(r'\bqmd\b')
+chk(bool(QMD_RE.search('you should run qmd update now')) and not QMD_RE.search('amqmdx'),
+    'QMD_RE really matches the word qmd and nothing else (self-test)')
+
 for _n in ('verifier', 'researcher', 'Explore'):
     _d, _ = fmx(f'core/agents/{_n}.md')
     _tl = [x.strip() for x in _d.get('tools', '').split(',')]
     _txt = (_d.get('initialPrompt', '') + ' ' +
             open(f'core/agents/{_n}.md', encoding='utf-8').read())
     if 'Bash' not in _tl:
-        chk(not re.search(r'qmd(?!.{0,40}cannot)', _txt),
-            f'{_n}: has no shell, so is never told to run qmd')
+        # Window on BOTH sides: every disclaimer in this kit reads "you cannot run qmd", so a
+        # forward-only lookahead calls the correct sentence a violation. Two earlier versions
+        # of this very line were unmatchable - one held literal 0x08 bytes where \b was meant,
+        # the next held a doubled backslash - so QMD_RE is proved against a fixture below
+        # before it is trusted. A pattern nobody proved is a check nobody has.
+        _bad = [m.group(0) for m in QMD_RE.finditer(_txt)
+                if not any(w in _txt[max(0, m.start() - 120):m.start() + 80].lower()
+                           for w in ('cannot', 'no shell', 'never run'))]
+        chk(not _bad, f'{_n}: has no shell, so is never told to run qmd', str(_bad[:1]))
 
 chk('review-precision' in str(verd.get('skills')),
     'verifier: preloads review-precision (precision lives in the judging stage)',
@@ -640,11 +684,28 @@ for name in sorted(PINS):
                     chk(str(d.get(key, '')) == claimed,
                         f'{label}: {name} row {key} {claimed} matches the file',
                         f'file says {d.get(key)!r}')
+            # The orchestrator roster writes effort as "opus · high", with no "effort:" prefix,
+            # so the loop above emitted NO check for it at all: the file could say `low` and
+            # the table `high` with the gate green. Read the bare word after the model too.
+            # `[*`]*` skips the markdown emphasis the roster uses around `**inherit**`.
+            bare = re.search(
+                rf'{re.escape(d["model"])}[*`]*\s*[·|,]\s*[*`]*(low|medium|high|xhigh|max)',
+                cell)
+            if bare:
+                chk(d.get('effort', '') == bare.group(1),
+                    f'{label}: {name} row effort {bare.group(1)} matches the file',
+                    f'file says {d.get("effort")!r}')
 
 for doc in USER_DOCS:
     s = open(doc, encoding='utf-8').read()
-    chk(not re.search(r'\bscout\b(?! agent)', s, re.I) or 'retired' in s.lower(),
-        f'{doc}: no live reference to the retired scout agent')
+    # Two escape hatches removed: `(?! agent)` exempted the phrase "scout agent", which is the
+    # most likely shape of a live reference, and `or 'retired' in s` passed the whole check
+    # when the word "retired" appeared anywhere in the document on any subject. A mention is
+    # allowed only when the word "retired" or "deleted" sits within 60 characters of it.
+    _live = [m.group(0) for m in re.finditer(r'\bscout\b', s, re.I)
+             if not re.search(r'retired|deleted|removed|replaced',
+                              s[max(0, m.start() - 60):m.start() + 60], re.I)]
+    chk(not _live, f'{doc}: no live reference to the retired scout agent', str(_live[:1]))
     # The v1 rule. Its removal is the single largest wall-clock win in the rework. A negated
     # mention ("the refuter no longer runs the gate") is the correct text, so it is allowed.
     NEG = ('no longer', 'never', 'not ', "n't", 'zero', 'stopped', 'used to')
@@ -672,6 +733,10 @@ if thr:
 # two reviewers. This equalled the delegation threshold until 2026-09-18.
 two = re.search(r'~(\d+) files or ~(\d+) changed lines\*\* gets TWO refuters', orch_txt)
 chk(two is not None, 'orchestrator style states the two-refuter threshold')
+# No per-doc restatement check for this one: both thresholds are written in the same sentence
+# shape ("~N changed lines or ~M files"), so a regex cannot tell a delegation mention from a
+# two-refuter mention, and one written to try flagged the correct 400/8 lines as wrong. The
+# "strictly above" check below is what actually protects the number that matters.
 if two and thr:
     chk(int(two.group(2)) > int(thr.group(1)) and int(two.group(1)) > int(thr.group(2)),
         'two-refuter threshold is strictly above the delegation threshold',

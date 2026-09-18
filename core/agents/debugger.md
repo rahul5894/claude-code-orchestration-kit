@@ -20,6 +20,8 @@ Use of this agent means an ordinary fix already failed. Do not re-run the obviou
   cannot look — a module-level constant, an env-var name, a config key, a log. You hold
   `Bash`, so `grep` settles it. Blaming the wrong layer because one index came back empty
   is the failure mode of this role.
+  **Cap the columns: `grep -n "<anchor>" <file> | cut -c1-300`.** A hook denies an uncapped
+  shell read of any markdown file over 300 lines, and the denial costs you a turn.
 - Runtime questions get runtime tools when the project has them: Go → `go-delve`,
   Flutter → `dart-flutter` runtime errors/DTD, DB → `postgres` (read-only queries and
   `EXPLAIN`). Reasoning about what the runtime "should" do is not a result.

@@ -49,12 +49,23 @@ EDITORS = {'Edit', 'Write', 'NotebookEdit', 'MultiEdit'}
 def walk(path):
     """Yield one summary dict per transcript. Streams line by line: these files reach tens of
     megabytes and loading one whole would defeat the point of measuring cost."""
-    turns = tools = denied = suite = 0
+    tools = denied = suite = 0
     orient = None
     first = last = None
     models = collections.Counter()
     toolnames = collections.Counter()
     cold = None
+    # Claude Code writes ONE JSONL line per content block, so an assistant turn that emitted
+    # text plus two tool calls is three lines. Counting lines inflated `turns` by 2.3x-3.9x on
+    # real transcripts here and made every run look like it blew the <25 target. The turn is
+    # the API response, so count distinct message ids and fall back to the line only when a
+    # record carries no id.
+    turn_ids = set()
+    idless_turns = 0
+
+    def turn_count():
+        return len(turn_ids) + idless_turns
+
     for line in open(path, encoding='utf-8', errors='replace'):
         try:
             d = json.loads(line)
@@ -68,7 +79,10 @@ def walk(path):
         if not isinstance(m, dict):
             continue
         if d.get('type') == 'assistant':
-            turns += 1
+            if m.get('id'):
+                turn_ids.add(m['id'])
+            else:
+                idless_turns += 1
             if m.get('model'):
                 models[m['model']] += 1
             u = m.get('usage') or {}
@@ -82,14 +96,27 @@ def walk(path):
                 name = c.get('name', '?')
                 toolnames[name] += 1
                 if name in EDITORS and orient is None:
-                    orient = turns
+                    orient = turn_count()
                 if name in ('Bash', 'PowerShell'):
                     cmd = str((c.get('input') or {}).get('command', ''))
                     if SUITE.search(cmd):
                         suite += 1
             elif c.get('type') == 'tool_result':
-                if DENIED.search(str(c.get('content'))[:400]):
+                # `is_error` FIRST, pattern second. Matching the pattern against any tool
+                # result made an agent that merely READ this file count a denial, because the
+                # DENIED source line is in it; and qartez_map output listing `md-guard.py`
+                # scored another. A denial is an error whose text is the guard's.
+                if not c.get('is_error'):
+                    continue
+                # content is a LIST of blocks; stringifying and cutting at 400 chars spent the
+                # budget on repr punctuation and missed a denial in any later block.
+                body = c.get('content')
+                if isinstance(body, list):
+                    body = ' '.join(str(b.get('text', b)) if isinstance(b, dict) else str(b)
+                                    for b in body)
+                if DENIED.search(str(body)):
                     denied += 1
+    turns = turn_count()
     mins = None
     if first and last:
         try:
@@ -125,7 +152,11 @@ def main():
                  + (f' since {a.since}' if a.since else ''))
 
     rows = sorted((walk(f) for f in files), key=lambda r: r['mtime'])
-    print(f'{len(rows)} agent runs · project {dirs[0].name}'
+    # A substring match can hit several folders (a repo and its temp scratchpad copy, say).
+    # Printing only dirs[0] labelled two projects' totals as one.
+    label = dirs[0].name if len(dirs) == 1 else f'{len(dirs)} folders: ' + ', '.join(
+        d.name[-34:] for d in dirs)
+    print(f'{len(rows)} agent runs · project {label}'
           + (f' · since {a.since}' if a.since else ''))
     print(f"{'agent':20s} {'model':18s} {'turns':>5s} {'tools':>5s} {'orient':>6s} "
           f"{'denied':>6s} {'suite':>5s} {'cold':>4s} {'mins':>5s}")
@@ -142,11 +173,16 @@ def main():
         agg['tools'] += r['tools']
         agg['denied'] += r['denied']
         agg['suite'] += r['suite']
+        # cold is None when no assistant message carried usage at all. Printing that as "no"
+        # and counting it as warm reports an unknown as a measured negative, in the column
+        # used to justify the spawn stagger.
         agg['cold'] += 1 if r['cold'] else 0
+        agg['unknown_cold'] += 1 if r['cold'] is None else 0
         agg['mins'] += r['mins'] or 0
         print(f"{r['file'][6:18]:20s} {r['model'][:18]:18s} {r['turns']:5d} {r['tools']:5d} "
               f"{(r['orient'] if r['orient'] is not None else '-'):>6} "
-              f"{r['denied']:6d} {r['suite']:5d} {'yes' if r['cold'] else 'no':>4s} "
+              f"{r['denied']:6d} {r['suite']:5d} "
+              f"{('?' if r['cold'] is None else 'yes' if r['cold'] else 'no'):>4s} "
               f"{(round(r['mins'], 1) if r['mins'] is not None else '-'):>5}")
         if a.tools:
             for n, c in r['toolnames'].most_common():
@@ -162,7 +198,8 @@ def main():
     # automatic failure: a builder legitimately runs the gate, and a cold sibling is expected.
     print(f"guard denials {agg['denied']} (target 0) · "
           f"suite/gate runs inside agents {agg['suite']} (target 0 for reviewers) · "
-          f"cold-cache starts {agg['cold']}/{n}")
+          f"cold-cache starts {agg['cold']}/{n}"
+          + (f" ({agg['unknown_cold']} unknown)" if agg['unknown_cold'] else ''))
 
 
 if __name__ == '__main__':

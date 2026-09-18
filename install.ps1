@@ -79,7 +79,10 @@ if ($json.Replace("`r`n", "`n") -ne $old.Replace("`r`n", "`n")) {
     # settings.json to copy, and claiming a backup that does not exist is how someone
     # edits confidently and finds nothing to roll back to.
     $backed = Test-Path $sf
-    if ($backed) { Copy-Item $sf "$sf.bak-kit-$(Get-Date -Format yyyyMMdd-HHmmss)" }
+    # Millisecond stamp: steps 3 and 5 both back this file up, often inside the same second.
+    # At second resolution step 5 silently overwrote step 3's copy - the ONE copy holding the
+    # user's pre-kit settings, which is the only thing either backup exists to preserve.
+    if ($backed) { Copy-Item $sf "$sf.bak-kit-$(Get-Date -Format yyyyMMdd-HHmmss-fff)" }
     Write-Lf $sf $json
     "settings.json: " + $(if ($backed) { 'merged (backup written)' } else { 'created' })
 } else { "settings.json: unchanged" }
@@ -144,7 +147,7 @@ else {
     $out  = ($set | ConvertTo-Json -Depth 20) + "`n"
     $prev = Get-Content $sf -Raw
     if ($out.Replace("`r`n", "`n") -ne $prev.Replace("`r`n", "`n")) {
-        if ($sfPre) { Copy-Item $sf "$sf.bak-kit-$(Get-Date -Format yyyyMMdd-HHmmss)" }
+        if ($sfPre) { Copy-Item $sf "$sf.bak-kit-$(Get-Date -Format yyyyMMdd-HHmmss-fff)" }
         Write-Lf $sf $out
     }
     $t = & $py (Join-Path $dest 'hooks\md-guard_test.py') 2>&1 | Select-Object -Last 1
