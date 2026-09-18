@@ -32,7 +32,7 @@ pwsh -NoProfile -File .\install.ps1
 Expected output, in this order:
 
 ```
-agents:   builder, debugger, refuter, researcher, scout, verifier
+agents:        builder, debugger, Explore, refuter, researcher, verifier
 commands: task
 CLAUDE.md: kit block appended        (or "replaced" / "unchanged" on a re-run)
 settings.json: merged (backup written)
@@ -51,7 +51,7 @@ every kit change. A second run prints `unchanged` and `already registered`.
 Checks:
 
 1. `~/.claude/agents/` has 6 files. `builder.md` and `researcher.md` say `effort: high`.
-   `refuter.md` says `effort: xhigh` and `maxTurns: 40`. `scout.md` says `effort: low`.
+   `refuter.md` says `effort: high` and `maxTurns: 40`. `Explore.md` says `model: haiku` and has no effort key.
    `verifier.md` says `effort: low` and `maxTurns: 8`.
 2. `~/.claude/settings.json` has no `CLAUDE_CODE_EFFORT_LEVEL` and no
    `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` under `env`. Either one silently overrides every
@@ -141,7 +141,7 @@ Known gaps, on purpose:
   work: heredoc writes, `cat >>` appends, `sed -i` edits, and a `head` in an unrelated
   command segment. It also missed `bash -c` and the PowerShell tool. All six are now
   test cases.
-- Effort decision: builder and researcher run at `high`, refuter at `xhigh`. The brief
+- Effort decision: builder, researcher, refuter and verifier run at `high`. The brief
   already names the pattern, so the builder does not need extra thinking. Reviewing
   does. Fable (main session) decides, Opus executes. Opus tokens are not the
   constraint. Fable context size and wall-clock are.

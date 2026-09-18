@@ -50,13 +50,14 @@ cfgfiles = [f for f in files if not f.startswith('extras/rejected/')]
 print('=== 1. AGENT FRONTMATTER - docs-valid values only ===')
 MODELS = {'sonnet', 'opus', 'haiku', 'fable', 'inherit'}
 EFFORT = {'low', 'medium', 'high', 'xhigh', 'max'}
-# v2 roster: Opus 5 is the default seat everywhere - half Fable's price, same speed per turn.
-# Nothing is pinned to fable, so Fable quota running out cannot break the loop. The locate
-# agent shadows the built-in Explore on haiku, which has no effort parameter at all.
-# refuter is the recall-biased finder at high (xhigh buys quality by making MORE tool calls);
-# verifier is the precision stage at low and is the only agent carrying the exclusion list.
+# Fable thinks, Opus executes. The orchestrator is whatever /model says (Fable 5.1 high, or
+# Opus 5 xhigh once Fable quota is gone); the kit never sets it. The debugger INHERITS that
+# seat - hard reasoning follows the orchestrator, and inherit can never break on quota.
+# Everything that executes a decision already written down is pinned opus: that is how Fable
+# tokens are saved. The judge (verifier) runs high because it decides what gets fixed. The
+# locate agent shadows the built-in Explore on haiku, which has no effort parameter at all.
 PINS = {'Explore': ('haiku', None), 'researcher': ('opus', 'high'), 'builder': ('opus', 'high'),
-        'verifier': ('opus', 'low'), 'refuter': ('opus', 'high'), 'debugger': ('opus', 'high')}
+        'verifier': ('opus', 'high'), 'refuter': ('opus', 'high'), 'debugger': ('inherit', 'high')}
 COLORS = {'red', 'blue', 'green', 'yellow', 'purple', 'orange', 'pink', 'cyan'}
 AGENTKEYS = {'name', 'description', 'tools', 'disallowedTools', 'model', 'permissionMode',
              'maxTurns', 'skills', 'mcpServers', 'hooks', 'memory', 'background', 'effort',
@@ -72,7 +73,7 @@ for p in agentfiles:
     chk('name' in d and 'description' in d, f'{n}: required name+description')
     chk(d.get('name') == stem, f'{n}: name matches filename', d.get('name'))
     chk(d.get('model') in MODELS, f'{n}: model is a valid alias', d.get('model'))
-    chk(d.get('model') != 'fable', f'{n}: not pinned to fable (quota must never break the loop)',
+    chk(d.get('model') != 'fable', f'{n}: no HARD pin to fable (inherit follows /model; a hard pin breaks on quota)',
         d.get('model'))
     chk(d.get('effort') in EFFORT or d.get('effort') is None, f'{n}: effort is valid or absent',
         d.get('effort'))
@@ -308,7 +309,8 @@ for concept, pat, owner in [
         ('banned phrases', 'explore all approaches', ORCH),
         ('model resolution order', 'Resolution order', ORCH),
         ('roster table', r'`refuter`[^|]*\|\s*opus', ORCH),
-        ('opus is the default seat', 'Opus 5 is the default seat', ORCH),
+        ('fable thinks, opus executes', r'Execution stays on Opus, always', ORCH),
+        ('debugger inherits the orchestrator seat', r'debugger is `model: inherit`', ORCH),
         # builder.md's description legitimately names the threshold so the orchestrator can
         # pick it; the RULE sentence is what must have one owner
         ('delegation threshold', r'exceeds \*\*~400 changed lines', ORCH),
@@ -383,8 +385,11 @@ chk(su.get('outputStyle') == 'orchestrator', 'settings: outputStyle activates th
 chk(su.get('worktree', {}).get('baseRef') == 'head', 'settings: worktree.baseRef head',
     str(su.get('worktree')))
 ms = su.get('modelSettings', {})
-chk(ms.get('claude-opus-5', {}).get('effortLevel') == 'high', 'modelSettings: opus 5 high',
+chk(ms.get('claude-opus-5', {}).get('effortLevel') == 'xhigh',
+    'modelSettings: opus 5 xhigh (fallback orchestrator seat; agent frontmatter overrides it)',
     str(ms.get('claude-opus-5')))
+chk(ms.get('claude-fable-5-1', {}).get('effortLevel') == 'high',
+    'modelSettings: fable 5.1 high (the primary orchestrator seat)')
 chk(all(v.get('effortLevel') != 'max' for v in ms.values()),
     'modelSettings: no max (not accepted by the key)')
 chk('maxEffortLevel' not in su and all('maxEffortLevel' not in v for v in ms.values()),

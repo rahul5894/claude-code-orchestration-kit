@@ -57,7 +57,7 @@ file loaded → `/tasks` while a subagent runs shows its model.
 | File | What it is |
 |---|---|
 | `core/CLAUDE.md` | The rules. This is the only place that defines the brief format (six sections), the bucket, and the rule that every agent has a pinned model. |
-| `core/agents/` | The six agents, one file each: scout `opus`, researcher `opus`, builder `opus`, refuter `opus`, verifier `opus`, debugger `fable`. Each file pins the model, the **effort**, and the tools. |
+| `core/agents/` | The six agents, one file each: Explore `haiku`, researcher `opus`, builder `opus`, refuter `opus`, verifier `opus`, debugger `inherit`. Each file pins the model, the **effort**, and the tools. |
 | `core/commands/task.md` | `/task` shows every open task. `/task <sentence>` continues one or starts a new one. |
 | `core/settings.user.json` | The user-settings fragment the installer merges: per-model `modelSettings` effort (fable `high`, opus `xhigh`), `env` (`CLAUDE_CODE_SUBAGENT_MODEL=opus` for off-roster agents, `CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH=1`), brief-folder deny rules, push/reset ask rules. |
 
@@ -77,12 +77,12 @@ never set either.
 
 | Agent | Model | What it does | What it cannot do |
 |---|---|---|---|
-| scout | opus, `effort: low` | Finds where things are in the code, through qartez. | Cannot edit. Has no `Read`: returns file paths only, never file contents. |
+| Explore | haiku, no effort (haiku ignores it) | Finds where things are in the code, through qartez. | Cannot edit. Has no `Read`: returns file paths only, never file contents. |
 | researcher | opus, `effort: high` | Answers a question from source (qartez), library docs (Context7) or the web (Firecrawl, Exa), with citations. | Cannot edit. Has no `WebFetch`/`WebSearch`. |
 | builder | opus, `effort: high` | Writes the code the brief specifies, in the pattern the brief names, and runs the tests; `qartez_impact` before every edit. | The only agent with Edit and Write. Does not choose patterns: an unsettled choice is a BLOCKER, not a decision. |
-| refuter | opus, `effort: xhigh`, `maxTurns: 40` | Reviews the builder's change once, correctness and security in the same pass, running only the tests the brief names. | Has no Edit or Write tool. It reports problems, it does not fix them. |
-| verifier | opus, `effort: low`, `maxTurns: 8` | After a rework, opens each must-fix `path:LINE` and answers FIXED or NOT FIXED. | Read-only, no Bash. It does not review anything outside the list. |
-| debugger | fable, `effort: high` | Finds the real cause of a hard bug and proves it, with runtime tools (delve, Flutter DTD, Postgres). | Has no Edit or Write tool. It explains, it does not fix. |
+| refuter | opus, `effort: high`, `maxTurns: 40` | Reviews the builder's change once, correctness and security in the same pass, running only the tests the brief names. | Has no Edit or Write tool. It reports problems, it does not fix them. |
+| verifier | opus, `effort: high`, `maxTurns: 20` | After a rework, opens each must-fix `path:LINE` and answers FIXED or NOT FIXED. | Read-only, no Bash. It does not review anything outside the list. |
+| debugger | inherit (the orchestrator's model), `effort: high` | Finds the real cause of a hard bug and proves it, with runtime tools (delve, Flutter DTD, Postgres). | Has no Edit or Write tool. It explains, it does not fix. |
 
 The normal loop is: **you plan → builder builds → refuter checks once → you decide.** On
 REWORK: builder fixes the list → verifier confirms each item → you decide. A second REWORK

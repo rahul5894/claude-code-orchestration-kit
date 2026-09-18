@@ -24,28 +24,37 @@ implementation discipline below applies to your own edits, not only to a builder
 | `researcher` | opus · high | Facts from source (qartez), library docs (Context7), web (Firecrawl → Exa). |
 | `builder` | opus · high | Implement from a brief that already names the pattern, `qartez_impact` before every edit, gate as last step. |
 | `refuter` | opus · high | **Finder.** Recall-biased, one pass, correctness AND security. Drops nothing. |
-| `verifier` | opus · low | **Precision.** CONFIRMED / PLAUSIBLE / REFUTED, and FIXED / NOT FIXED after a rework. Carries the exclusion list. |
-| `debugger` | opus · high | Hard root-cause only, with runtime tools. |
+| `verifier` | opus · high | **Precision.** CONFIRMED / PLAUSIBLE / REFUTED, and FIXED / NOT FIXED after a rework. Carries the exclusion list. |
+| `debugger` | **inherit** · high | Hard root-cause only, with runtime tools. Runs on the orchestrator's model: Fable when you are on Fable, Opus when you are on Opus. |
 
 Loop: **gate → builder → gate → refuter (finds) → verifier (judges) → CONFIRMED and
 PLAUSIBLE items become a builder-02 brief → verifier confirms FIXED.** A second round of
 must-fixes, or any NOT FIXED, stops the loop: sort it out with the user instead of spawning
 again. Three agents on the happy path, five at most.
 
-## Model pinning
+## Model pinning — Fable thinks, Opus executes
 
 Resolution order: per-invocation `model` → agent frontmatter (`inherit` = main model) →
 `CLAUDE_CODE_SUBAGENT_MODEL` → main conversation's model. Needs Claude Code 2.1.251+.
 
-- **Opus 5 is the default seat, everywhere.** Half Fable's price, same measured speed per
-  turn. Effort by job: builder, researcher, refuter, debugger `high`; verifier `low`; the
-  locate agent runs `haiku`, which has no effort parameter.
-- **Nothing is pinned to Fable**, so Fable quota running out cannot break the loop. Fable's
-  correct use is a main session where the task is a hard design decision you make yourself —
-  and then you spawn almost nothing, because an expensive orchestrator seat is the worst
-  place to fan out from.
+- **The orchestrator is whatever `/model` says: Fable 5.1 at `high` while its quota lasts,
+  Opus 5 at `xhigh` once it is gone.** The kit never sets the main model; it sets each
+  model's effort so both seats work unchanged. Every decision — what changes, which
+  pattern, which helper, what "done" means — is made here.
+- **Hard reasoning follows the orchestrator.** The debugger is `model: inherit`: Fable when
+  the session is Fable, Opus when it is Opus, so Fable quota running out can never break
+  it. No agent hard-pins `fable`.
+- **Execution stays on Opus, always.** builder, researcher, refuter and verifier are pinned
+  `opus` at `high` — they execute a decision already written down. **This is how Fable
+  tokens are saved:** Fable never builds, never reviews, never researches, never locates.
+  The locate agent runs `haiku`, which has no effort parameter.
+- **Fable is the worst seat to fan out from** (measured: 2m15s alone, 17m00s with five
+  subagents), so the delegation threshold below is what protects Fable quota — spawn for
+  the big things, do the small things inline.
 - Never `xhigh` on a review pass without a measured reason: higher effort buys quality by
-  making MORE tool calls, which is the resource you are short of.
+  making MORE tool calls, which is the resource you are short of. `high` is Anthropic's
+  documented default effort, not a downgrade; the review's quality comes from the
+  finder/judge split, not from one agent thinking longer.
 - Anything off-roster gets `model: opus` + `effort: high` explicitly.
 - Never set `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` (erases every model pin) or
   `CLAUDE_CODE_EFFORT_LEVEL` (overrides every frontmatter effort), and confirm
