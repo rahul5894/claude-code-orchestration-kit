@@ -43,6 +43,11 @@ foreach ($r in $RETIRED_OUTPUT_STYLES) {
     $p = Join-Path $dest "output-styles\$r.md"
     if (Test-Path $p) { Remove-Item $p -Force; "output-styles: removed retired '$r'" }
 }
+# The two things /kit-init needs from ANY repo, so a new project can set itself up without
+# this checkout being on the machine: the project CLAUDE.md template, and the project audit.
+New-Item -ItemType Directory -Force (Join-Path $dest 'kit') | Out-Null
+Copy-Item (Join-Path $kit 'extras\project\CLAUDE.md') (Join-Path $dest 'kit\project-template.md') -Force
+Copy-Item (Join-Path $kit 'audit_project.py')         (Join-Path $dest 'kit\audit_project.py')     -Force
 "agents:        " + ((Get-ChildItem (Join-Path $kit 'core\agents\*.md')).BaseName -join ', ')
 "commands:      " + ((Get-ChildItem (Join-Path $kit 'core\commands\*.md')).BaseName -join ', ')
 "skills:        " + ((Get-ChildItem (Join-Path $kit 'core\skills') -Directory).Name -join ', ')
@@ -161,6 +166,32 @@ else {
     }
     $t = & $py (Join-Path $dest 'hooks\md-guard_test.py') 2>&1 | Select-Object -Last 1
     "md-guard self-check: $t"
+
+    # 6. kit-session-start hook: one line of context when the project has no FAST GATE row.
+    #    Same registration shape as md-guard, on SessionStart. It never writes a file.
+    $startCmd = "$py " + (Join-Path $dest 'hooks\kit-session-start.py').Replace('\', '/')
+    $set = if ((Read-Text $sf).Trim()) { Read-Text $sf | ConvertFrom-Json -AsHashtable } else { [ordered]@{} }
+    if (-not $set['hooks']) { $set['hooks'] = [ordered]@{} }
+    if (-not $set['hooks']['SessionStart']) { $set['hooks']['SessionStart'] = @() }
+    $sEntries = @($set['hooks']['SessionStart'])
+    $sMine = $sEntries | Where-Object { @($_['hooks']) | Where-Object { "$($_['command'])" -like '*kit-session-start.py*' } }
+    if ($sMine) {
+        $changed = $false
+        foreach ($e in $sMine) { $e['matcher'] = 'startup|resume|clear|compact'; foreach ($h in $e['hooks']) { if ($h['command'] -ne $startCmd) { $h['command'] = $startCmd; $changed = $true } } }
+        "kit-session-start: " + $(if ($changed) { 'python path updated' } else { 'already registered' })
+    } else {
+        $sEntries += [ordered]@{ matcher = 'startup|resume|clear|compact'; hooks = @([ordered]@{ type = 'command'; command = $startCmd; timeout = 5000 }) }
+        $set['hooks']['SessionStart'] = $sEntries
+        "kit-session-start: registered in settings.json"
+    }
+    $out  = ($set | ConvertTo-Json -Depth 20) + "`n"
+    $prev = Read-Text $sf
+    if ($out.Replace("`r`n", "`n") -ne $prev.Replace("`r`n", "`n")) {
+        if ($sfPre) { Copy-Item $sf "$sf.bak-kit-$(Get-Date -Format yyyyMMdd-HHmmss-fff)" }
+        Write-Lf $sf $out
+    }
+    $t2 = & $py (Join-Path $dest 'hooks\kit-session-start_test.py') 2>&1 | Select-Object -Last 1
+    "kit-session-start self-check: $t2"
 }
 
 "done. RESTART Claude Code: agents and output styles are read at startup, so the 'orchestrator'"

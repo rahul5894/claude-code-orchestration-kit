@@ -143,30 +143,30 @@ Two entries are machine-specific and will not resolve until their paths exist: `
 (`d:/Projects/my-scraper-project/tools/emclient_mcp.py`). Remove them from `.mcp.json` on a
 machine that does not have those, or the servers show as failed to connect.
 
-## 2c. A new project: the four things that matter
+## 2c. A new project: open it and run `/kit-init`
 
-Copy the template and fill it in. Everything else in the kit is already global.
+Everything in the kit is global — agents, output style, hooks, the shared rules, qartez and
+the researcher's web servers at user scope. **The only per-project thing is a `CLAUDE.md`
+with a measured FAST GATE row**, and the kit now creates that itself:
 
-```bash
-cp extras/project/CLAUDE.md             <repo>/CLAUDE.md
-cp extras/project/.claude/settings.json <repo>/.claude/settings.json
-cat extras/project/.gitignore-snippet  >> <repo>/.gitignore
-qmd collection add <repo>/docs --name <repo-name>
-```
+1. Open the repo in Claude Code. A global `SessionStart` hook (`kit-session-start.py`) sees
+   there is no FAST GATE row and injects one line telling the orchestrator to run `/kit-init`
+   before delegating anything. It writes nothing.
+2. Run `/kit-init`. It detects the gate from `package.json` / `pyproject` / `Makefile` /
+   `go.mod` / `pubspec`, **runs it once and times it**, refuses anything over 60 s or
+   containing a test runner, writes `CLAUDE.md` from `~/.claude/kit/project-template.md`
+   with the real number in, and finishes with `python ~/.claude/kit/audit_project.py .`.
+3. Fill the three placeholders it leaves on purpose — **Security surfaces in THIS repo**,
+   **Layout**, **Danger list**. They are yours; a guessed security surface is worse than an
+   empty one because a reviewer would trust it.
 
-Then fill four things in `<repo>/CLAUDE.md`, in this order. Nothing else is urgent.
+Optional, when the repo has a docs folder: `qmd collection add <repo>/docs --name <repo>`.
 
-1. **The FAST GATE row.** Run the command, time it, write the real number. Diff-scoped,
-   under ~60 s, no test suite. This one line is what stops an agent inventing a gate and
-   running your whole test suite instead.
-2. **"Agents never run these".** The full suite, plus every DB advisor, migration, seed,
-   deploy or audit command over ~60 s. Name them explicitly.
-3. **Security surfaces in THIS repo.** Concrete paths. A change touching one is reviewed at
-   once and never batched, so a vague list means either missed reviews or pointless ones.
-4. **The Layout block.** The three or four files most changes touch.
-
-The rest — Danger list, Past defects, Handoff, Backlog — fills itself in as the project
-teaches you. Leave the placeholders until then.
+**Never add to a project what the kit already provides globally.** `audit_project.py`
+flags it: a `## Qartez MCP` section, a restated web-tool order, an `outputStyle` in
+`.claude/settings.local.json` (local beats user — it switched the orchestrator off in one
+repo for weeks), a `.mcp.json` entry for a server already at user scope. Each is re-paid by
+every subagent on every spawn and drifts from the global text.
 
 ## 3. qmd (local markdown search)
 

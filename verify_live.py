@@ -257,6 +257,19 @@ r2 = install()
 said = [l for l in r2.stdout.splitlines() if 'unchanged' in l or 'kit block' in l or 'settings.json' in l]
 ok(r2.returncode == 0 and sum('unchanged' in l for l in said) == 2,
    'installer reports unchanged on an already-installed tree', said)
+# The "fully global" pieces: the SessionStart notice and the two files /kit-init reads from
+# ~/.claude/kit. Without them a new project starts with no gate and nothing says so.
+ok('kit-session-start self-check: 7/7 passed' in r2.stdout,
+   'kit-session-start self-check 7/7',
+   [l for l in r2.stdout.splitlines() if 'kit-session-start' in l])
+for _kf in ('project-template.md', 'audit_project.py'):
+    ok((HOME / 'kit' / _kf).exists(), f'~/.claude/kit/{_kf} published for /kit-init')
+_hk = subprocess.run([sys.executable, str(HOME / 'hooks' / 'kit-session-start.py'), '--check', str(KIT)],
+                     capture_output=True, text=True, encoding='utf-8', errors='replace')
+ok('FAST GATE' not in (_hk.stdout or ''),
+   'the installed SessionStart hook is quiet in this repo (it has a FAST GATE row)',
+   (_hk.stdout or '')[:120])
+print("  NOTE  per-project state is checked by `python audit_project.py <repo>`, not here")
 ok('24/24 passed' in r2.stdout, 'md-guard self-check 24/24',
    [l for l in r2.stdout.splitlines() if 'md-guard' in l])
 

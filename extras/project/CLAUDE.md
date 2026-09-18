@@ -90,12 +90,6 @@ The things in this repo that cause real damage. One line each, direct.
 I authorize deploys, production writes, migrations, and anything touching a live system. An
 agent that believes it needs one of these **stops and reports**.
 
-## Task buckets
-
-Multi-agent work uses buckets under `.claude/scratch/<slug>/`, opened by Claude when a task
-starts or by `/task <sentence>`. Buckets are gitignored; nothing operational, no credentials
-and no production data goes in them, or in any tracked doc.
-
 ## Handoff
 
 `docs/HANDOFF.md` is the current session state — **read it at session start and verify it

@@ -835,9 +835,31 @@ if two and thr:
 _setup = open('SETUP-NEW-MACHINE.md', encoding='utf-8').read()
 for script, why in [
         ('verify_live.py', 'checks the installed tree, which this file cannot see'),
-        ('agent_stats.py', 'turns the scoreboard into numbers read off the transcripts')]:
+        ('agent_stats.py', 'turns the scoreboard into numbers read off the transcripts'),
+        ('audit_project.py', 'keeps a project from restating or overriding a global rule')]:
     chk(os.path.isfile(script), f'{script} exists ({why})')
     chk(script in _setup, f'SETUP-NEW-MACHINE.md tells the reader to run {script}')
+
+# "Fully global" (2026-09-19): a new project needs nothing copied in by hand. That rests on
+# three shipped pieces plus the installer putting two of them where /kit-init can reach them
+# from ANY repo. Lose any one and the next new project silently starts with no gate.
+for p, why in [('core/hooks/kit-session-start.py', 'the SessionStart notice'),
+               ('core/hooks/kit-session-start_test.py', 'its self-test'),
+               ('core/commands/kit-init.md', 'the command that measures and writes the gate')]:
+    chk(os.path.isfile(p), f'{p} exists ({why})')
+_inst = open('install.ps1', encoding='utf-8').read() if os.path.isfile('install.ps1') else ''
+for frag, label in [('kit-session-start.py', 'installer registers the SessionStart hook'),
+                    ("startup|resume|clear|compact", 'SessionStart hook matches every session kind'),
+                    ('kit-session-start_test.py', 'installer runs the hook self-test'),
+                    ("kit\\project-template.md", 'installer publishes the project template to ~/.claude/kit'),
+                    ("kit\\audit_project.py", 'installer publishes audit_project.py to ~/.claude/kit')]:
+    chk(frag in _inst, label)
+_ki = open('core/commands/kit-init.md', encoding='utf-8').read() if os.path.isfile('core/commands/kit-init.md') else ''
+chk('never guess' in _ki.lower() and ('time' in _ki.lower()), '/kit-init measures the gate, never guesses it')
+chk('60' in _ki and 'test' in _ki.lower(), '/kit-init refuses a slow gate or a test runner')
+chk('do not overwrite' in _ki.lower(), '/kit-init never overwrites an existing CLAUDE.md')
+chk('~/.claude/kit/project-template.md' in _ki and '~/.claude/kit/audit_project.py' in _ki,
+    '/kit-init reads the template and the audit from the global kit dir, not this checkout')
 
 print()
 # Most sections are glob-driven: one that yields nothing contributes zero checks and still
