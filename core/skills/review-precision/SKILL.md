@@ -71,8 +71,10 @@ a client-decidable quota finding survives even though it contains the words "lim
    about what the document *says*: an overstated claim, a wrong number, a contradiction with
    the code, or a reference to something that no longer exists is a correctness finding in a
    `.md` file and is judged, never excluded.
-9. **Test-only files and fixtures.** Unless the diff makes a test the thing that gates a
-   security control in production.
+9. **A SECURITY finding whose only site is a test file or fixture** — unless the diff makes
+   a test the thing that gates a security control in production. A **correctness** finding
+   in a test file (an assertion that would pass with the bug still in, a fixture that does
+   not match what the producer emits) is judged, never excluded — gate 1 outranks this rule.
 10. **Environment variables, CLI flags and CI configuration are trusted input.** An operator
     who can set them already has the privilege.
 11. **UUID and cryptographically-random identifiers are unguessable.** "Enumerable ID" only
@@ -82,8 +84,11 @@ a client-decidable quota finding survives even though it contains the words "lim
     which check you found.
 14. **Pre-existing issues the diff did not introduce or touch.** Note them once, outside the
     candidate list.
-15. **Anything a linter, type checker or the project's gate already reports.** The gate ran
-    before you; do not spend judgment on what it printed.
+15. **A style or lint-class finding the gate already reports**, where the gate's own output
+    is in the brief and shows it. This never covers a finding the gate raised and the
+    builder then ignored — the refuter is ordered to forward gate output as candidates
+    precisely so those reach you, and rule 3 keeps a committed secret CONFIRMED however it
+    was found.
 16. **Style, naming, formatting and structure with no failure scenario.** These belong in
     NOTED.
 17. **Speculative future misuse.** "If someone later calls this with X" is excluded unless a

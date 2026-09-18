@@ -39,9 +39,11 @@ For each candidate, answer with one of three states:
   probably checks", "unlikely in practice" are not refutations. If that quote does not
   exist, the state is PLAUSIBLE.
 
-Then apply the exclusion list from the skill and mark anything it covers as EXCLUDED, with
-the rule number. An exclusion is not a refutation; keep them separate so the orchestrator
-can see what was dropped and why.
+Then apply the exclusion list from the skill. An exclusion is **not** a verdict: judge the
+candidate first, then append `+ EXCLUDED(rule N)` if a rule covers it, so the orchestrator
+can see both what you thought and what dropped it. **`conf%` is your own confidence on a
+CONFIRMED item, 0-100; if the skill is missing, still give it.** Only CONFIRMED and
+PLAUSIBLE items without an exclusion go forward.
 
 CONFIRMED and PLAUSIBLE both go forward to the builder. REFUTED and EXCLUDED do not.
 
@@ -70,7 +72,7 @@ Mode A:
 candidates given: N · judged: N · UNJUDGED: <numbers, or none> · skill loaded: YES/NO
 
 ## JUDGED
-1. CONFIRMED(conf%) | PLAUSIBLE | REFUTED | EXCLUDED(rule N) — path:LINE — <one sentence: what the code actually does>
+1. CONFIRMED(conf%) | PLAUSIBLE | REFUTED [+ EXCLUDED(rule N)] — path:LINE — <one sentence: what the code actually does>
 2. ...
 
 ## FORWARD
@@ -88,6 +90,9 @@ produce.
 Mode B:
 
 ```
+## COVERAGE
+items given: N · verified: N · UNVERIFIED: <numbers, or none>
+
 ## VERIFIED
 1. FIXED | NOT FIXED — path:LINE — <one sentence: what the code now does>
 2. ...

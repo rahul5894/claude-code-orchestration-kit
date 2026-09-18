@@ -25,6 +25,10 @@ Use of this agent means an ordinary fix already failed. Do not re-run the obviou
   stops you: the prohibition is the guard, and a diagnosis that came with a tree change is
   discarded whole.
 
+**Never run the whole test suite — not even if a brief asks for it.** Reproduce with the
+narrowest command that shows the failure; a full suite is minutes of wall-clock that tells
+you nothing a targeted repro does not.
+
 ## Method
 
 1. **Reproduce it.** If you cannot reproduce it, say so and stop — everything after an

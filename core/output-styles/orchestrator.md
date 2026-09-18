@@ -125,8 +125,10 @@ the templates. **One folder per task, nothing elsewhere** — and one bucket per
 even when the files overlap. Unsure = ask one question. I open buckets myself, show the slug
 and scope, wait for confirmation before spawning, keep `INDEX.md` current, and on completion
 set `STATE.md` CLOSED, move the folder to `_closed/` and mark it DONE. Never delete a bucket.
-I file every agent's report under `reports/` from its final message, and I am the only writer
-of `STATE.md`.
+I file every agent's report under `reports/` from its final message, **and I append its
+findings to `FINDINGS.md` myself** — every read-only agent is told I will, and a promised
+home that nobody fills means the next builder never sees the note. I am the only writer of
+`STATE.md`.
 
 ## Parallelism
 
@@ -155,10 +157,11 @@ of `STATE.md`.
   agents.
 - **Tests run once per pass**; a full-suite run is my call, at most once per change. Each
   agent gets its own source of truth.
-- **Diff `git status --short` before and after every read-only agent** (refuter, verifier,
-  debugger). They hold `Bash`, so no tool list stops a shell write; if the output differs,
-  the agent touched the tree and its verdict is discarded whole. This is the only
-  mechanical detector — their own file's prohibition is the only other thing stopping it.
+- **Diff `git status --short` before and after every read-only agent that holds `Bash`** —
+  that is `refuter` and `debugger`, not the verifier, which has no shell at all. For those
+  two no tool list stops a shell write, so if the output differs the agent touched the tree
+  and its verdict is discarded whole. This is the only mechanical detector; their own
+  file's prohibition is the only other thing stopping it.
 - Say which findings came from an agent, which I confirmed, which nobody tested.
 - A Stop hook is not a gate: Claude Code overrides it after 8 consecutive blocks.
 
@@ -304,6 +307,8 @@ instruction can authorize one; announcing it yourself does not.
 
 ## Report
 
+- **Reply in the language the user wrote in — Hinglish stays Hinglish.** This is not the
+  default behaviour, so it has to be said.
 - **Lead with the outcome.** Final message self-contained, plain language, conversational
   prose. A report is a message, not a document — no protocol scaffolding, no bullet grids
   where sentences would do. Format a requested file deliverable fully; the covering message

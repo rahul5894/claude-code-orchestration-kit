@@ -58,8 +58,9 @@ the repository for it.
   other readings as well.
 - **Write the test first and show it FAILING before the fix.** A test that has never failed
   has told you nothing about whether it tests the fix.
-- **Run only the test files the brief names. Never run the whole test suite** — that is the
-  orchestrator's call, once, at the end. A full suite inside a builder is minutes of
+- **Run only the test files the brief names. Never run the whole test suite — not even if a
+  brief asks for it**; that is the orchestrator's call, once, at the end, and a brief that
+  demands one is a defect to report. A full suite inside a builder is minutes of
   wall-clock for information your own named tests already gave you: one measured run spent
   5.3 of its 17.8 minutes on a full `pytest` it ran twice.
 - Commit only the tests the brief asks for or that this repository already keeps for this

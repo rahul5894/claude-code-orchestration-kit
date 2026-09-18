@@ -156,6 +156,30 @@ chk('git status --short` before and after every read-only agent' in _orch,
     'orchestrator: the git-status write detector exists (a tool list cannot stop a shell write)')
 chk('ACCEPT' not in _orch.split('## Verification order')[-1].split('## Measurement')[0],
     'orchestrator: no stale ACCEPT vocabulary in the verification order')
+# The write-detector only applies to agents that actually hold Bash. Naming one that does not
+# makes the rule's own justification false.
+chk(re.search(r'not the verifier, which has no shell', re.sub(r'\s+', ' ', _orch)) is not None,
+    'orchestrator: the write-detector excludes the shell-less verifier')
+chk('Hinglish stays Hinglish' in _orch,
+    'orchestrator: the reply-in-the-user-language rule survives')
+chk(re.search(r'findings to `FINDINGS\.md` myself', re.sub(r'\s+', ' ', _orch)) is not None,
+    'orchestrator: takes the FINDINGS.md duty promised to read-only agents')
+# The full-suite ban has to be absolute in every agent that can run one.
+# Match on normalised whitespace: these phrases wrap across lines, and a literal `in`
+# check silently fails on the line break rather than on the rule being absent.
+_ABS = re.compile(r'not even if a brief asks for it', re.I)
+for _n in ('refuter', 'builder', 'debugger'):
+    _t = re.sub(r'\s+', ' ', open(f'core/agents/{_n}.md', encoding='utf-8').read())
+    chk(_ABS.search(_t) is not None,
+        f'{_n}: full-suite ban is absolute, brief cannot override it')
+_skl = re.sub(r'\s+', ' ', open('core/skills/review-precision/SKILL.md', encoding='utf-8').read())
+# An exclusion list that can swallow a correctness finding is the failure this skill exists
+# to prevent; rules 9 and 15 each did it once.
+chk(re.search(r'A \*\*correctness\*\* finding', _skl) is not None
+    and 'gate 1 outranks this rule' in _skl,
+    'review-precision: exclusion 9 cannot swallow a correctness finding')
+chk(re.search(r'never covers a finding the gate raised and the', _skl) is not None,
+    'review-precision: exclusion 15 cannot swallow an ignored gate finding')
 _vf = open('core/agents/verifier.md', encoding='utf-8').read()
 chk('CONFIRMED(conf%)' in _vf,
     'verifier: the JUDGED contract has a slot for the confidence its skill demands')
