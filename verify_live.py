@@ -304,8 +304,8 @@ print("  NOTE  per-project state is checked by `python audit_project.py <repo>`,
 # catches. Bump them WITH the test, never to make a red line green.
 ok('29/29 passed' in r2.stdout, 'md-guard self-check 29/29',
    [l for l in r2.stdout.splitlines() if 'md-guard' in l])
-ok('kit-subagent-report self-check: 8/8 passed' in r2.stdout,
-   'kit-subagent-report self-check 8/8',
+ok('kit-subagent-report self-check: 10/10 passed' in r2.stdout,
+   'kit-subagent-report self-check 10/10',
    [l for l in r2.stdout.splitlines() if 'kit-subagent-report' in l])
 
 print('\n>>> ALL CLEAR' if not bad else '\n>>> PROBLEMS:\n  ' + '\n  '.join(bad))

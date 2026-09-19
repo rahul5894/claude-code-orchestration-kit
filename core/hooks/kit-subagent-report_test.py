@@ -125,6 +125,22 @@ body = read(os.path.join(box, names[0])) if len(names) == 1 else ""
 cases.append(("MISSING REPORT" in body and "'type': 'text'" in body,
               "a non-string last_assistant_message -> MISSING REPORT plus what did arrive"))
 
+# 8 and 9. a git repo that would SHOW the file gets nothing; one that ignores it gets the
+# file. Cases 1-7 run in plain temp dirs, which covers the "not a repo, nothing to dirty"
+# path. Measured 2026-09-19: two projects on this machine do not ignore .claude/scratch/.
+for ignored, want_files, label in ((False, 0, "a repo that does NOT ignore .claude/scratch/ -> nothing written"),
+                                   (True, 1, "a repo that ignores .claude/scratch/ -> the file is written")):
+    d = repo()
+    git = subprocess.run(["git", "init", "-q", d], capture_output=True)
+    if ignored:
+        with open(os.path.join(d, ".gitignore"), "w", encoding="utf-8") as f:
+            f.write(".claude/scratch/\n")
+    p = run({"cwd": d, "agent_type": "kit-refuter", "agent_id": "deadbeefcafe",
+             "last_assistant_message": "a candidate"})
+    quiet &= p.stdout == b""
+    _, names = inbox(d)
+    cases.append((git.returncode == 0 and len(names) == want_files, label))
+
 cases.append((quiet, "stdout is empty on every run"))
 
 fails = sum(1 for ok, _ in cases if not ok)

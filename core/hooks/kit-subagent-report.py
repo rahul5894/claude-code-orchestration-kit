@@ -2,17 +2,36 @@
 
 Writes one <cwd>/.claude/scratch/_inbox/<UTC>-<agent_type>-<id8>.md per subagent from the
 payload's `last_assistant_message`; the transcript is never parsed. The hook is global, so
-a project with no .claude/scratch/ is left completely alone. Prints nothing in any path:
-stdout from a hook can reach the model. Any crash = write nothing (fail open, dev tool).
+a project with no .claude/scratch/ is left completely alone, and so is one whose git would
+show the file. Prints nothing in any path: stdout from a hook can reach the model. Any
+crash = write nothing (fail open, dev tool).
 Self-check: python kit-subagent-report_test.py
 """
 import datetime
 import json
 import os
 import re
+import subprocess
 import sys
 
 UNSAFE = re.compile(r"[^A-Za-z0-9._-]")
+
+
+def git_would_see(scratch):
+    """True when this scratch dir is inside a git repo that does NOT ignore it.
+
+    Measured 2026-09-19: of five projects on this machine with a `.claude/scratch/`, two do
+    not ignore it. There, a file per finished subagent shows up in `git status` - which
+    discards a read-only reviewer's verdict under the kit's own rule, and invites
+    `git add .` to commit agent output. One `git check-ignore`: 0 = ignored, 1 = not
+    ignored, anything else (no git, not a repo, timeout) = nothing to dirty, keep writing.
+    """
+    try:
+        p = subprocess.run(["git", "-C", scratch, "check-ignore", "-q", scratch],
+                           capture_output=True, timeout=5)
+    except Exception:
+        return False
+    return p.returncode == 1
 
 
 def clean(value):
@@ -32,6 +51,8 @@ def main():
     # Every project on the machine fires this. Only a repo that already keeps task buckets
     # gets written to; anywhere else the hook is a no-op.
     if not os.path.isdir(scratch):
+        return
+    if git_would_see(scratch):
         return
     inbox = os.path.join(scratch, "_inbox")
     os.makedirs(inbox, exist_ok=True)
