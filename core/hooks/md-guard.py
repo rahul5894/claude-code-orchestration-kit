@@ -14,6 +14,12 @@ import sys
 
 MAX_LINES = 300
 CAP_RE = re.compile(
+    # `grep -l` is deliberately NOT here, though it prints file names only. Tried and
+    # reverted 2026-09-19: `[^|]*` caps the REGEX, not the command, so
+    # `grep -rl x --include=*.md . | xargs cat` matched and dumped every file, and the flag
+    # pattern also matched inside a search string (`grep -rn "use -all mode" big.md`).
+    # Both were allowed by that hunk and both print content. The one-token `| cut -c1-300`
+    # in the deny message is the supported way through.
     r"\bqmd\b|cut -c|--max-columns|\s-o\s|\bwc\b|\b(?:grep|rg)\b[^|]*\s-c\b"
     r"|\.Substring\(|Measure-Object"
 )
@@ -105,7 +111,12 @@ def check_bash(inp):
 
 def main():
     try:
-        data = json.load(sys.stdin)
+        # Explicit UTF-8, same as the other two hooks: sys.stdin uses the locale codec
+        # (cp1252 on Windows) while the payload arrives from JSON.stringify with non-ASCII
+        # left raw. Measured 2026-09-19: a 400-line .md under a path holding "ö" decoded
+        # into a path that does not exist, line_count() returned 0, and the Read was
+        # ALLOWED - the guard failing open exactly where the path is not ASCII.
+        data = json.loads(sys.stdin.buffer.read().decode("utf-8"))
     except Exception:
         return
     tool = data.get("tool_name", "")

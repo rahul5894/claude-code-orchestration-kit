@@ -38,7 +38,10 @@ def main():
         root = sys.argv[2]
     else:
         try:
-            data = json.load(sys.stdin)
+            # Explicit UTF-8: sys.stdin uses the locale codec (cp1252 on Windows) and the
+            # payload leaves non-ASCII raw, so a cwd with an accent decodes into a path
+            # that does not exist and the notice fires on the wrong project.
+            data = json.loads(sys.stdin.buffer.read().decode("utf-8"))
         except Exception:
             data = {}
         root = data.get("cwd") or os.getcwd()

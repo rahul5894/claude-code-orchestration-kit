@@ -37,6 +37,14 @@ to `./CLAUDE.md` if none exists. If one already exists, **do not overwrite it**:
 template's `## Commands` section only if the file has no `FAST GATE` row, and leave every
 other existing line alone.
 
+**A repo that has an `AGENTS.md` and no `CLAUDE.md` is the one case where writing the
+template takes something away.** Claude Code v2.1.277+ reads `AGENTS.md` as the project
+instructions only while no `CLAUDE.md`, `.claude/CLAUDE.md` or `CLAUDE.local.md` sits in the
+working directory or above it — so the file you are about to write switches it off, silently.
+When the repo has an `AGENTS.md`, make `@AGENTS.md` the first line of the `CLAUDE.md` you
+write and put the template below it; that import is the documented way to keep both. The
+user's `~/.claude/CLAUDE.md` does not count for that check and keeps loading either way.
+
 Fill in, from what you measured:
 - the **FAST GATE** row: the exact command and the measured seconds
 - the **Full test suite (I run this)** row, if you found one — and its command goes under

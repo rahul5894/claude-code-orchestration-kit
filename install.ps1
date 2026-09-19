@@ -131,6 +131,12 @@ if ($pre['subagentPromptCacheTtl'] -and $pre['subagentPromptCacheTtl'] -ne '1h')
 #    Big markdown files must go through qmd; this hook denies whole-file Read / uncapped shell reads.
 New-Item -ItemType Directory -Force (Join-Path $dest 'hooks') | Out-Null
 Copy-Item (Join-Path $kit 'core\hooks\*.py') (Join-Path $dest 'hooks') -Force
+# The wildcard copy is silent about a file missing from the clone, and the blocks below then
+# register a command pointing at nothing - every Read, session start and finished subagent
+# would spawn a python that dies. Fail the install instead.
+$missing = @('md-guard.py', 'kit-session-start.py', 'kit-subagent-report.py') |
+    Where-Object { -not (Test-Path (Join-Path $dest "hooks\$_")) }
+if ($missing) { throw "Hook script(s) missing from the kit checkout, nothing registered: $($missing -join ', ')" }
 $py = $null
 foreach ($name in 'python3.13', 'python3.12', 'python', 'python3', 'py') {
     $cmd = Get-Command $name -ErrorAction SilentlyContinue
@@ -148,10 +154,13 @@ else {
     $mine = $entries | Where-Object { @($_['hooks']) | Where-Object { "$($_['command'])" -like '*md-guard.py*' } }
     if ($mine) {
         $changed = $false
-        foreach ($e in $mine) { $e['matcher'] = 'Read|Bash|PowerShell'; foreach ($h in $e['hooks']) { if ($h['command'] -ne $hookCmd) { $h['command'] = $hookCmd; $changed = $true } } }
+        # timeout is re-asserted like matcher: it is in SECONDS, and an install that
+        # predates that fix left 5000 (83 minutes) in the user's settings. Only correcting
+        # it on a FRESH install would never reach the machines that already have it.
+        foreach ($e in $mine) { $e['matcher'] = 'Read|Bash|PowerShell'; foreach ($h in $e['hooks']) { if ($h['command'] -ne $hookCmd) { $h['command'] = $hookCmd; $changed = $true }; if ($h['timeout'] -ne 5) { $h['timeout'] = 5; $changed = $true } } }
         "md-guard: " + $(if ($changed) { 'python path updated' } else { 'already registered' })
     } else {
-        $entries += [ordered]@{ matcher = 'Read|Bash|PowerShell'; hooks = @([ordered]@{ type = 'command'; command = $hookCmd; timeout = 5000 }) }
+        $entries += [ordered]@{ matcher = 'Read|Bash|PowerShell'; hooks = @([ordered]@{ type = 'command'; command = $hookCmd; timeout = 5 }) }
         $set['hooks']['PreToolUse'] = $entries
         "md-guard: registered in settings.json"
     }
@@ -177,10 +186,10 @@ else {
     $sMine = $sEntries | Where-Object { @($_['hooks']) | Where-Object { "$($_['command'])" -like '*kit-session-start.py*' } }
     if ($sMine) {
         $changed = $false
-        foreach ($e in $sMine) { $e['matcher'] = 'startup|resume|clear|compact'; foreach ($h in $e['hooks']) { if ($h['command'] -ne $startCmd) { $h['command'] = $startCmd; $changed = $true } } }
+        foreach ($e in $sMine) { $e['matcher'] = 'startup|resume|clear|compact'; foreach ($h in $e['hooks']) { if ($h['command'] -ne $startCmd) { $h['command'] = $startCmd; $changed = $true }; if ($h['timeout'] -ne 5) { $h['timeout'] = 5; $changed = $true } } }
         "kit-session-start: " + $(if ($changed) { 'python path updated' } else { 'already registered' })
     } else {
-        $sEntries += [ordered]@{ matcher = 'startup|resume|clear|compact'; hooks = @([ordered]@{ type = 'command'; command = $startCmd; timeout = 5000 }) }
+        $sEntries += [ordered]@{ matcher = 'startup|resume|clear|compact'; hooks = @([ordered]@{ type = 'command'; command = $startCmd; timeout = 5 }) }
         $set['hooks']['SessionStart'] = $sEntries
         "kit-session-start: registered in settings.json"
     }
@@ -192,6 +201,33 @@ else {
     }
     $t2 = & $py (Join-Path $dest 'hooks\kit-session-start_test.py') 2>&1 | Select-Object -Last 1
     "kit-session-start self-check: $t2"
+
+    # 7. kit-subagent-report hook: file every finished subagent's final message into the
+    #    project's .claude/scratch/_inbox/, so a report is never lost to a forgotten write.
+    $repCmd = "$py " + (Join-Path $dest 'hooks\kit-subagent-report.py').Replace('\', '/')
+    $set = if ((Read-Text $sf).Trim()) { Read-Text $sf | ConvertFrom-Json -AsHashtable } else { [ordered]@{} }
+    if (-not $set['hooks']) { $set['hooks'] = [ordered]@{} }
+    if (-not $set['hooks']['SubagentStop']) { $set['hooks']['SubagentStop'] = @() }
+    $rEntries = @($set['hooks']['SubagentStop'])
+    $rMine = $rEntries | Where-Object { @($_['hooks']) | Where-Object { "$($_['command'])" -like '*kit-subagent-report.py*' } }
+    if ($rMine) {
+        $changed = $false
+        foreach ($e in $rMine) { $e['matcher'] = '*'; foreach ($h in $e['hooks']) { if ($h['command'] -ne $repCmd) { $h['command'] = $repCmd; $changed = $true }; if ($h['timeout'] -ne 5) { $h['timeout'] = 5; $changed = $true } } }
+        "kit-subagent-report: " + $(if ($changed) { 'python path updated' } else { 'already registered' })
+    } else {
+        # '*' = activates on every occurrence of the event, whatever the agent type
+        $rEntries += [ordered]@{ matcher = '*'; hooks = @([ordered]@{ type = 'command'; command = $repCmd; timeout = 5 }) }
+        $set['hooks']['SubagentStop'] = $rEntries
+        "kit-subagent-report: registered in settings.json"
+    }
+    $out  = ($set | ConvertTo-Json -Depth 20) + "`n"
+    $prev = Read-Text $sf
+    if ($out.Replace("`r`n", "`n") -ne $prev.Replace("`r`n", "`n")) {
+        if ($sfPre) { Copy-Item $sf "$sf.bak-kit-$(Get-Date -Format yyyyMMdd-HHmmss-fff)" }
+        Write-Lf $sf $out
+    }
+    $t3 = & $py (Join-Path $dest 'hooks\kit-subagent-report_test.py') 2>&1 | Select-Object -Last 1
+    "kit-subagent-report self-check: $t3"
 }
 
 "done. RESTART Claude Code: agents and output styles are read at startup, so the 'orchestrator'"

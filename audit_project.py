@@ -69,6 +69,31 @@ if txt:
            'the FAST GATE row states a measured time', gate_row.group(0)[:80])
     ok('Agents never run these' in txt, 'names the commands agents must NOT run')
 
+# 1b. Claude Code v2.1.277+ reads AGENTS.md as the project instructions only while no
+# CLAUDE.md sits in the working directory or above it, so the CLAUDE.md /kit-init writes
+# switches it off without saying so. One `@AGENTS.md` import at the top keeps both.
+agents_md = [p for p in (root / 'AGENTS.md', root / '.claude' / 'AGENTS.md') if p.exists()]
+# All three of these switch AGENTS.md off, not just the root CLAUDE.md, so a repo with only
+# .claude/CLAUDE.md was skipping this check while its AGENTS.md was in fact being ignored.
+claude_mds = [p for p in (cm, root / '.claude' / 'CLAUDE.md', root / 'CLAUDE.local.md')
+              if p.exists()]
+
+
+def imports_agents(p):
+    """The import only loads from the FIRST line - a mention in prose or a fence does not."""
+    for line in p.read_text(encoding='utf-8', errors='replace').splitlines():
+        if line.strip():
+            return line.strip() == '@AGENTS.md'
+    return False
+
+
+if agents_md and claude_mds:
+    ok(any(imports_agents(p) for p in claude_mds),
+       'CLAUDE.md imports the AGENTS.md beside it (else that file never loads)',
+       'add `@AGENTS.md` as the first line of '
+       + ' or '.join(str(p.relative_to(root)) for p in claude_mds) + ': '
+       + ', '.join(str(p.relative_to(root)) for p in agents_md) + ' is being ignored')
+
 # 2. Nothing in the project restates a global rule.
 if txt:
     copies = [m.group(0).strip()[:60] for m in GLOBAL_HEADINGS.finditer(txt)]
@@ -112,6 +137,19 @@ if skills_dir.exists():
     stray = sorted(p.name for p in skills_dir.iterdir() if p.is_file())
     ok(not stray, '.claude/skills holds no loose files (Claude Code ignores them; they are dead weight)',
        str(stray))
+
+# 3c. The SubagentStop hook files a report into .claude/scratch/_inbox/ in every project that
+# keeps task buckets. Tracked, that means every finished subagent leaves the tree dirty -
+# including a read-only reviewer, whose verdict this kit discards when the tree changed.
+if (root / '.claude' / 'scratch').exists():
+    gi = root / '.gitignore'
+    gi_txt = gi.read_text(encoding='utf-8', errors='replace') if gi.exists() else ''
+    # Normalise the shapes git itself accepts: `.claude/scratch/`, `.claude/scratch/**`,
+    # `**/scratch/`. Without the strip a real ignore line reads as a FAIL.
+    entries = {ln.strip().strip('/').replace('**/', '').rstrip('/*') for ln in gi_txt.splitlines()}
+    ok(bool(entries & {'.claude/scratch', '.claude', 'scratch'}),
+       '.gitignore ignores .claude/scratch/ (the report hook writes there on every subagent)',
+       'add `.claude/scratch/` to .gitignore')
 
 # 4. Project MCP config must not re-define a user-scope server.
 user_servers = set(((load_json(USER_JSON) or {}).get('mcpServers') or {}))

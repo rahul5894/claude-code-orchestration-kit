@@ -845,21 +845,36 @@ for script, why in [
 # from ANY repo. Lose any one and the next new project silently starts with no gate.
 for p, why in [('core/hooks/kit-session-start.py', 'the SessionStart notice'),
                ('core/hooks/kit-session-start_test.py', 'its self-test'),
-               ('core/commands/kit-init.md', 'the command that measures and writes the gate')]:
+               ('core/commands/kit-init.md', 'the command that measures and writes the gate'),
+               ('core/hooks/kit-subagent-report.py', 'the SubagentStop report filer'),
+               ('core/hooks/kit-subagent-report_test.py', 'its self-test')]:
     chk(os.path.isfile(p), f'{p} exists ({why})')
 _inst = open('install.ps1', encoding='utf-8').read() if os.path.isfile('install.ps1') else ''
 for frag, label in [('kit-session-start.py', 'installer registers the SessionStart hook'),
                     ("startup|resume|clear|compact", 'SessionStart hook matches every session kind'),
                     ('kit-session-start_test.py', 'installer runs the hook self-test'),
+                    ('kit-subagent-report.py', 'installer registers the SubagentStop hook'),
+                    ('SubagentStop', 'the report filer is hung on the SubagentStop event'),
+                    ('kit-subagent-report_test.py', 'installer runs the report filer self-test'),
                     ("kit\\project-template.md", 'installer publishes the project template to ~/.claude/kit'),
                     ("kit\\audit_project.py", 'installer publishes audit_project.py to ~/.claude/kit')]:
     chk(frag in _inst, label)
+# A hook `timeout` is SECONDS, not milliseconds: 5000 is 83 minutes of a wedged hook holding
+# up every Read, every session start and every finished subagent.
+chk('timeout = 5000' not in _inst and len(re.findall(r'timeout = 5\b', _inst)) == 3,
+    'all three hook registrations use timeout = 5 seconds, none the 5000 that reads as ms')
 _ki = open('core/commands/kit-init.md', encoding='utf-8').read() if os.path.isfile('core/commands/kit-init.md') else ''
 chk('never guess' in _ki.lower() and ('time' in _ki.lower()), '/kit-init measures the gate, never guesses it')
 chk('60' in _ki and 'test' in _ki.lower(), '/kit-init refuses a slow gate or a test runner')
 chk('do not overwrite' in _ki.lower(), '/kit-init never overwrites an existing CLAUDE.md')
 chk('~/.claude/kit/project-template.md' in _ki and '~/.claude/kit/audit_project.py' in _ki,
     '/kit-init reads the template and the audit from the global kit dir, not this checkout')
+# 2.1.277 reads AGENTS.md only while no CLAUDE.md sits at or above the working directory, so
+# the file /kit-init writes silently switches it off unless it imports it.
+chk('AGENTS.md' in _ki and '@AGENTS.md' in _ki,
+    '/kit-init keeps a repo AGENTS.md alive with an @AGENTS.md import')
+_ap = open('audit_project.py', encoding='utf-8').read() if os.path.isfile('audit_project.py') else ''
+chk('@AGENTS.md' in _ap, 'audit_project.py catches a CLAUDE.md that ignores the AGENTS.md beside it')
 
 print()
 # Most sections are glob-driven: one that yields nothing contributes zero checks and still

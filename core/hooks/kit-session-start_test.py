@@ -20,9 +20,17 @@ with open(os.path.join(WITH, "CLAUDE.md"), "w", encoding="utf-8") as f:
     f.write("# x\n| **FAST GATE — agents run this** | `make lint` | 4 s |\n")
 with open(os.path.join(WITHOUT, "CLAUDE.md"), "w", encoding="utf-8") as f:
     f.write("# x\n## Commands\nnothing named here\n")
+# A gated project under a non-ASCII path. Before 2026-09-19 the hook read stdin with the
+# locale codec, so this cwd decoded into a path that does not exist and the notice fired on
+# a project that is in fact set up.
+ACCENT = os.path.join(tmp, "Grüße")
+os.makedirs(ACCENT)
+with open(os.path.join(ACCENT, "CLAUDE.md"), "w", encoding="utf-8") as f:
+    f.write("# x\n| **FAST GATE — agents run this** | `make lint` | 4 s |\n")
 
 CASES = [
     # (want, how, root)
+    ("QUIET",  "stdin", ACCENT),
     ("QUIET",  "stdin", WITH),
     ("NOTICE", "stdin", WITHOUT),
     ("NOTICE", "stdin", NONE),
@@ -36,15 +44,16 @@ CASES = [
 
 def run(how, root):
     if how == "stdin":
-        p = subprocess.run([sys.executable, HOOK], input=json.dumps({"cwd": root}),
-                           capture_output=True, text=True, cwd=root)
+        # Raw UTF-8 bytes, the way JSON.stringify feeds the real hook. text=True would
+        # encode with the locale codec and the non-ASCII case could never run.
+        raw = json.dumps({"cwd": root}, ensure_ascii=False).encode("utf-8")
+        p = subprocess.run([sys.executable, HOOK], input=raw, capture_output=True, cwd=root)
     elif how == "check":
-        p = subprocess.run([sys.executable, HOOK, "--check", root],
-                           capture_output=True, text=True)
+        p = subprocess.run([sys.executable, HOOK, "--check", root], capture_output=True)
     else:
-        p = subprocess.run([sys.executable, HOOK], input="{not json",
-                           capture_output=True, text=True, cwd=root)
-    return "NOTICE" if "FAST GATE" in p.stdout else "QUIET"
+        p = subprocess.run([sys.executable, HOOK], input=b"{not json",
+                           capture_output=True, cwd=root)
+    return "NOTICE" if b"FAST GATE" in p.stdout else "QUIET"
 
 
 fails = 0
