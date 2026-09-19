@@ -211,6 +211,36 @@ if _doc:
     ok(not (_doc.get('host_integration') or {}).get('local_skill_shadow'),
        'no project-local qartez skill shadowing the global one')
 
+print("\n=== C5. no project silently switches the kit off ===")
+# A project-local `outputStyle` BEATS the user-level one, so one line in one repo's
+# .claude/settings.local.json disables the whole orchestrator there - roster, delegation
+# threshold, model pinning - with nothing anywhere reporting it. Proven 2026-09-19: in the
+# one repo that still had it, the session transcript showed "Concise style loaded: YES,
+# orchestrator style loaded: NO". audit_project.py catches it per repo; this catches it
+# across every repo at once, which is the only way you would notice.
+KILLERS = ('CLAUDE_CODE_EFFORT_LEVEL', 'CLAUDE_CODE_SUBAGENT_MODEL_FORCE',
+           'CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS', 'CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH')
+_offenders = []
+_scanned = 0
+for _proj in sorted(pathlib.Path(r'D:\Projects').glob('*')) if pathlib.Path(r'D:\Projects').is_dir() else []:
+    for _rel in ('.claude/settings.json', '.claude/settings.local.json'):
+        _f = _proj / _rel
+        if not _f.is_file():
+            continue
+        _scanned += 1
+        try:
+            _d = json.loads(_f.read_text(encoding='utf-8'))
+        except ValueError:
+            _offenders.append(f'{_proj.name}/{_rel}: unparseable')
+            continue
+        if 'outputStyle' in _d:
+            _offenders.append(f'{_proj.name}/{_rel}: outputStyle={_d["outputStyle"]!r} (kit OFF there)')
+        for _k in KILLERS:
+            if _k in (_d.get('env') or {}):
+                _offenders.append(f'{_proj.name}/{_rel}: env.{_k}={_d["env"][_k]!r}')
+ok(not _offenders, f'none of the {_scanned} project settings files overrides the kit',
+   '; '.join(_offenders[:4]))
+
 print("\n=== D. settings live ===")
 # A missing or hand-broken settings.json is a FAILED CHECK, not a traceback: the setup doc
 # tells a fresh-machine reader this script prints ALL CLEAR or names what is wrong, and a
