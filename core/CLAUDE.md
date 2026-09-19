@@ -12,8 +12,8 @@ load.
 - **Code search is qartez.** `Grep`/`Glob` are not in your list: the guard denies them on
   **every** path and file type, even with no index present. `Read` is *not* guarded, so that
   rule is yours — briefs, markdown, JSON, config only, never source, where `qartez_read`
-  returns the symbol instead of the whole file. Every qartez path is **relative to the
-  project root**; an absolute one is rejected.
+  returns the symbol instead of the whole file. Paths relative to the project root are
+  safest; an absolute path under the root, or `./x`, is accepted too.
 - **qartez indexes symbol definitions and their bodies. Nothing else.** For a literal —
   constant, env var, flag, message — use `qartez_grep` with `search_bodies=true`, which does
   reach text inside a function. Blind, however you search, to **module-level code** (even in
