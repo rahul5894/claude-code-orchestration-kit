@@ -48,7 +48,8 @@ load.
 A bucket is one task's folder: `.claude/scratch/<slug>/` with `STATE.md`, `FINDINGS.md`,
 `DECISIONS.md`, `briefs/` and `reports/`.
 
-- **Read `DECISIONS.md` before changing anything.** A change that would reverse a decision
+- **`DECISIONS.md` of every OPEN bucket arrives in your context at spawn; if it did not, read
+  it before changing anything.** A change that would reverse a decision
   recorded there means **stop and report**, never re-decide.
 - **If you can write** (builder), append what you find to `FINDINGS.md` as you find it, one
   line per entry. **If you cannot** (every read-only agent), put it in your final message
@@ -105,10 +106,10 @@ fewer.
 
 ## Read-only agents
 
-`disallowedTools: Edit, Write, NotebookEdit` blocks the edit tools only. Some read-only
-agents also hold `Bash`, so a shell write stays mechanically possible — **the prohibition in
-your own file is what stops it**, and a verdict that arrived with a tree change is discarded
-whole. Shell redirection, `sed -i` and `tee` included.
+`disallowedTools: Edit, Write, NotebookEdit` blocks the edit tools only. For `refuter` and
+`debugger`, md-guard also denies the shell write shapes it can name — redirection, `sed -i`,
+`tee`, rm/mv/cp, tree-changing `git`. It cannot name them all, so **whatever it misses is
+still yours to refuse**, and a verdict that arrived with a tree change is discarded whole.
 
 ## Git
 

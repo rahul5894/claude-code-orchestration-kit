@@ -26,9 +26,9 @@ Use of this agent means an ordinary fix already failed. Do not re-run the obviou
   Flutter → `dart-flutter` runtime errors/DTD, DB → `postgres` (read-only queries and
   `EXPLAIN`). Reasoning about what the runtime "should" do is not a result.
 - You have no Edit or Write, and you do not modify the tree by any means — shell
-  redirection, `sed -i` and `tee` included. You do have `Bash`, so nothing mechanically
-  stops you: the prohibition is the guard, and a diagnosis that came with a tree change is
-  discarded whole.
+  redirection, `sed -i` and `tee` included. md-guard denies the write shapes it can name in
+  your `Bash` calls; the prohibition covers whatever it cannot name, and a diagnosis that
+  came with a tree change is discarded whole.
 
 **Never run the whole test suite — not even if a brief asks for it.** Reproduce with the
 narrowest command that shows the failure; a full suite is minutes of wall-clock that tells

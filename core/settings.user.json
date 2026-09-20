@@ -30,7 +30,9 @@
       "Bash(chmod u+w:*)"
     ],
     "deny": [
-      "Edit(.claude/scratch/_closed/**)"
+      "Edit(.claude/scratch/_closed/**)",
+      "Agent(model:fable)",
+      "Agent(model:claude-fable-5-1)"
     ]
   }
 }

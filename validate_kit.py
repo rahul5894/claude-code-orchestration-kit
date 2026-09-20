@@ -847,7 +847,9 @@ for p, why in [('core/hooks/kit-session-start.py', 'the SessionStart notice'),
                ('core/hooks/kit-session-start_test.py', 'its self-test'),
                ('core/commands/kit-init.md', 'the command that measures and writes the gate'),
                ('core/hooks/kit-subagent-report.py', 'the SubagentStop report filer'),
-               ('core/hooks/kit-subagent-report_test.py', 'its self-test')]:
+               ('core/hooks/kit-subagent-report_test.py', 'its self-test'),
+               ('core/hooks/kit-subagent-start.py', 'the SubagentStart decisions injector'),
+               ('core/hooks/kit-subagent-start_test.py', 'its self-test')]:
     chk(os.path.isfile(p), f'{p} exists ({why})')
 _inst = open('install.ps1', encoding='utf-8').read() if os.path.isfile('install.ps1') else ''
 for frag, label in [('kit-session-start.py', 'installer registers the SessionStart hook'),
@@ -856,13 +858,44 @@ for frag, label in [('kit-session-start.py', 'installer registers the SessionSta
                     ('kit-subagent-report.py', 'installer registers the SubagentStop hook'),
                     ('SubagentStop', 'the report filer is hung on the SubagentStop event'),
                     ('kit-subagent-report_test.py', 'installer runs the report filer self-test'),
+                    ('kit-subagent-start.py', 'installer registers the SubagentStart hook'),
+                    ('builder|refuter|verifier|debugger|researcher',
+                     'the injector matches the five briefed agents and never Explore'),
+                    ('kit-subagent-start_test.py', 'installer runs the injector self-test'),
                     ("kit\\project-template.md", 'installer publishes the project template to ~/.claude/kit'),
                     ("kit\\audit_project.py", 'installer publishes audit_project.py to ~/.claude/kit')]:
     chk(frag in _inst, label)
 # A hook `timeout` is SECONDS, not milliseconds: 5000 is 83 minutes of a wedged hook holding
 # up every Read, every session start and every finished subagent.
-chk('timeout = 5000' not in _inst and len(re.findall(r'timeout = 5\b', _inst)) == 3,
-    'all three hook registrations use timeout = 5 seconds, none the 5000 that reads as ms')
+chk('timeout = 5000' not in _inst and len(re.findall(r'timeout = 5\b', _inst)) == 4,
+    'all four hook registrations use timeout = 5 seconds, none the 5000 that reads as ms')
+chk(all(r in su.get('permissions', {}).get('deny', [])
+        for r in ('Agent(model:fable)', 'Agent(model:claude-fable-5-1)')),
+    'settings deny an explicit Fable subagent, so a Fable spawn fails loudly instead of '
+    'spending Fable quota', str(su.get('permissions', {}).get('deny', [])))
+# md-guard's shell denial is keyed on agent_type, so its set has to BE the roster's read-only
+# shell holders. A new agent with Bash and no Edit would otherwise write the tree freely while
+# its file still calls it read-only.
+_mg = open('core/hooks/md-guard.py', encoding='utf-8').read()
+_ro = re.search(r'READ_ONLY_AGENTS = \{([^}]*)\}', _mg)
+_ro_set = set(re.findall(r'''["']([^"']+)["']''', _ro.group(1))) if _ro else set()
+_shell_only = set()
+for _f in sorted(glob.glob('core/agents/*.md')):
+    _head = open(_f, encoding='utf-8').read().split('\n---', 1)[0].lstrip('-\n')
+    _d = ((_yaml.safe_load(_head) if _yaml else fm(_f)[0]) or {})
+    # No `tools:` key means the agent holds EVERY tool, so it holds Bash and Edit unless
+    # disallowedTools takes them away. Reading a missing key as "no tools" let such an agent
+    # skip this check entirely.
+    _dis = {t.strip() for t in str(_d.get('disallowedTools', '')).split(',')}
+    _tools = ({t.strip() for t in str(_d['tools']).split(',')} if 'tools' in _d
+              else {'Bash', 'Edit'}) - _dis
+    if 'Bash' in _tools and 'Edit' not in _tools:
+        _shell_only.add(str(_d.get('name') or os.path.basename(_f)[:-3]))
+chk(_ro_set == _shell_only,
+    "md-guard's read-only agent set equals every agent that holds Bash without Edit",
+    f'{sorted(_ro_set)} vs {sorted(_shell_only)}')
+chk('kit-subagent-start.py' in _setup,
+    'SETUP-NEW-MACHINE.md names the SubagentStart decisions injector')
 _ki = open('core/commands/kit-init.md', encoding='utf-8').read() if os.path.isfile('core/commands/kit-init.md') else ''
 chk('never guess' in _ki.lower() and ('time' in _ki.lower()), '/kit-init measures the gate, never guesses it')
 chk('60' in _ki and 'test' in _ki.lower(), '/kit-init refuses a slow gate or a test runner')

@@ -62,7 +62,7 @@ commands: task
 CLAUDE.md: kit block appended        (or "replaced" / "unchanged" on a re-run)
 settings.json: merged (backup written)
 md-guard: registered in settings.json
-md-guard self-check: 24/24 passed
+md-guard self-check: 42/42 passed
 done. ...
 ```
 
@@ -120,9 +120,11 @@ about that function's correctness would have been invention rather than reading.
 is illusory here because subagents share no context, and the failure is silent. `fresh=true`
 per call is the fallback; the env var is the control, because it cannot be forgotten.
 
-**After any qartez upgrade, restart Claude Code.** `qartez doctor --format json` reports
-`restart_required_after_upgrade`, and `verify_live.py` section C4 fails on it: until the
-restart, every agent is served the *previous* qartez while `qartez --version` says otherwise.
+**After any qartez upgrade, restart Claude Code.** `verify_live.py` section C4 compares the
+start time of every running `qartez.exe` with the write time of the binary on disk and fails
+when one is older: until the restart, every agent is served the *previous* qartez while
+`qartez --version` says otherwise. The doctor's own `restart_required_after_upgrade` is not
+used — it is a hardcoded `true` in 0.27.0, so it can never say "no".
 
 `.mcp.template.json` is the *project* MCP config with every credential replaced by an
 environment variable, for the extra servers a single repo needs (Atlassian, SSH, mssql,
@@ -151,7 +153,10 @@ with a measured FAST GATE row**, and the kit now creates that itself:
 
 1. Open the repo in Claude Code. A global `SessionStart` hook (`kit-session-start.py`) sees
    there is no FAST GATE row and injects one line telling the orchestrator to run `/kit-init`
-   before delegating anything. It writes nothing.
+   before delegating anything. It writes nothing. A `SubagentStart` hook
+   (`kit-subagent-start.py`) injects the `DECISIONS.md` of every OPEN bucket in
+   `.claude/scratch/INDEX.md` into each spawned agent, so a settled decision binds an agent
+   that never saw the conversation.
 2. Run `/kit-init`. It detects the gate from `package.json` / `pyproject` / `Makefile` /
    `go.mod` / `pubspec`, **runs it once and times it**, refuses anything over 60 s or
    containing a test runner, writes `CLAUDE.md` from `~/.claude/kit/project-template.md`
@@ -224,16 +229,25 @@ It denies:
   `Select-String`) of a `.md` file with more than 300 lines, or of a path it cannot
   find, when the command has no column cap.
 
-It allows: small files, writes (`>`, `>>`, heredocs, `sed -i`, `tee`), counts
+- Any `Bash` / `PowerShell` command with a named write shape (redirection, `sed -i`, `tee`,
+  rm/mv/cp, tree-changing `git`, a write-mode `open(`, a package install) when the payload's
+  `agent_type` is `refuter` or `debugger` — the two read-only agents that hold a shell.
+
+It allows: small files, writes from anyone else (`>`, `>>`, heredocs, `sed -i`, `tee`), counts
 (`wc`, `grep -c`), capped output (`| cut -c1-300`, PowerShell `.Substring(`), any
 command that calls `qmd`, and `git` commands. Each `&&` / `;` segment of a command is
 judged on its own, so `rm big.md; git status | head` passes.
 
 The deny message tells Claude the exact qmd or capped command to run instead.
 
-Check: `python ~/.claude/hooks/md-guard_test.py` prints `24/24 passed`. The test
+Check: `python ~/.claude/hooks/md-guard_test.py` prints `42/42 passed`. The test
 builds its own fixtures in a temp folder, so it runs on any machine. The installer runs
 it for you.
+
+`~/.claude/hooks/kit-subagent-start.py` is the other half of the same idea: a `SubagentStart`
+hook that injects the `DECISIONS.md` of every OPEN bucket in `.claude/scratch/INDEX.md` into
+each spawned builder, refuter, verifier, debugger and researcher, capped at 6000 characters.
+Check: `python ~/.claude/hooks/kit-subagent-start_test.py` prints `10/10 passed`.
 
 Known gaps, on purpose:
 
@@ -349,7 +363,8 @@ Known gaps, on purpose:
 
 ## 7. Final checklist
 
-- [ ] `pwsh install.ps1` printed `md-guard self-check: 24/24 passed`
+- [ ] `pwsh install.ps1` printed `md-guard self-check: 42/42 passed`
+- [ ] the same run printed `kit-subagent-start self-check: 10/10 passed`
 - [ ] `qmd search "<anything>" -c <collection> --full-path -n 5` printed `D:\...md:LINE` hits
 - [ ] In a new Claude Code session, asking Claude to read a 300+ line `.md` whole is
       denied and the message names the qmd command

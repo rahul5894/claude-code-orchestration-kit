@@ -134,7 +134,7 @@ Copy-Item (Join-Path $kit 'core\hooks\*.py') (Join-Path $dest 'hooks') -Force
 # The wildcard copy is silent about a file missing from the clone, and the blocks below then
 # register a command pointing at nothing - every Read, session start and finished subagent
 # would spawn a python that dies. Fail the install instead.
-$missing = @('md-guard.py', 'kit-session-start.py', 'kit-subagent-report.py') |
+$missing = @('md-guard.py', 'kit-session-start.py', 'kit-subagent-report.py', 'kit-subagent-start.py') |
     Where-Object { -not (Test-Path (Join-Path $dest "hooks\$_")) }
 if ($missing) { throw "Hook script(s) missing from the kit checkout, nothing registered: $($missing -join ', ')" }
 $py = $null
@@ -151,7 +151,10 @@ else {
     if (-not $set['hooks']) { $set['hooks'] = [ordered]@{} }
     if (-not $set['hooks']['PreToolUse']) { $set['hooks']['PreToolUse'] = @() }
     $entries = @($set['hooks']['PreToolUse'])
-    $mine = $entries | Where-Object { @($_['hooks']) | Where-Object { "$($_['command'])" -like '*md-guard.py*' } }
+    # `$_ -and` first: a pre-existing entry with no `hooks` key makes @($_['hooks']) a @($null),
+    # and indexing $null['command'] throws "Cannot index into a null array" - the whole install
+    # dying on one hand-written entry. All four sites below are the same shape.
+    $mine = $entries | Where-Object { @($_['hooks']) | Where-Object { $_ -and "$($_['command'])" -like '*md-guard.py*' } }
     if ($mine) {
         $changed = $false
         # timeout is re-asserted like matcher: it is in SECONDS, and an install that
@@ -183,7 +186,7 @@ else {
     if (-not $set['hooks']) { $set['hooks'] = [ordered]@{} }
     if (-not $set['hooks']['SessionStart']) { $set['hooks']['SessionStart'] = @() }
     $sEntries = @($set['hooks']['SessionStart'])
-    $sMine = $sEntries | Where-Object { @($_['hooks']) | Where-Object { "$($_['command'])" -like '*kit-session-start.py*' } }
+    $sMine = $sEntries | Where-Object { @($_['hooks']) | Where-Object { $_ -and "$($_['command'])" -like '*kit-session-start.py*' } }
     if ($sMine) {
         $changed = $false
         foreach ($e in $sMine) { $e['matcher'] = 'startup|resume|clear|compact'; foreach ($h in $e['hooks']) { if ($h['command'] -ne $startCmd) { $h['command'] = $startCmd; $changed = $true }; if ($h['timeout'] -ne 5) { $h['timeout'] = 5; $changed = $true } } }
@@ -209,7 +212,7 @@ else {
     if (-not $set['hooks']) { $set['hooks'] = [ordered]@{} }
     if (-not $set['hooks']['SubagentStop']) { $set['hooks']['SubagentStop'] = @() }
     $rEntries = @($set['hooks']['SubagentStop'])
-    $rMine = $rEntries | Where-Object { @($_['hooks']) | Where-Object { "$($_['command'])" -like '*kit-subagent-report.py*' } }
+    $rMine = $rEntries | Where-Object { @($_['hooks']) | Where-Object { $_ -and "$($_['command'])" -like '*kit-subagent-report.py*' } }
     if ($rMine) {
         $changed = $false
         foreach ($e in $rMine) { $e['matcher'] = '*'; foreach ($h in $e['hooks']) { if ($h['command'] -ne $repCmd) { $h['command'] = $repCmd; $changed = $true }; if ($h['timeout'] -ne 5) { $h['timeout'] = 5; $changed = $true } } }
@@ -228,6 +231,33 @@ else {
     }
     $t3 = & $py (Join-Path $dest 'hooks\kit-subagent-report_test.py') 2>&1 | Select-Object -Last 1
     "kit-subagent-report self-check: $t3"
+
+    # 8. kit-subagent-start hook: inject the DECISIONS.md of every OPEN bucket into a spawned
+    #    agent, so a settled decision binds an agent that never saw the conversation.
+    $ssCmd = "$py " + (Join-Path $dest 'hooks\kit-subagent-start.py').Replace('\', '/')
+    $set = if ((Read-Text $sf).Trim()) { Read-Text $sf | ConvertFrom-Json -AsHashtable } else { [ordered]@{} }
+    if (-not $set['hooks']) { $set['hooks'] = [ordered]@{} }
+    if (-not $set['hooks']['SubagentStart']) { $set['hooks']['SubagentStart'] = @() }
+    $ssEntries = @($set['hooks']['SubagentStart'])
+    $ssMine = $ssEntries | Where-Object { @($_['hooks']) | Where-Object { $_ -and "$($_['command'])" -like '*kit-subagent-start.py*' } }
+    if ($ssMine) {
+        $changed = $false
+        foreach ($e in $ssMine) { $e['matcher'] = 'builder|refuter|verifier|debugger|researcher'; foreach ($h in $e['hooks']) { if ($h['command'] -ne $ssCmd) { $h['command'] = $ssCmd; $changed = $true }; if ($h['timeout'] -ne 5) { $h['timeout'] = 5; $changed = $true } } }
+        "kit-subagent-start: " + $(if ($changed) { 'python path updated' } else { 'already registered' })
+    } else {
+        # The five briefed agents only: Explore runs omitClaudeMd and stays tiny on purpose
+        $ssEntries += [ordered]@{ matcher = 'builder|refuter|verifier|debugger|researcher'; hooks = @([ordered]@{ type = 'command'; command = $ssCmd; timeout = 5 }) }
+        $set['hooks']['SubagentStart'] = $ssEntries
+        "kit-subagent-start: registered in settings.json"
+    }
+    $out  = ($set | ConvertTo-Json -Depth 20) + "`n"
+    $prev = Read-Text $sf
+    if ($out.Replace("`r`n", "`n") -ne $prev.Replace("`r`n", "`n")) {
+        if ($sfPre) { Copy-Item $sf "$sf.bak-kit-$(Get-Date -Format yyyyMMdd-HHmmss-fff)" }
+        Write-Lf $sf $out
+    }
+    $t4 = & $py (Join-Path $dest 'hooks\kit-subagent-start_test.py') 2>&1 | Select-Object -Last 1
+    "kit-subagent-start self-check: $t4"
 }
 
 "done. RESTART Claude Code: agents and output styles are read at startup, so the 'orchestrator'"

@@ -40,7 +40,9 @@ Re-running a deterministic command costs minutes and tells you nothing new. If t
 has no gate output, say so under COVERAGE and continue on the diff.
 
 You have no Edit or Write. You do not fix what you find. **You do not modify the tree by
-any means, shell redirection and `sed -i` included.**
+any means, shell redirection and `sed -i` included.** md-guard denies the write shapes it can
+name in your shell calls; the prohibition covers whatever it cannot name, and a verdict that
+arrived with a tree change is discarded whole.
 
 ## Two mandates, one pass
 

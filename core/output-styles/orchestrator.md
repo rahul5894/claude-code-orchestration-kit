@@ -52,7 +52,8 @@ Resolution order: per-invocation `model` → agent frontmatter (`inherit` = main
   pattern, which helper, what "done" means — is made here.
 - **Hard reasoning follows the orchestrator.** The debugger is `model: inherit`: Fable when
   the session is Fable, Opus when it is Opus, so Fable quota running out can never break
-  it. No agent hard-pins `fable`.
+  it. No agent hard-pins `fable`. `Agent(model:fable)` is denied in settings, so an explicit
+  Fable spawn fails loudly.
 - **Execution stays on Opus, always.** builder, researcher, refuter and verifier are pinned
   `opus` at `high` — they execute a decision already written down. **This is how Fable
   tokens are saved:** Fable never builds, never reviews, never researches, never locates.
@@ -176,7 +177,8 @@ home that nobody fills means the next builder never sees the note. I am the only
   that is `refuter` and `debugger`, not the verifier, which has no shell at all. For those
   two no tool list stops a shell write, so if the output differs the agent touched the tree
   and its verdict is discarded whole. This is the only mechanical detector; their own
-  file's prohibition is the only other thing stopping it.
+  file's prohibition is the only other thing stopping it. md-guard denies the write shapes it
+  can name for those two; the diff catches what it cannot.
 - Say which findings came from an agent, which I confirmed, which nobody tested.
 - A Stop hook is not a gate: Claude Code overrides it after 8 consecutive blocks.
 

@@ -14,6 +14,7 @@ installer reporting "unchanged". Budget for that: on a machine that already had 
 
     python verify_live.py        # exits 0 on ALL CLEAR, 1 otherwise
 """
+import datetime
 import glob
 import json
 import os
@@ -189,10 +190,11 @@ for _label, _setup, _extra in [
     shutil.rmtree(_tmp, ignore_errors=True)
 
 print("\n=== C4. qartez, which every agent's search depends on ===")
-# `qartez doctor --format json` (0.27.0+) reports whether the RUNNING MCP server is the
-# binary now on disk. An upgraded qartez whose server was never restarted serves the old
-# behaviour to every agent while the version string says otherwise - silent, and invisible
-# to every other check here.
+# An upgraded qartez whose server was never restarted serves the pre-upgrade behaviour to
+# every agent while the version string says otherwise - silent, and invisible to every other
+# check here. The doctor's own `restart_required_after_upgrade` is a hardcoded `true` in
+# 0.27.0 (`qartez-mcp/src/doctor.rs:25`, never reassigned), so it is not consulted: staleness
+# is computed below from the running process start times against the binary's mtime.
 try:
     _q = subprocess.run(['qartez', 'doctor', '--format', 'json'], capture_output=True,
                         text=True, encoding='utf-8', errors='replace', timeout=180)
@@ -204,9 +206,47 @@ if _doc:
     print(f"  NOTE  qartez {_doc.get('version')} · index "
           f"{(_doc.get('index') or {}).get('symbols')} symbols, "
           f"coverage {(_doc.get('index') or {}).get('coverage')}")
-    ok(not _doc.get('restart_required_after_upgrade'),
-       'qartez MCP server is running the binary that is on disk',
-       'RESTART Claude Code: agents are being served the pre-upgrade qartez')
+    _exe = _doc.get('executable')
+    try:
+        _mtime = datetime.datetime.fromtimestamp(os.path.getmtime(_exe),
+                                                 datetime.timezone.utc)
+    except (OSError, TypeError) as e:
+        _mtime = None
+        ok(False, 'qartez executable on disk', f'{type(e).__name__}: {e}')
+    if _mtime:
+        # ponytail: mtime is the ceiling here - an installer that PRESERVES timestamps can
+        # leave the binary older than a server started before the upgrade, and that staleness
+        # is invisible to this comparison. Version-stamping the running server would fix it.
+        # `LIKE 'qartez%'`, not `='qartez.exe'`: the server also runs as qartez-mcp.exe.
+        _ps = subprocess.run(['powershell', '-NoProfile', '-Command',
+                              'Get-CimInstance Win32_Process -Filter "Name LIKE \'qartez%\'" | '
+                              "ForEach-Object { $_.CreationDate.ToUniversalTime().ToString('o') }"],
+                             capture_output=True, text=True, encoding='utf-8',
+                             errors='replace', timeout=30)
+        if _ps.returncode != 0 or (_ps.stderr or '').strip():
+            # A failed PowerShell call returns no lines, which reads exactly like "nothing is
+            # running" - so it must be a FAILED CHECK, not a NOTE and not a silent pass.
+            ok(False, 'qartez process list readable via Get-CimInstance',
+               (_ps.stderr or '')[:200])
+        else:
+            _starts = []
+            for _ln in (_ps.stdout or '').splitlines():
+                _ln = _ln.strip()
+                if not _ln:
+                    continue
+                try:
+                    _starts.append(datetime.datetime.fromisoformat(
+                        _ln[:-1] + '+00:00' if _ln.endswith('Z') else _ln))
+                except ValueError:
+                    continue
+            if not _starts:
+                print("  NOTE  no qartez.exe running right now (nothing to be stale)")
+            else:
+                _stale = [t for t in _starts if t < _mtime]
+                ok(not _stale,
+                   'every running qartez.exe started after the binary on disk was written',
+                   'RESTART Claude Code: a qartez server older than the installed binary is '
+                   'serving agents')
     # A project-local skill silently overrides the global one the kit relies on.
     ok(not (_doc.get('host_integration') or {}).get('local_skill_shadow'),
        'no project-local qartez skill shadowing the global one')
@@ -258,12 +298,28 @@ for label, got, want in [
         ('agent teams off', s.get('env', {}).get('CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS'), '0'),
         ('spawn depth', s.get('env', {}).get('CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH'), '1')]:
     ok(got == want, f"{label} = {want}", str(got))
+# An explicit `model: fable` spawn would otherwise spend Fable quota on a subagent seat.
+ok(all(r in s.get('permissions', {}).get('deny', [])
+       for r in ('Agent(model:fable)', 'Agent(model:claude-fable-5-1)')),
+   'settings deny an explicit Fable subagent',
+   str(s.get('permissions', {}).get('deny', [])))
 # maxEffortLevel caps every frontmatter pin with no per-agent error. Checking only the top
 # level missed it nested under a model, which is exactly where it would be set.
 _caps = (['(top level)'] if 'maxEffortLevel' in s else []) + [
     f'modelSettings.{k}' for k, v in (s.get('modelSettings') or {}).items()
     if isinstance(v, dict) and 'maxEffortLevel' in v]
 ok(not _caps, 'no maxEffortLevel silently capping the pins', str(_caps))
+# The decisions injector is only load-bearing once it is REGISTERED: a hook that exists on disk
+# and in no settings file injects nothing, and nothing else here would say so.
+_ss = (s.get('hooks', {}) or {}).get('SubagentStart', []) or []
+ok(any('kit-subagent-start.py' in h.get('command', '')
+       for e in _ss for h in (e.get('hooks', []) or [])),
+   'SubagentStart injector registered live', str(_ss)[:200])
+ok(any(e.get('matcher') == 'builder|refuter|verifier|debugger|researcher'
+       for e in _ss for h in (e.get('hooks', []) or [])
+       if 'kit-subagent-start.py' in h.get('command', '')),
+   'SubagentStart injector matcher = builder|refuter|verifier|debugger|researcher',
+   str([e.get('matcher') for e in _ss])[:200])
 
 print("\n=== E. roster table matches every agent file ===")
 orch = (HOME / 'output-styles' / 'orchestrator.md').read_text(encoding='utf-8')
@@ -299,14 +355,30 @@ _hk = subprocess.run([sys.executable, str(HOME / 'hooks' / 'kit-session-start.py
 ok('FAST GATE' not in (_hk.stdout or ''),
    'the installed SessionStart hook is quiet in this repo (it has a FAST GATE row)',
    (_hk.stdout or '')[:120])
+# The INSTALLED injector, not the checkout's: a half-copied or older one would emit malformed
+# JSON into every spawn's context, and a spawn is the one place that is never watched.
+_ss_hk = subprocess.run([sys.executable, str(HOME / 'hooks' / 'kit-subagent-start.py'),
+                         '--check', str(KIT)],
+                        capture_output=True, text=True, encoding='utf-8', errors='replace')
+_ss_out = (_ss_hk.stdout or '').strip()
+try:
+    _ss_ok = not _ss_out or json.loads(_ss_out).get(
+        'hookSpecificOutput', {}).get('hookEventName') == 'SubagentStart'
+except ValueError:
+    _ss_ok = False
+ok(_ss_ok, 'the installed SubagentStart injector emits nothing or a well-formed context',
+   _ss_out[:160])
 print("  NOTE  per-project state is checked by `python audit_project.py <repo>`, not here")
 # These counts are pinned on purpose: a suite that silently shrinks is the failure this
 # catches. Bump them WITH the test, never to make a red line green.
-ok('29/29 passed' in r2.stdout, 'md-guard self-check 29/29',
+ok('83/83 passed' in r2.stdout, 'md-guard self-check 83/83',
    [l for l in r2.stdout.splitlines() if 'md-guard' in l])
 ok('kit-subagent-report self-check: 10/10 passed' in r2.stdout,
    'kit-subagent-report self-check 10/10',
    [l for l in r2.stdout.splitlines() if 'kit-subagent-report' in l])
+ok('kit-subagent-start self-check: 15/15 passed' in r2.stdout,
+   'kit-subagent-start self-check 15/15',
+   [l for l in r2.stdout.splitlines() if 'kit-subagent-start' in l])
 
 print('\n>>> ALL CLEAR' if not bad else '\n>>> PROBLEMS:\n  ' + '\n  '.join(bad))
 sys.exit(1 if bad else 0)
