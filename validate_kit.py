@@ -909,6 +909,58 @@ chk('AGENTS.md' in _ki and '@AGENTS.md' in _ki,
 _ap = open('audit_project.py', encoding='utf-8').read() if os.path.isfile('audit_project.py') else ''
 chk('@AGENTS.md' in _ap, 'audit_project.py catches a CLAUDE.md that ignores the AGENTS.md beside it')
 
+# Plugin policy (2026-09-20). Claude Code cannot disable one plugin's hooks, so a plugin whose
+# SessionStart/UserPromptSubmit/Stop hook fires in every session is disabled whole and the part
+# worth keeping ships as a kit skill. core/plugins.json is the single record of that verdict;
+# an unreasoned entry is how a plugin gets waved through six months from now.
+try:
+    _pl = json.load(open('core/plugins.json', encoding='utf-8'))
+except Exception as e:
+    _pl = {}
+    chk(False, 'core/plugins.json parses', str(e))
+for _m in ('disable', 'allow'):
+    chk(isinstance(_pl.get(_m), dict), f'core/plugins.json has a {_m} map')
+    for _id, _why in (_pl.get(_m) or {}).items():
+        chk(isinstance(_why, str) and _why.strip(), f'plugins.json {_m}[{_id}] gives a reason')
+chk('simple-english@simple-english' in (_pl.get('disable') or {}),
+    'plugins.json disables simple-english (its hooks fight the report rules)')
+# The env pin above already assumes ponytail runs, so silence here would be a contradiction.
+chk('ponytail@ponytail' in (_pl.get('allow') or {}), 'plugins.json allows ponytail')
+chk(os.path.isfile('core/skills/simple-english/LICENSE'),
+    'core/skills/simple-english/LICENSE ships (the copy is MIT, attribution required)')
+_se = 'core/skills/simple-english/SKILL.md'
+chk(os.path.isfile(_se), f'{_se} exists (the slash-only copy of the plugin skill)')
+if os.path.isfile(_se):
+    _head = open(_se, encoding='utf-8').read().split('\n---', 1)[0].lstrip('-\n')
+    _sed = ((_yaml.safe_load(_head) if _yaml else fm(_se)[0]) or {})
+    # Without this key the skill loads itself on any plain-English-looking request, which is
+    # exactly the automatic behaviour the plugin was disabled for.
+    chk(_sed.get('disable-model-invocation') in (True, 'true'),
+        f'{_se}: disable-model-invocation true (slash-only)', repr(_sed.get('disable-model-invocation')))
+for _frag, _label in [('plugins.json', 'installer reads the plugin policy'),
+                      ('enabledPlugins', 'installer writes the disable verdict into settings')]:
+    chk(_frag in _inst, _label)
+_vl = open('verify_live.py', encoding='utf-8').read() if os.path.isfile('verify_live.py') else ''
+for _frag, _label in [('C6', 'verify_live.py has the plugins section'),
+                      ('plugins.json', 'verify_live.py reads the plugin policy')]:
+    chk(_frag in _vl, _label)
+for _frag, _label in [('plugins.json', 'SETUP-NEW-MACHINE.md documents the plugin policy'),
+                      ('FABLE-OPUS-SPLIT.md', 'SETUP-NEW-MACHINE.md points at the model split')]:
+    chk(_frag in _setup, _label)
+# Both fragments above are substrings anywhere in the file: read in the wrong order, the
+# policy is applied to a $set that was already serialized and the write does nothing.
+_i_pol, _i_ser = _inst.find('plugins.json'), _inst.find('$json = ($set | ConvertTo-Json')
+chk(0 <= _i_pol < _i_ser, 'installer applies the plugin policy before settings.json is serialized',
+    f'plugins.json at {_i_pol}, serialize at {_i_ser}')
+# The self-check counts are pinned in verify_live.py and quoted in the setup doc. They drifted
+# apart once already (doc said 42/42 while the suite had grown to 83), and a reader on a fresh
+# machine then reads a real pass as a failure.
+for _hook in ('md-guard', 'kit-subagent-start'):
+    _m = re.search(rf'{_hook} self-check (\d+/\d+)', _vl)
+    chk(_m is not None and _m.group(1) in _setup,
+        f'setup doc quotes the same self-check counts verify_live pins ({_hook})',
+        _m.group(1) if _m else 'no count pinned in verify_live.py')
+
 print()
 # Most sections are glob-driven: one that yields nothing contributes zero checks and still
 # prints "failures: 0". The floor makes a silently empty section red.

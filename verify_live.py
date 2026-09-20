@@ -131,6 +131,21 @@ if was_stale:
           + (f" (+{len(was_stale) - 4} more)" if len(was_stale) > 4 else ''))
 ok(not drifted(), f"all {len(pairs)} installed files byte-identical to repo after install",
    str(drifted()[:3]))
+# The compare above sees SKILL.md only. `Copy-Item -Recurse` into a folder that already
+# exists can nest a subfolder inside itself (references/references) and never removes a file
+# the repo dropped, so the whole tree is compared by relative path.
+
+
+def _skill_tree(base, names):
+    return {f'{n}/{f.relative_to(base / n).as_posix()}'
+            for n in names for f in (base / n).rglob('*') if f.is_file()}
+
+
+_skill_names = [p.name for p in pathlib.Path('core/skills').glob('*') if p.is_dir()]
+_repo_tree = _skill_tree(pathlib.Path('core/skills'), _skill_names)
+_inst_tree = _skill_tree(HOME / 'skills', [n for n in _skill_names if (HOME / 'skills' / n).is_dir()])
+ok(_repo_tree == _inst_tree, 'installed skill trees match the repo (no nested or stale files)',
+   str(sorted(_repo_tree ^ _inst_tree)[:5]))
 
 print("\n=== C2. Claude Code itself accepts every installed component ===")
 # The authoritative loader, not our parser. Two agents once shipped with an unquoted ": " in
@@ -170,15 +185,28 @@ def install_into(setup):
     return r, d, tmp
 
 
-for _label, _setup, _extra in [
-        ('a machine with nothing installed yet', lambda d: None, None),
+def _policy_applied(d):
+    """Step 3b's own probe: without a state that HAS an enabledPlugins map, the plugin policy
+    loop never executes in any of these runs and could be dead code."""
+    _p = json.loads((d / 'settings.json').read_text(encoding='utf-8')).get('enabledPlugins') or {}
+    return ((_p.get('simple-english@simple-english') is False
+             and _p.get('ponytail@ponytail') is True), str(_p)[:200])
+
+
+for _label, _setup, _extra, _verify in [
+        ('a machine with nothing installed yet', lambda d: None, None, None),
         # Get-Content -Raw yields $null here, not '': every later .Replace() threw.
-        ('an empty CLAUDE.md', lambda d: (d / 'CLAUDE.md').write_bytes(b''), None),
-        ('an empty settings.json', lambda d: (d / 'settings.json').write_bytes(b''), None),
+        ('an empty CLAUDE.md', lambda d: (d / 'CLAUDE.md').write_bytes(b''), None, None),
+        ('an empty settings.json', lambda d: (d / 'settings.json').write_bytes(b''), None, None),
         # A file we cannot parse must be backed up and reported, never quietly discarded.
         ('a corrupt settings.json',
          lambda d: (d / 'settings.json').write_text('{ not json', encoding='utf-8'),
-         'not json')]:
+         'not json', None),
+        ('a settings.json that enables a disabled plugin',
+         lambda d: (d / 'settings.json').write_text(
+             '{"enabledPlugins": {"simple-english@simple-english": true, "ponytail@ponytail": true}}',
+             encoding='utf-8'),
+         None, _policy_applied)]:
     _r, _d, _tmp = install_into(_setup)
     _msg = (_r.stderr or '').strip().replace('\n', ' ')[:150]
     if _extra:
@@ -187,6 +215,13 @@ for _label, _setup, _extra in [
         ok(_kept, f'installer preserves {_label} somewhere it can be recovered from', _msg)
     else:
         ok(_r.returncode == 0, f'installer survives {_label}', f'rc={_r.returncode} {_msg}')
+    if _verify:
+        try:
+            _cond, _detail = _verify(_d)
+        except (OSError, ValueError, AttributeError) as e:
+            _cond, _detail = False, f'{type(e).__name__}: {e}'
+        ok(_cond, 'installer disables a policy-disabled plugin and leaves an allowed one on',
+           _detail)
     shutil.rmtree(_tmp, ignore_errors=True)
 
 print("\n=== C4. qartez, which every agent's search depends on ===")
@@ -260,6 +295,10 @@ print("\n=== C5. no project silently switches the kit off ===")
 # across every repo at once, which is the only way you would notice.
 KILLERS = ('CLAUDE_CODE_EFFORT_LEVEL', 'CLAUDE_CODE_SUBAGENT_MODEL_FORCE',
            'CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS', 'CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH')
+try:
+    _dis_ids = set(json.loads(pathlib.Path('core/plugins.json').read_text(encoding='utf-8'))['disable'])
+except (OSError, ValueError, KeyError, TypeError):
+    _dis_ids = set()
 _offenders = []
 _scanned = 0
 for _proj in sorted(pathlib.Path(r'D:\Projects').glob('*')) if pathlib.Path(r'D:\Projects').is_dir() else []:
@@ -278,8 +317,124 @@ for _proj in sorted(pathlib.Path(r'D:\Projects').glob('*')) if pathlib.Path(r'D:
         for _k in KILLERS:
             if _k in (_d.get('env') or {}):
                 _offenders.append(f'{_proj.name}/{_rel}: env.{_k}={_d["env"][_k]!r}')
+        # A project file may re-enable a plugin the kit disables globally; the installer only
+        # ever writes the user-level settings.json, so nothing else would report it.
+        _ep = _d.get('enabledPlugins')
+        if isinstance(_ep, dict):
+            _offenders += [f'{_proj.name}/{_rel}: enabledPlugins[{_p}]=true (policy disables it)'
+                           for _p, _v in _ep.items() if _v is True and _p in _dis_ids]
 ok(not _offenders, f'none of the {_scanned} project settings files overrides the kit',
    '; '.join(_offenders[:4]))
+
+print("\n=== C6. plugins ===")
+# Claude Code has no per-plugin hook switch (hooks.md offers only `disableAllHooks`), so a
+# plugin whose SessionStart, UserPromptSubmit or Stop hook fires in every session is either
+# reviewed and allowed, or disabled whole. Nothing else would report one: a new plugin that
+# injects 700 tokens of reply rules into every session just makes the orchestrator quietly
+# worse. core/plugins.json holds the verdicts, install.ps1 applies `disable`, and this names
+# anything in neither map.
+SESSION_EVENTS = ('SessionStart', 'UserPromptSubmit', 'Stop')
+# Every event Claude Code dispatches. A hooks file whose top level IS the event map (no
+# `hooks` wrapper) is recognised by these keys - otherwise it reads as "declares no hooks".
+HOOK_EVENTS = SESSION_EVENTS + ('PreToolUse', 'PostToolUse', 'SubagentStart', 'SubagentStop',
+                                'SessionEnd', 'PreCompact', 'Notification')
+
+
+def _enabled_plugins(p):
+    """`enabledPlugins` from a settings file; {} when it is missing or unreadable."""
+    try:
+        return json.loads(p.read_text(encoding='utf-8')).get('enabledPlugins') or {}
+    except (OSError, ValueError, AttributeError):
+        return {}
+
+
+def _event_map(root, decl):
+    """(events, escaped_path) for a manifest's `hooks` value, in every shape it can take:
+    an inline event map, one path, a list of paths, or nothing (then hooks/hooks.json)."""
+    if isinstance(decl, dict):
+        return decl, None           # inline in the manifest: the event map itself
+    files = ([decl] if isinstance(decl, str)
+             else [x for x in decl if isinstance(x, str)] if isinstance(decl, list)
+             else ['hooks/hooks.json'] if (root / 'hooks' / 'hooks.json').is_file()
+             else [])
+    events = {}
+    for f in files:
+        # ${CLAUDE_PLUGIN_ROOT} is how a plugin spells its own root. Left unexpanded the path
+        # never resolves, and a plugin that hooks every session reads as hooking nothing.
+        resolved = (root / f.replace('${CLAUDE_PLUGIN_ROOT}', str(root))).resolve()
+        if resolved != root.resolve() and root.resolve() not in resolved.parents:
+            return None, f          # a declared path outside the plugin root is not read
+        if not resolved.is_file():
+            continue
+        _j = json.loads(resolved.read_text(encoding='utf-8'))
+        events.update(_j.get('hooks') if isinstance(_j, dict) and isinstance(_j.get('hooks'), dict)
+                      else {k: v for k, v in _j.items() if k in HOOK_EVENTS}
+                      if isinstance(_j, dict) else {})
+    return events, None
+
+
+try:
+    _pol = json.loads(pathlib.Path('core/plugins.json').read_text(encoding='utf-8'))
+    _dis, _allowed = _pol['disable'], _pol['allow']
+except (OSError, ValueError, KeyError) as e:
+    # The policy file IS this section: without it there is nothing to judge against, and a
+    # traceback here would skip D, E and F as well.
+    _dis = _allowed = None
+    ok(False, 'core/plugins.json readable with disable and allow maps', f'{type(e).__name__}: {e}')
+# A local enable beats the user-level one, so policy must be judged against the merge.
+_en = dict(_enabled_plugins(HOME / 'settings.json'))
+_en.update(_enabled_plugins(HOME / 'settings.local.json'))
+try:
+    _inst = json.loads((HOME / 'plugins' / 'installed_plugins.json')
+                       .read_text(encoding='utf-8')).get('plugins') or {}
+except (OSError, ValueError):
+    _inst = {}
+if _dis is None:
+    print("  NOTE  C6 skipped: core/plugins.json could not be read")
+elif not _inst:
+    print("  NOTE  no installed plugins found under ~/.claude/plugins - nothing to check")
+else:
+    _verdicts = []
+    for _pid in sorted(k for k, v in _en.items() if v is True):
+        _entries = _inst.get(_pid) or []
+        if not _entries:
+            continue    # enabled in settings but not installed: no hook of its can run
+        # Every install entry, not just the first: a second copy of the same plugin can
+        # declare hooks the first does not, and only the union of them is the real answer.
+        _events, _skip = {}, False
+        for _entry in _entries:
+            try:
+                _root = pathlib.Path(_entry.get('installPath') or '.')
+                _manifest = _root / '.claude-plugin' / 'plugin.json'
+                # No manifest at all is not a broken read: gopls-lsp ships only LICENSE +
+                # README (the marketplace copy too), so it cannot register a hook.
+                if not _manifest.is_file():
+                    print(f"  NOTE  {_pid}: no plugin.json at its install path; only hooks/hooks.json is read")
+                _h = json.loads(_manifest.read_text(encoding='utf-8')).get('hooks') if _manifest.is_file() else None
+                _e, _bad = _event_map(_root, _h)
+            except (OSError, ValueError, KeyError, TypeError, AttributeError) as e:
+                ok(False, f'{_pid} manifest readable', f'{type(e).__name__}: {e}')
+                _skip = True
+                break
+            if _bad:
+                ok(False, f'{_pid} hooks path stays inside the plugin root', str(_bad))
+                _skip = True
+                break
+            _events.update(_e or {})
+        if _skip:
+            continue
+        if _pid in _dis:
+            ok(False, f'{_pid} is still enabled; policy disables it', 'run install.ps1')
+        _sess = [e for e in SESSION_EVENTS if e in _events]
+        if not _sess:
+            continue
+        _verdict = 'disabled' if _pid in _dis else 'allowed' if _pid in _allowed else 'unreviewed'
+        if _verdict == 'unreviewed':
+            ok(False, f'{_pid} injects into every session and is unreviewed',
+               'add it to core/plugins.json allow or disable, then run install.ps1')
+        _verdicts.append(f"{_pid} [{'+'.join(_sess)}] {_verdict}")
+    print('  NOTE  session-level hooks: ' + ('; '.join(_verdicts) if _verdicts
+                                             else 'none among the enabled plugins'))
 
 print("\n=== D. settings live ===")
 # A missing or hand-broken settings.json is a FAILED CHECK, not a traceback: the setup doc
@@ -298,6 +453,11 @@ for label, got, want in [
         ('agent teams off', s.get('env', {}).get('CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS'), '0'),
         ('spawn depth', s.get('env', {}).get('CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH'), '1')]:
     ok(got == want, f"{label} = {want}", str(got))
+# Absent is fine: the plugin was never installed on this machine, and the installer only
+# writes `false` for ids the user's settings already name. Only `true` is the failure.
+ok((s.get('enabledPlugins') or {}).get('simple-english@simple-english') is not True,
+   'simple-english plugin not enabled (its skill is slash-only)',
+   f"{(s.get('enabledPlugins') or {}).get('simple-english@simple-english')!r} - run install.ps1")
 # An explicit `model: fable` spawn would otherwise spend Fable quota on a subagent seat.
 ok(all(r in s.get('permissions', {}).get('deny', [])
        for r in ('Agent(model:fable)', 'Agent(model:claude-fable-5-1)')),

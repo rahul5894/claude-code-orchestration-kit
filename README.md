@@ -52,6 +52,8 @@ lowercase letters, numbers, and hyphens, so it is safe as a folder name. Example
 pwsh ./install.ps1      # idempotent: run after every kit edit and on every new machine
 ```
 
+Who does what: [docs/FABLE-OPUS-SPLIT.md](docs/FABLE-OPUS-SPLIT.md) is the one-page split between the Fable seat (judgment) and the Opus seats (execution), and how a task moves between them.
+
 New machine? Follow [SETUP-NEW-MACHINE.md](SETUP-NEW-MACHINE.md) first: prerequisites, qmd, the md-guard hook, checks, and the gotchas already found.
 
 It copies the agents and `/task`, replaces the `<!-- orchestration-kit -->` block in

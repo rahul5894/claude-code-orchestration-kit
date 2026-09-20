@@ -3,6 +3,8 @@
 This page is for you, on a fresh Windows machine. Follow it top to bottom.
 It takes about 20 minutes. Every step has a check. Do not skip a check.
 
+Which model runs which agent, and why, is not repeated here: see `docs/FABLE-OPUS-SPLIT.md`.
+
 Last verified: 2026-09-18 on Windows 11, Claude Code 2.1.276, qmd 2.8.3, Python 3.12.10.
 
 **`claude --version` is not the version your session is running.** Measured 2026-09-18: the
@@ -62,7 +64,7 @@ commands: task
 CLAUDE.md: kit block appended        (or "replaced" / "unchanged" on a re-run)
 settings.json: merged (backup written)
 md-guard: registered in settings.json
-md-guard self-check: 42/42 passed
+md-guard self-check: 83/83 passed
 done. ...
 ```
 
@@ -240,14 +242,14 @@ judged on its own, so `rm big.md; git status | head` passes.
 
 The deny message tells Claude the exact qmd or capped command to run instead.
 
-Check: `python ~/.claude/hooks/md-guard_test.py` prints `42/42 passed`. The test
+Check: `python ~/.claude/hooks/md-guard_test.py` prints `83/83 passed`. The test
 builds its own fixtures in a temp folder, so it runs on any machine. The installer runs
 it for you.
 
 `~/.claude/hooks/kit-subagent-start.py` is the other half of the same idea: a `SubagentStart`
 hook that injects the `DECISIONS.md` of every OPEN bucket in `.claude/scratch/INDEX.md` into
 each spawned builder, refuter, verifier, debugger and researcher, capped at 6000 characters.
-Check: `python ~/.claude/hooks/kit-subagent-start_test.py` prints `10/10 passed`.
+Check: `python ~/.claude/hooks/kit-subagent-start_test.py` prints `15/15 passed`.
 
 Known gaps, on purpose:
 
@@ -256,6 +258,32 @@ Known gaps, on purpose:
   boundary.
 - A partial `Read` (with `limit`) still counts as "read" for a later `Edit`, so agents
   can append to big docs without reading them whole. Verified 2026-09-16.
+
+## Plugins
+
+A plugin with a `SessionStart`, `UserPromptSubmit` or `Stop` hook talks in every session you
+open, and Claude Code cannot switch off one plugin's hooks: `hooks.md` offers `disableAllHooks`
+and nothing narrower. So the choice is per plugin, whole, and `core/plugins.json` records it as
+two maps of plugin id to reason:
+
+- `disable` — `install.ps1` writes `enabledPlugins[<id>] = false` into your `settings.json`
+  for every id in this map that your settings already mention.
+- `allow` — reviewed and kept. The installer ignores it; it only keeps C6 quiet.
+
+`python verify_live.py` section C6 reads the manifest of every plugin enabled in the user's
+`settings.json` or `settings.local.json`, handles inline, path, list and side-file hook
+declarations, and fails on a `SessionStart`, `UserPromptSubmit` or `Stop` hook that policy does
+not name; a project-level enable of a disabled plugin is reported by C5. When you install one:
+
+1. Run `python verify_live.py`. C6 names it if it injects into every session.
+2. Add its id to `allow` or `disable` in `core/plugins.json` with a reason, then `pwsh
+   install.ps1`.
+
+`simple-english@simple-english` is in `disable`: its SessionStart hook injects ~700 tokens of
+reply rules and its Stop hook nags "five sentences or fewer", both against the orchestrator's
+report format. The skill is worth keeping, so the kit ships its own copy at
+`core/skills/simple-english/` (MIT, AminBlg/SimpleEnglish 2.0.2) with
+`disable-model-invocation: true`: it runs only when you type `/simple-english`.
 
 ## 5. What we found on 2026-09-16, so you do not find it again
 
@@ -363,9 +391,10 @@ Known gaps, on purpose:
 
 ## 7. Final checklist
 
-- [ ] `pwsh install.ps1` printed `md-guard self-check: 42/42 passed`
-- [ ] the same run printed `kit-subagent-start self-check: 10/10 passed`
+- [ ] `pwsh install.ps1` printed `md-guard self-check: 83/83 passed`
+- [ ] the same run printed `kit-subagent-start self-check: 15/15 passed`
 - [ ] `qmd search "<anything>" -c <collection> --full-path -n 5` printed `D:\...md:LINE` hits
+- [ ] `verify_live.py` C6 lists no unreviewed plugin
 - [ ] In a new Claude Code session, asking Claude to read a 300+ line `.md` whole is
       denied and the message names the qmd command
 - [ ] `/next-item` (or any task) shows builder then ONE refuter on Opus in the Agent map;

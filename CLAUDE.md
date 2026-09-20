@@ -18,7 +18,7 @@ repo unusual.
 | Install into `~/.claude` | `pwsh -File install.ps1` | 1.2 s |
 | Scoreboard from transcripts | `python agent_stats.py --since <YYYY-MM-DD>` | ~1 s |
 
-`validate_kit.py` reads this repository only and is the diff-scoped gate: 369 checks, no test
+`validate_kit.py` reads this repository only and is the diff-scoped gate: ~450 checks, no test
 suite, no network. `verify_live.py` also reads `~/.claude`, runs `install.ps1` twice and
 shells out to `claude plugin validate` and `qartez doctor` — which is why it is not the gate.
 

@@ -20,6 +20,14 @@ function Read-Text([string]$path) {
     if ($null -eq $t) { '' } else { $t }
 }
 
+# 0. Plugin policy, read BEFORE anything is written: step 3b needs it, and an incomplete
+#    checkout used to die at that Get-Content with agents and CLAUDE.md already replaced.
+$pj = Join-Path $kit 'core\plugins.json'
+if (-not (Test-Path $pj)) {
+    throw "core/plugins.json is missing from $kit - the checkout is incomplete; nothing was written to settings.json"
+}
+$pol = Get-Content $pj -Raw | ConvertFrom-Json -AsHashtable
+
 # 1. Agents, commands, skills, output styles: plain copy. Retired agents are removed by name
 #    only — never sweep the folder, you may keep your own agents there.
 $RETIRED_AGENTS = @('scout')         # dropped in v2: the Explore shadow does locating
@@ -86,6 +94,26 @@ function Merge-Into($dst, $src) {
     }
 }
 Merge-Into $set $frag
+
+# 3b. core/plugins.json `disable`: a plugin whose hooks fire in every session cannot be
+# half-disabled - Claude Code has no per-plugin hook switch - so the whole plugin goes off and
+# the part worth keeping ships as a kit skill. This runs BEFORE the write below on purpose:
+# step 3's own compare-and-backup then covers it, so one run still takes one backup and does
+# one write. Only `disable` is applied; `allow` exists for verify_live.py C6 to read.
+# `$pol` was read in step 0, before the first write. A hand-edited `enabledPlugins` that is a
+# string makes the index assignment below throw and takes the whole install with it, so the
+# type is checked rather than assumed: anything but a map is reported and skipped.
+if ($set['enabledPlugins'] -is [Collections.IDictionary]) {
+    foreach ($id in $pol['disable'].Keys) {
+        if ($set['enabledPlugins'].Contains($id) -and $set['enabledPlugins'][$id] -ne $false) {
+            $set['enabledPlugins'][$id] = $false
+            $why = $pol['disable'][$id]
+            "plugins: disabled $id (" + $why.Substring(0, [Math]::Min(60, $why.Length)) + ")"
+        }
+    }
+} elseif ($null -ne $set['enabledPlugins']) {
+    Write-Warning "settings.json enabledPlugins is not a map; plugin policy not applied"
+}
 $json = ($set | ConvertTo-Json -Depth 20) + "`n"
 $old  = Read-Text $sf
 if ($json.Replace("`r`n", "`n") -ne $old.Replace("`r`n", "`n")) {
