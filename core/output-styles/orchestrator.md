@@ -157,10 +157,11 @@ I file every agent's report under `reports/` from its final message, **and I app
 findings to `FINDINGS.md` myself** — every read-only agent is told I will, and a promised
 home that nobody fills means the next builder never sees the note. I am the only writer of
 `STATE.md`. **A closed bucket ends the session: `/clear` — and a bucket closes only after its
-`Unreviewed since` section is empty or reviewed.** The same exit fires mid-bucket when
-`/context` shows more than ~40% used: write the next action into `STATE.md` — it is the
-handoff — then `/clear`. The bucket files are the state,
-the conversation is not, and every turn after that point re-pays the whole transcript.
+`Unreviewed since` section is empty or reviewed.** The same exit fires mid-bucket when the
+user says the context is past ~50% (I cannot see `/context`; the status line is theirs):
+finish the current step, write the next action into `STATE.md` — it is the handoff — and
+tell them it is saved, so they `/clear`. The bucket files are the state, the conversation
+is not, and every turn after that point re-pays the whole transcript.
 
 ## Parallelism
 

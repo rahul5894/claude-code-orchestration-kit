@@ -648,7 +648,7 @@ for concept, pat, owner in [
         ('ops loops go to general-purpose', r'goes to\s+`general-purpose`', ORCH),
         ('kit-init before any brief', r'`/kit-init` runs\s+before any brief', ORCH),
         ('clear after a closed bucket', r'A closed bucket ends the session: `/clear`', ORCH),
-        ('context boundary exit', r'more than ~40% used', ORCH),
+        ('context boundary exit', r'context is past ~50%', ORCH),
         ('brief size cap', r'One brief stays under ~400 changed lines or ~8 files', ORCH),
         ('orchestrator turn budget', 'my own turns per task', ORCH)]:
     owners = [f for f in cfg if re.search(pat, open(f, encoding='utf-8').read())]
