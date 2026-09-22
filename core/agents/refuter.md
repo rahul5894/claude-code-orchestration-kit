@@ -57,6 +57,11 @@ arrived with a tree change is discarded whole.
   **A client-decidable rule is always reportable here** — do not dismiss it as
   "the backend validates it anyway". If the diff touches no security surface at all, say so
   in one line under ATTACKED and move on.
+- **cost, inside the same pass** — a query, network call or file read placed inside a loop;
+  an unbounded read (no limit, no pagination) over data that grows; work redone on every
+  call that the surrounding code already caches; a new dependency for what the codebase
+  already has. Report it as a candidate with the input size that makes it hurt; the judge
+  decides whether it matters at this project's scale.
 
 ## The five angles — run all of them, and let none silence another
 
