@@ -24,6 +24,8 @@ def fm(path):
     end = s.index(chr(10) + '---', 3)
     d = {}
     for ln in s[3:end].strip().split(chr(10)):
+        if ln[:1] in (' ', chr(9)):
+            continue  # indented = nested under the key above it, not a top-level key
         if ':' in ln:
             k, v = ln.split(':', 1)
             d[k.strip()] = v.strip()
@@ -93,6 +95,39 @@ for _f in sorted(glob.glob('core/agents/*.md') + glob.glob('core/commands/*.md')
                 and ': ' in ln.split(':', 1)[1]]
         chk(not _bad, f'{_f}: no unquoted ": " in frontmatter (breaks YAML)', str(_bad))
 
+
+def _yfm(path):
+    """Frontmatter as Claude Code parses it. fm()'s line splitter flattens a nested map, so
+    anything under `experimental` is only visible through the real YAML parse. Like fmx(), a
+    missing or unparseable file is a failed check, never a crash that stops the gate."""
+    if not os.path.isfile(path):
+        chk(False, f'{path}: exists', 'missing - later checks on it were SKIPPED')
+        return {}
+    if not _yaml:
+        return {}
+    _h = open(path, encoding='utf-8').read().split('\n---', 1)[0].lstrip('-\n')
+    try:
+        return _yaml.safe_load(_h) or {}
+    except _yaml.YAMLError as e:
+        chk(False, f'{path}: frontmatter parses as YAML', str(e)[:120])
+        return {}
+
+
+# experimental.cacheTtl (documented 2.1.248+) is a nested map, never a top-level key. The four
+# Opus agents hold the 1h prompt cache; Explore (haiku) and debugger (inherit) deliberately do
+# not, so a Fable session never pays to cache a seat it shares with the main conversation.
+if _yaml:
+    for _n in ('builder', 'refuter', 'verifier', 'researcher'):
+        _efm = _yfm(f'core/agents/{_n}.md')
+        chk((_efm.get('experimental') or {}).get('cacheTtl') == '1h',
+            f'{_n}: experimental.cacheTtl is 1h', str(_efm.get('experimental')))
+    for _n in ('Explore', 'debugger'):
+        _efm = _yfm(f'core/agents/{_n}.md')
+        chk('experimental' not in _efm, f'{_n}: no experimental key',
+            str(_efm.get('experimental')))
+else:
+    chk(False, 'cacheTtl checks need PyYAML (pip install pyyaml)')
+
 print()
 print('=== 1. AGENT FRONTMATTER - docs-valid values only ===')
 MODELS = {'sonnet', 'opus', 'haiku', 'fable', 'inherit'}
@@ -108,7 +143,10 @@ PINS = {'Explore': ('haiku', None), 'researcher': ('opus', 'high'), 'builder': (
 COLORS = {'red', 'blue', 'green', 'yellow', 'purple', 'orange', 'pink', 'cyan'}
 AGENTKEYS = {'name', 'description', 'tools', 'disallowedTools', 'model', 'permissionMode',
              'maxTurns', 'skills', 'mcpServers', 'hooks', 'memory', 'background', 'effort',
-             'isolation', 'color', 'initialPrompt', 'experimental', 'omitClaudeMd'}
+             'isolation', 'color', 'initialPrompt', 'omitClaudeMd',
+             # 'experimental' holds nested keys (cacheTtl); fm() skips indented lines so they
+             # never appear here.
+             'experimental'}
 agentfiles = sorted(glob.glob('core/agents/*.md'))
 chk(len(agentfiles) == len(PINS), f'roster has exactly {len(PINS)} agents',
     str([os.path.basename(p) for p in agentfiles]))
@@ -600,15 +638,26 @@ for concept, pat, owner in [
         ('debugger inherits the orchestrator seat', r'debugger is `model: inherit`', ORCH),
         # builder.md's description legitimately names the threshold so the orchestrator can
         # pick it; the RULE sentence is what must have one owner
-        ('delegation threshold', r'exceeds \*\*~400 changed lines', ORCH),
+        ('delegation threshold', r'under \*\*~30 changed lines or ~2 files\*\*', ORCH),
         ('one refuter pass', 'ONE refuter pass', ORCH),
         ('batch review of small changes', 'Unreviewed since', ORCH),
         ('resume instead of re-spawn', r'Resume with `SendMessage`', ORCH),
         ('sibling cache stagger', 'stagger same-profile spawns', ORCH),
-        ('measurement targets', r'turns before the\s*\n?first edit', ORCH)]:
+        ('measurement targets', r'turns before the\s*\n?first edit', ORCH),
+        ('no-candidates ends the loop', 'A refuter that returns no candidates ends the loop', ORCH),
+        ('ops loops go to general-purpose', r'goes to\s+`general-purpose`', ORCH),
+        ('kit-init before any brief', r'`/kit-init` runs\s+before any brief', ORCH),
+        ('clear after a closed bucket', r'A closed bucket ends the session: `/clear`', ORCH),
+        ('context boundary exit', r'more than ~40% used', ORCH),
+        ('brief size cap', r'One brief stays under ~400 changed lines or ~8 files', ORCH),
+        ('orchestrator turn budget', 'my own turns per task', ORCH)]:
     owners = [f for f in cfg if re.search(pat, open(f, encoding='utf-8').read())]
     chk(owner in owners, f'{concept}: defined in {os.path.basename(owner)}', str(owners))
     chk(len(owners) == 1, f'{concept}: single definition', str(owners))
+# The mid-bucket exit once told the orchestrator to run `/session-handoff`; the kit ships no
+# such skill, and STATE.md is the handoff.
+chk('/session-handoff' not in _orch,
+    'orchestrator style does not depend on a skill the kit does not ship')
 
 # The split is only a saving if the shared file stays out of the orchestrator's business.
 shared_txt = open(SHARED, encoding='utf-8').read()
@@ -818,13 +867,17 @@ if thr:
             f'{doc}: every delegation threshold reads {want[0]} lines / {want[1]} files',
             str(said))
 # Two refuters must cost MORE than one builder+refuter pair, or every delegated change gets
-# two reviewers. This equalled the delegation threshold until 2026-09-18.
-two = re.search(r'~(\d+) files or ~(\d+) changed lines\*\* gets TWO refuters', orch_txt)
+# two reviewers. This equalled the delegation threshold until 2026-09-18; lowered to 30/2 on
+# 2026-09-22.
+two = re.search(r'~(\d+) files or ~(\d+) changed lines\*\*[^*]{0,90}gets TWO refuters', orch_txt)
 chk(two is not None, 'orchestrator style states the two-refuter threshold')
 # No per-doc restatement check for this one: both thresholds are written in the same sentence
 # shape ("~N changed lines or ~M files"), so a regex cannot tell a delegation mention from a
 # two-refuter mention, and one written to try flagged the correct 400/8 lines as wrong. The
-# "strictly above" check below is what actually protects the number that matters.
+# "strictly above" check below is what actually protects the number that matters. The brief
+# size cap (orchestrator.md, "One brief stays under") is a third sentence in that same shape,
+# and it must never be restated in USER_DOCS with the `N changed lines or M files` wording —
+# a restatement there is indistinguishable from the other two and drifts unnoticed.
 if two and thr:
     chk(int(two.group(2)) > int(thr.group(1)) and int(two.group(1)) > int(thr.group(2)),
         'two-refuter threshold is strictly above the delegation threshold',
@@ -906,8 +959,56 @@ chk('~/.claude/kit/project-template.md' in _ki and '~/.claude/kit/audit_project.
 # the file /kit-init writes silently switches it off unless it imports it.
 chk('AGENTS.md' in _ki and '@AGENTS.md' in _ki,
     '/kit-init keeps a repo AGENTS.md alive with an @AGENTS.md import')
+chk('If no candidate exists' in _ki and 'none — <what you checked>' in _ki
+    and 'SKIPPED (no gate in CLAUDE.md)' in _ki,
+    '/kit-init writes a none gate row for a repo with no checker')
+# An end-to-end run wrote `python main.py` as the FAST GATE because AGENTS.md said to run it
+# before commits. Running the program is not a static check; both ends of the loop refuse it.
+chk('A gate is a static check' in _ki and 'never a gate' in _ki,
+    '/kit-init refuses a program run as the gate')
+chk('cp -n ~/.claude/kit/project-template.md ./CLAUDE.md' in _ki,
+    '/kit-init names the one copy command that passes the guards')
+# An interpreter's byte-compiler is always present and checks only syntax, so "compile" in the
+# gate-kind list read as a candidate: two runs on identical repos disagreed on the row.
+chk('byte-compiler' in _ki and 'compileall' in _ki,
+    '/kit-init refuses an interpreter byte-compile as the gate')
 _ap = open('audit_project.py', encoding='utf-8').read() if os.path.isfile('audit_project.py') else ''
 chk('@AGENTS.md' in _ap, 'audit_project.py catches a CLAUDE.md that ignores the AGENTS.md beside it')
+# A `none` gate row is an answer, not a gap: both ends of the loop must say so.
+chk('A `none` row means `SKIPPED`' in open(SHARED, encoding='utf-8').read(),
+    'core/CLAUDE.md tells the builder a none row means SKIPPED')
+chk('none row accepted' in _ap, 'audit_project.py accepts a none gate row')
+chk('not a program run' in _ap, 'audit_project.py rejects a program run as the gate')
+# A label is not the regex behind it: both of the above passed while the checks read the whole
+# row instead of the Command cell. Run three real rows through the script (~0.3 s).
+import subprocess, tempfile
+
+
+def _audit_row(row):
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, 'CLAUDE.md'), 'w', encoding='utf-8') as fh:
+            fh.write('## Commands\n\n| Purpose | Command | Measured |\n|---|---|---|\n'
+                     + row + '\n\n### Agents never run these\n')
+        r = subprocess.run([sys.executable, 'audit_project.py', td],
+                           capture_output=True, text=True, encoding='utf-8')
+        return (r.stdout or '') + (r.stderr or '')
+
+
+_PROG = 'the FAST GATE row is a static check, not a program run'
+_TIMED = 'the FAST GATE row states a measured time'
+# Read the probe's OWN label line (`  ok   <label>` / `  FAIL <label>`), never the final
+# CLEAN verdict: audit_project.py's later sections read ~/.claude, so CLEAN also depends on
+# whether the kit is installed on this machine, which is not what these three probe.
+_probe = _audit_row('| **FAST GATE — agents run this** | python main.py | 0.03 s |')
+chk(f'FAIL {_PROG}' in _probe, 'audit_project.py flags python main.py as a program run (probe)',
+    _probe[:300])
+_probe = _audit_row('| **FAST GATE — agents run this** | `none — nothing to check, '
+                    '2026-09-22` | — |')
+chk(f'ok   {_TIMED}' in _probe and f'FAIL {_PROG}' not in _probe,
+    'audit_project.py accepts a backticked none row (probe)', _probe[:300])
+_probe = _audit_row('| **FAST GATE — agents run this** | python manage.py check | 2 s |')
+chk(f'ok   {_PROG}' in _probe, 'audit_project.py accepts python manage.py check (probe)',
+    _probe[:300])
 
 # Plugin policy (2026-09-20). Claude Code cannot disable one plugin's hooks, so a plugin whose
 # SessionStart/UserPromptSubmit/Stop hook fires in every session is disabled whole and the part

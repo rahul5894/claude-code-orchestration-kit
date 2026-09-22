@@ -24,18 +24,37 @@ if they exist: `package.json` (`scripts`), `pyproject.toml` / `setup.cfg` / `Mak
 `cargo test`, `flutter test`, `npm test`) — the whole point of the fast gate is that it is not
 the suite. If the user passed a command as the argument, use that instead of detecting.
 
+**A gate is a static check** — the repo's own build or analyzer (tsc, go vet, cargo check,
+dart analyze), a lint, a type-check, a format-check, a secret scan. Running the program
+(`python main.py`, `node app.js`, `go run`, `npm start`, `npm run dev`) is never a gate,
+whatever a README or AGENTS.md says about running it before commits. If the only thing a repo
+can run is itself, the row is `none`. An interpreter's byte-compiler (`python -m compileall`,
+`py_compile`) is not a candidate: it is always present, checks only syntax, and writes cache
+files. No configured checker means `none`.
+
 Run the chosen candidate **once**, wrapped in a timer (`Measure-Command` in PowerShell,
 `time` in bash), and record the wall-clock seconds. If it exceeds **60 s**, it is not a fast
 gate: say so, report the number, and stop — do not write a CLAUDE.md that names a slow gate.
 If it fails on the untouched tree, record that too: a red baseline is a fact the first
 builder needs, not a reason to hide the command.
 
+**If no candidate exists** — no package scripts, no linter, no compiler, no analyzer (a docs,
+notes or tools repo) — write the gate row's Command cell as bare text, no backticks:
+`none — <what you checked>, <date>`. Never invent one. A `none` row is complete: builders
+write `BASELINE: SKIPPED (no gate in CLAUDE.md)` and delegation proceeds; only a *missing*
+row blocks it.
+
 ## 2. Write CLAUDE.md from the global template
 
-The template is at `~/.claude/kit/project-template.md` (the installer put it there). Copy it
-to `./CLAUDE.md` if none exists. If one already exists, **do not overwrite it**: append the
-template's `## Commands` section only if the file has no `FAST GATE` row, and leave every
-other existing line alone.
+The template is at `~/.claude/kit/project-template.md` (the installer put it there). If
+`./CLAUDE.md` does not exist, run exactly
+`cp -n ~/.claude/kit/project-template.md ./CLAUDE.md` as its own command — nothing appended,
+because `Read` on that path needs a permission grant and a chained read of the new file is
+denied by md-guard before the file exists. `-n` never overwrites. Then fill it in with
+`Edit`; when the repo has an `AGENTS.md`, the first Edit is the `@AGENTS.md` line at the top
+(rule below). If a CLAUDE.md already exists, **do not overwrite it**: append the template's
+`## Commands` section only if the file has no `FAST GATE` row, and leave every other line
+alone.
 
 **A repo that has an `AGENTS.md` and no `CLAUDE.md` is the one case where writing the
 template takes something away.** Claude Code v2.1.277+ reads `AGENTS.md` as the project
@@ -51,6 +70,9 @@ Fill in, from what you measured:
   **Agents never run these** too
 - `<PROJECT NAME>` → the repo folder name
 
+**Those three edits and nothing else.** Two runs on identical repos must produce identical
+files; a line you add from a README or an AGENTS.md is variance, not setup.
+
 Leave **Security surfaces in THIS repo**, **Layout** and **Danger list** as the template's
 visible placeholders. They are the user's to fill; a guessed security surface is worse than an
 empty one because a reviewer would trust it.
@@ -58,8 +80,9 @@ empty one because a reviewer would trust it.
 ## 3. Audit, then report
 
 Run `python ~/.claude/kit/audit_project.py .` and paste its last line. It checks that the
-gate row is present and timed, that nothing in this project duplicates a global rule, and that
-no local setting overrides the global output style or re-defines a user-scope MCP server.
+gate row is present and either timed or `none`, that nothing in this project duplicates a
+global rule, and that no local setting overrides the global output style or re-defines a
+user-scope MCP server.
 
 Report, in prose: the gate you chose and why, its measured time, whether the baseline was
 green, what the audit said, and the three placeholders left for the user. Then stop.

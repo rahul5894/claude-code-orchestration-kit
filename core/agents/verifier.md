@@ -3,6 +3,8 @@ name: verifier
 description: Judges a finder's candidates against the code and returns CONFIRMED, PLAUSIBLE or REFUTED for each, with the line that proves it. After a rework, returns FIXED or NOT FIXED per must-fix item. Read-only, and the only agent that applies the exclusion list.
 model: opus
 effort: high
+experimental:
+  cacheTtl: 1h
 maxTurns: 20
 tools: Read, mcp__qartez__qartez_read, mcp__qartez__qartez_refs, mcp__qartez__qartez_find, mcp__qartez__qartez_grep
 disallowedTools: Edit, Write, NotebookEdit

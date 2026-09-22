@@ -66,7 +66,8 @@ suite**, codegen staleness included.
 
 - **The builder runs it twice** — on the untouched tree first, as the baseline that proves a
   red gate was not yours, and again as its last step — and pastes both exact last lines. A
-  red gate is the builder's to fix before reporting.
+  red gate is the builder's to fix before reporting. A `none` row means `SKIPPED`, stated,
+  never invented.
 - **Zero review agents run it.** Its verbatim output is in your brief. Re-running a
   deterministic command costs minutes and tells you nothing new. Treat its findings as
   candidates to triage, not as pass/fail.

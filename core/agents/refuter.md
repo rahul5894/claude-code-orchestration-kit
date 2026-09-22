@@ -3,6 +3,8 @@ name: refuter
 description: Finds defects in a completed change, ONCE per change, covering correctness AND security in the same pass. Reads the diff and the gate output it was given — never the builder's report, never the gate itself. Returns every candidate with a nameable failure scenario; the verifier decides which are real.
 model: opus
 effort: high
+experimental:
+  cacheTtl: 1h
 maxTurns: 40
 tools: Read, Bash, mcp__qartez__qartez_refs, mcp__qartez__qartez_read, mcp__qartez__qartez_impact, mcp__qartez__qartez_find, mcp__qartez__qartez_grep
 disallowedTools: Edit, Write, NotebookEdit

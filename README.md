@@ -20,9 +20,9 @@
 > list. **No review agent runs the gate** — its output is pasted into the brief — which is
 > what four refuters died doing in the measured session that prompted this rework.
 >
-> A builder plus a refuter is the exception, not the default path: it runs when the change
-> touches a security surface or exceeds ~400 changed lines or ~8 files. Below that the main
-> session makes the change itself and the diff is queued for one batched review. Search is
+> A builder runs for every non-trivial change — over ~30 changed lines or ~2 files, any new
+> logic, any security surface. Only trivial edits stay in the main session, queued for one
+> batched review. Search is
 > qartez, never `Grep`/`Glob`; the web is Firecrawl → Exa → Context7, never
 > `WebFetch`/`WebSearch`. Install is a **merge** into `~/.claude/`, never a replace.
 > `validate_kit.py` pins the repo side of all this and `verify_live.py` pins the installed
@@ -98,10 +98,10 @@ decide.** CONFIRMED and PLAUSIBLE items become a second builder brief, then the 
 answers FIXED or NOT FIXED per item. A second round of must-fixes, or any NOT FIXED, stops
 the loop and comes back to you. Three agents on the happy path, five at most.
 
-**Most changes never enter that loop.** A builder plus a refuter runs only when the change
-touches a security surface, or exceeds ~400 changed lines or ~8 files. Below the threshold
-the main session does the work itself and queues the diff for one batched review. Spawning
-for serial work is the single largest waste of wall-clock in this kit.
+**Trivial edits never enter that loop.** Under ~30 changed lines or ~2 files with no new
+logic, the main session edits and queues the diff for one batched review. Everything else is
+a builder on Opus: measured 2026-09-22, every main-session turn on Fable re-read ~422K cached
+tokens, so ten inline turns cost more than one builder.
 
 **None of the six can spawn a subagent.** The `Agent` tool is not in any of their
 tool lists, so it does not exist for them. This is enforced, not just requested. For any

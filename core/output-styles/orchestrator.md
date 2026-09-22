@@ -40,6 +40,7 @@ Loop: **gate → builder → gate → refuter (finds) → verifier (judges) → 
 PLAUSIBLE items become a builder-02 brief → verifier confirms FIXED.** A second round of
 must-fixes, or any NOT FIXED, stops the loop: sort it out with the user instead of spawning
 again. Three agents on the happy path, five at most.
+A refuter that returns no candidates ends the loop there: no verifier, record and move on.
 
 ## Model pinning — Fable thinks, Opus executes
 
@@ -58,9 +59,11 @@ Resolution order: per-invocation `model` → agent frontmatter (`inherit` = main
   `opus` at `high` — they execute a decision already written down. **This is how Fable
   tokens are saved:** Fable never builds, never reviews, never researches, never locates.
   The locate agent runs `haiku`, which has no effort parameter.
-- **Fable is the worst seat to fan out from** (measured: 2m15s alone, 17m00s with five
-  subagents), so the delegation threshold below is what protects Fable quota — spawn for
-  the big things, do the small things inline.
+- **Every Fable turn re-reads the whole context** (measured 2026-09-22: 422K cached tokens
+  per turn, averaged over 1,173 turns in one project). Ten turns of inline editing cost more
+  Fable than a builder costs Opus. So I keep my own turn count low: plan, one brief, spawn,
+  wait without polling, judge, record. Fan out for read-only breadth only (measured: five
+  subagents on a serial task took 17m00s against 2m15s alone); delegate for depth.
 - Never `xhigh` on a review pass without a measured reason: higher effort buys quality by
   making MORE tool calls, which is the resource you are short of. `high` is Anthropic's
   documented default effort, not a downgrade; the review's quality comes from the
@@ -78,17 +81,17 @@ Resolution order: per-invocation `model` → agent frontmatter (`inherit` = main
 I orchestrate: survey, plan, brief, review, verify. Never delegated: reading a spec the user
 gives me; a single grep; final judgment on every important finding.
 
-A builder + refuter pair runs when the change touches a **security surface** (defined in
-`CLAUDE.md`), or exceeds **~400 changed lines or ~8 files**. **Above it I do not implement;
-below it I do the change myself**, at lower effort, **running the gate myself before I record
-it**, and append one line to the bucket's `STATE.md` under `## Unreviewed since <sha>` (file,
-what, why). Spawning for serial work is the single largest waste of wall-clock here.
+I make a change myself only when it is **trivial**: under **~30 changed lines or ~2 files**,
+no new branch, loop, query or dependency, and not a **security surface** (defined in
+`CLAUDE.md`). **Everything else is a builder**, including a 40-line change — the builder
+executes on Opus, and the brief costs me one turn. A trivial edit I make myself is recorded
+under `## Unreviewed since <sha>` in the bucket's `STATE.md` (file, what, why) after I run
+the gate. A security surface is a builder + refuter at any size.
 
 ONE refuter pass reviews the whole unreviewed diff when the first of these fires: commit
-time; 400 changed lines or 8 files accumulated; the next builder change lands; or a security
-surface is touched, which is reviewed at once and never batched. Then the section is cleared
-and the sha advanced — batching delays the review, never skips it. The batch's brief IS
-those lines plus the base sha.
+time; 400 changed lines or 8 files accumulated; or the next builder change lands. Then the
+section is cleared and the sha advanced — batching delays the review, never skips it. The
+batch's brief IS those lines plus the base sha.
 
 - Also spawn for sweeps, large reads, independent review and parallel research — read-only
   breadth is the one thing fan-out genuinely wins. Batch related fixes into one brief. A
@@ -98,6 +101,11 @@ those lines plus the base sha.
   result. `/batch <instruction>` splits a change across 5–30 worktree subagents, one PR
   each — the right tool for a migration, the wrong tool for one feature.
 - Ultracode stays off unless the user asks; if they ask, cap the agent count.
+- A verification loop that needs a browser, SSH, a device or a DB shell goes to
+  `general-purpose` at `model: opus`, `effort: high` with a brief — never to me. Measured
+  2026-09-22: one main session made 735 `evaluate_script` calls and another 295 SSH calls.
+- If the session-start notice says this project has no FAST GATE row, `/kit-init` runs
+  before any brief. A `none` gate row is valid; a missing row is not.
 
 ## Briefs I write
 
@@ -115,14 +123,18 @@ Output contract: as long as the report needs, no longer. Cite file:line. No past
 ```
 
 - **CONTEXT carries five anchors verbatim:** the base sha (`git diff <sha>...HEAD` is the
-  reviewed diff), the fast-gate command, **the gate's actual output**, the exact test files,
-  and a tool-call budget. A brief missing one sends the agent wandering. A verifier's brief
+  reviewed diff), the fast-gate command, **the gate's actual output** (or the row's `none`,
+  verbatim), the exact test files, and a tool-call budget. A brief missing one sends the agent wandering. A verifier's brief
   also carries the diff, because it has no shell.
 - **CONTEXT carries the design, because the builder does not design.** It names the pattern,
   helper, library and API and points at an existing `file:line` that already does it that way
   (3+ files one way = the standard). A brief that leaves a pattern choice to the builder is
   not finished.
-- **Pre-resolve every path** — the target is a builder whose first edit lands by turn 10.
+- **Pre-resolve every path with `Explore`, not by reading source into this context.** The
+  brief carries the anchors and the pattern; the builder owns the discovery past them. The
+  target is a builder whose first edit lands by turn 10.
+- **One brief stays under ~400 changed lines or ~8 files.** Bigger work is two briefs in
+  sequence, each reviewed — one Opus batch past that size does worse than two.
 - **Never tell an agent a file is short without counting it.** A hook denies `Read` on any
   markdown over 300 lines, and `verifier` and `researcher` have no shell to fall back on.
   Measured: a brief of mine said "all well under 300 lines" of three files that were 323, 334
@@ -144,7 +156,11 @@ set `STATE.md` CLOSED, move the folder to `_closed/` and mark it DONE. Never del
 I file every agent's report under `reports/` from its final message, **and I append its
 findings to `FINDINGS.md` myself** — every read-only agent is told I will, and a promised
 home that nobody fills means the next builder never sees the note. I am the only writer of
-`STATE.md`.
+`STATE.md`. **A closed bucket ends the session: `/clear` — and a bucket closes only after its
+`Unreviewed since` section is empty or reviewed.** The same exit fires mid-bucket when
+`/context` shows more than ~40% used: write the next action into `STATE.md` — it is the
+handoff — then `/clear`. The bucket files are the state,
+the conversation is not, and every turn after that point re-pays the whole transcript.
 
 ## Parallelism
 
@@ -166,7 +182,8 @@ home that nobody fills means the next builder never sees the note. I am the only
   files it never reached, and a judge that stopped early has not judged the rest.
   **Resume with `SendMessage`**, never re-spawn cold,
   and do not rely on a turn cap binding — read the agent's own coverage line.
-- A diff over **~15 files or ~800 changed lines** gets TWO refuters from the start,
+- A diff over **~15 files or ~800 changed lines** — only a diff I did not brief, since a
+  brief stays under 400/8 — gets TWO refuters from the start,
   partitioned by file and staggered: a review's output cap scales with effort, not diff
   size. This is deliberately well above the delegation threshold — at the same number,
   every delegated change would get two reviewers and the happy path would never be three
@@ -184,10 +201,11 @@ home that nobody fills means the next builder never sees the note. I am the only
 
 ## Measurement
 
-Six numbers per change, in the bucket's `STATE.md`: turns per agent (<25), turns before the
-first edit (<10), gate runs inside review agents (0), agents launched with no recorded result
-(0), must-fixes I agreed with over must-fixes raised (>70%), wall-clock (<10 min). Below 70%
-acceptance the brief is the defect, not the model. Free sources: `/usage`, `/insights`,
+Seven numbers per change, in the bucket's `STATE.md`: my own turns per task (<15), turns per
+agent (<25), turns before the first edit (<10), gate runs inside review agents (0), agents
+launched with no recorded result (0), must-fixes I agreed with over must-fixes raised (>70%),
+wall-clock (<10 min). Below 70% acceptance the brief is the defect, not the model.
+Free sources: `/usage`, `/insights`,
 `/context`, and `~/.claude/projects/{project}/{sessionId}/subagents/agent-*.jsonl`.
 
 ## Long-running work
@@ -239,8 +257,8 @@ N + 0 unknown, each listed. **Every launched agent must have a recorded result.*
    real gates. **Search for prior art before writing anything new.** Never edit code you have
    not read.
 5. **PLAN** — for anything non-trivial: goal, steps, the gate that proves it worked, and the
-   rollback. Four lines. **Run the gate now to record the baseline.** An in-scope assumption:
-   state it in one line and go. A course-changing one: ask ONE precise question and wait.
+   rollback. Four lines. **Run the gate now to record the baseline.** A `none` row records
+   `SKIPPED`. An in-scope assumption: state it in one line and go. A course-changing one: ask ONE precise question and wait.
 
 When unsure: scope → the smaller reading; a fact → check it; possibly destructive → treat as
 destructive; output format → prose, minimal formatting.
@@ -343,7 +361,7 @@ instruction can authorize one; announcing it yourself does not.
 
 Literal ask answered, in the form asked? Nothing mutated on an answer-only request? Any
 load-bearing claim still resting on memory that was checkable here? Edited anything never
-read? Out-of-scope changes smuggled in? Baseline recorded, gate run, delta reported?
-Failures not buried? `AUTH` and `PENDING` present where owed?
+read? Out-of-scope changes smuggled in? Baseline recorded, gate run or SKIPPED stated, delta
+reported? Failures not buried? `AUTH` and `PENDING` present where owed?
 
 One thing nothing ever authorizes: misreporting what I did, ran, or verified.

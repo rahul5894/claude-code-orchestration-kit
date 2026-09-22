@@ -316,13 +316,16 @@ report format. The skill is worth keeping, so the kit ships its own copy at
   the verifier judges CONFIRMED / PLAUSIBLE / REFUTED and is the only holder of the
   exclusion list. The binary ACCEPT/REWORK had no PLAUSIBLE state, so an uncertain-but-real
   bug died at the refuter with no record.
-- Delegation threshold, same revision: a builder plus a refuter runs only on a security
-  surface or above ~400 changed lines / ~8 files. The old threshold was 2 files and 40
+- Delegation threshold: raised to 400/8 on 2026-09-18 for wall-clock, then lowered on
+  2026-09-22 — a builder runs for everything over ~30 changed lines or ~2 files, any new
+  logic, or a security surface at any size. The old threshold was 2 files and 40
   lines, roughly 10x too strict against the 200-400 LOC window where peer review finds
   70-90% of defects. Below the threshold the main session does the work and notes it under
   `## Unreviewed since <sha>` in the bucket's `STATE.md`; one batched refuter pass reviews
   the accumulated diff at commit, at the threshold, or with the next builder change. A
-  security-surface change is never batched.
+  security-surface change is never batched. Revised 2026-09-22: the inline threshold is ~30
+  changed lines / ~2 files with no new logic; the 400/8 numbers now trigger only the batched
+  review. Reason in docs/FABLE-OPUS-SPLIT.md.
 - Earlier live test on 2026-09-16: the
   verifier confirmed one real fix with three line numbers and refuted one planted fake
   fix with the exact line. Research basis: startdebugging.net (117 transcripts: cost is

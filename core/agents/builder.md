@@ -1,8 +1,10 @@
 ---
 name: builder
-description: Implements a change from a written brief and runs the tests. Use for changes above the delegation threshold — a security surface, or roughly 400 changed lines or 8 files. Requires a brief with pre-resolved paths, the pattern named, and a success condition.
+description: Implements a change from a written brief and runs the tests. Use for every change that is not trivial — anything over ~30 changed lines or ~2 files, any new branch, loop, query or dependency, and any security surface at any size. Requires a brief with pre-resolved paths, the pattern named, and a success condition.
 model: opus
 effort: high
+experimental:
+  cacheTtl: 1h
 tools: Read, Edit, Write, Bash, NotebookEdit, mcp__qartez__qartez_impact, mcp__qartez__qartez_read, mcp__qartez__qartez_find, mcp__qartez__qartez_refs, mcp__qartez__qartez_explore, mcp__qartez__qartez_grep
 color: yellow
 ---
@@ -28,7 +30,8 @@ the repository for it.
    recorded baseline is presumed yours. If the gate is diff-scoped and the tree is clean,
    it will report nothing to check — record that line anyway, it is still the baseline. If
    the gate cannot run at all, record why; do not skip silently and do not start editing to
-   "see if it helps".
+   "see if it helps". If the CLAUDE.md gate row says `none`, write `BASELINE: SKIPPED (no
+   gate in CLAUDE.md)` and continue.
 5. **Before editing any file, run `qartez_impact` on it.** A load-bearing file (5+
    importers) is blocked by the guard until you do; read the dependants it lists and name
    them in your report.
@@ -103,8 +106,9 @@ broke something, revert to known-good first, then re-diagnose.
 
 ## Last step before you report
 
-Run the project's fast gate the brief names and paste its exact last line under TESTS,
-next to the baseline you recorded in step 4. The gate is diff-scoped and under a minute —
+Run the project's fast gate the brief names and paste its exact last line under TESTS (or
+`Gate: SKIPPED (no gate in CLAUDE.md)` when the row says `none`), next to the baseline you
+recorded in step 4. The gate is diff-scoped and under a minute —
 compile, analyzer, lint, type check, secret scan. **It does not include the test suite**;
 your named test files are a separate run. A red gate is yours to fix before reporting;
 never report over it.
@@ -128,8 +132,8 @@ diffs — the reviewer reads the diff itself.
 - <files qartez_impact listed as dependants of what you changed, or "none load-bearing">
 
 ## TESTS
-Baseline gate (untouched tree): <exact last line>
-Gate after change: <exact command> — <exact last line>
+Baseline gate (untouched tree): <exact last line, or SKIPPED (no gate in CLAUDE.md)>
+Gate after change: <exact command> — <exact last line, or SKIPPED (no gate in CLAUDE.md)>
 Tests: <exact command run> — <exact result: N passed / N failed>
 Shown failing first: YES/NO
 

@@ -65,8 +65,40 @@ if txt:
     gate_row = re.search(r'FAST GATE[^\n]*', txt, re.I)
     ok(gate_row is not None, 'names a FAST GATE row', 'run /kit-init')
     if gate_row:
-        ok(re.search(r'\d+(\.\d+)?\s*s\b', gate_row.group(0)) is not None,
-           'the FAST GATE row states a measured time', gate_row.group(0)[:80])
+        # A repo with no checker writes `| none — <what you checked>`; that is a real answer,
+        # not a missing time, so the row passes on either shape.
+        _row = gate_row.group(0)
+        # The row is a markdown table: purpose | command | measured. Both checks below read
+        # one cell each, or the whole row when it is not a table (the match drops the leading
+        # `| **`, so cell 1 is the command and cell 2 the measured time).
+        _cells = [c.strip() for c in _row.split('|')]
+        _cmd, _measured = (_cells[1], _cells[2]) if len(_cells) >= 3 else (_row, _row)
+        _cmd = _cmd.strip('*').strip('`').strip()
+        _none = re.match(r'none\s*[—–-]', _cmd, re.I) is not None
+        ok(_none or re.search(r'\d+(\.\d+)?\s*s\b', _measured) is not None,
+           'the FAST GATE row states a measured time',
+           'none row accepted' if _none else _measured[:80])
+        # Running the program is never a static check, whatever a README says about doing it
+        # before a commit: `python main.py` shipped as a FAST GATE in an end-to-end test.
+        # A command that names a checking tool anywhere in it (python validate_kit.py,
+        # python manage.py check, go vet) is exempt; the audit only refuses obvious program
+        # runs. `compile` is exempt here because an interpreter byte-compile is refused by
+        # prose in /kit-init, not by this regex.
+        _prog = None
+        if not _none and not re.search(r'check|lint|gate|valid|verif|audit|analy|typecheck|'
+                                       r'format|compile|build|vet|clippy|tsc|mypy|ruff|'
+                                       r'pyright|eslint', _cmd, re.I):
+            _prog = re.search(r'\b(?:python3?|node|ruby|php|deno|bun)\s+\S+\.'
+                              r'(?:py|js|ts|mjs|rb|php)\b'
+                              r'|\b(?:go|cargo|dotnet|flutter|deno|bun)\s+run\b'
+                              r'|\b(?:npm|pnpm|yarn|bun)\s+(?:start|run\s+(?:start|dev|serve))\b'
+                              r'|\b(?:uvicorn|gunicorn|flask\s+run|rails\s+s(?:erver)?'
+                              r'|http\.server)\b',
+                              _cmd, re.I)
+        ok(_prog is None,
+           'the FAST GATE row is a static check, not a program run',
+           f'{_prog.group(0)} — a checker script whose name says nothing (quality.py, ci.js) '
+           'also trips this; rename it or name the tool it wraps' if _prog else '')
     ok('Agents never run these' in txt, 'names the commands agents must NOT run')
 
 # 1b. Claude Code v2.1.277+ reads AGENTS.md as the project instructions only while no

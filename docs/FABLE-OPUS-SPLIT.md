@@ -20,8 +20,9 @@ Fable is the orchestrator. It is the only seat that:
 - writes every brief (`briefs/NN-task.md`), with the base sha, the gate command and its
   real output, the exact files, and a tool-call budget;
 - runs the fast gate itself for the baseline and again before recording a change;
-- makes every small change itself (under ~400 lines or ~8 files, and not a security
-  surface), because spawning for serial work is the largest waste of wall-clock;
+- makes only trivial changes itself (under ~30 changed lines or ~2 files, no new logic, not
+  a security surface); every other change is a builder, because each Fable turn re-reads the
+  whole context (measured 422K cached tokens per turn, 2026-09-22);
 - judges every review finding: CONFIRMED, PLAUSIBLE or REFUTED, with the line or the doc
   window that proves it (a verifier agent can do this too; Fable overrules it);
 - runs `verify_live.py`, `install.ps1`, and anything else that writes to `~/.claude` or
@@ -65,7 +66,7 @@ while you are on Fable, and on Opus once Fable quota is gone. Nothing else inher
 - `CLAUDE_CODE_SUBAGENT_MODEL=opus` catches any off-roster spawn; `inherit` is only on
   the debugger.
 - Fable is the worst seat to fan out from (measured 2m15s alone vs 17m00s with five
-  subagents), so the delegation threshold keeps small work inline.
+  subagents), so the delegation threshold keeps only trivial work inline.
 
 ## What "everyone works together" means here
 
