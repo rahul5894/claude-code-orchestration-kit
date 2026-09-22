@@ -13,9 +13,9 @@ repo unusual.
 
 | Purpose | Command | Measured |
 |---|---|---|
-| **FAST GATE — agents run this** | `python validate_kit.py` | **0.1 s** |
-| Live-state check (**I run this**) | `python verify_live.py` | **8.6 s** — installs twice |
-| Install into `~/.claude` | `pwsh -File install.ps1` | 1.2 s |
+| **FAST GATE — agents run this** | `python validate_kit.py` | **0.4 s** |
+| Live-state check (**I run this**) | `python verify_live.py` | **37 s** — installs twice, runs every self-test |
+| Install into `~/.claude` | `pwsh -File install.ps1` | 5.6 s — runs five self-tests |
 | Scoreboard from transcripts | `python agent_stats.py --since <YYYY-MM-DD>` | ~1 s |
 
 `validate_kit.py` reads this repository only and is the diff-scoped gate: ~450 checks, no test

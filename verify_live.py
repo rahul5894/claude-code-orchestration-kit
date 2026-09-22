@@ -508,7 +508,7 @@ ok(r2.returncode == 0 and sum('unchanged' in l for l in said) == 2,
 ok('kit-session-start self-check: 8/8 passed' in r2.stdout,
    'kit-session-start self-check 8/8',
    [l for l in r2.stdout.splitlines() if 'kit-session-start' in l])
-for _kf in ('project-template.md', 'audit_project.py'):
+for _kf in ('project-template.md', 'audit_project.py', 'scan_project.py'):
     ok((HOME / 'kit' / _kf).exists(), f'~/.claude/kit/{_kf} published for /kit-init')
 _hk = subprocess.run([sys.executable, str(HOME / 'hooks' / 'kit-session-start.py'), '--check', str(KIT)],
                      capture_output=True, text=True, encoding='utf-8', errors='replace')
@@ -539,6 +539,9 @@ ok('kit-subagent-report self-check: 10/10 passed' in r2.stdout,
 ok('kit-subagent-start self-check: 15/15 passed' in r2.stdout,
    'kit-subagent-start self-check 15/15',
    [l for l in r2.stdout.splitlines() if 'kit-subagent-start' in l])
+ok('scan-project self-check: 38/38 passed' in r2.stdout,
+   'scan-project self-check 38/38',
+   [l for l in r2.stdout.splitlines() if 'scan-project' in l])
 
 print('\n>>> ALL CLEAR' if not bad else '\n>>> PROBLEMS:\n  ' + '\n  '.join(bad))
 sys.exit(1 if bad else 0)

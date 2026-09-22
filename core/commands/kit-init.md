@@ -20,6 +20,11 @@ if they exist: `package.json` (`scripts`), `pyproject.toml` / `setup.cfg` / `Mak
 - otherwise the stack's native fast check: `ruff check . && mypy .`, `npx tsc --noEmit &&
   npx eslint .`, `dart analyze`, `go vet ./... && staticcheck ./...`, `cargo clippy`
 
+A checker that is not on PATH is a candidate only when the repo's own manifest declares it
+(`[tool.ruff]` in pyproject, `eslint` in devDependencies, `analysis_options.yaml`); then
+invoke it through the manifest's runner (`uvx ruff check .`, `npx eslint .`, `dart analyze`).
+A tool neither installed nor declared is not a candidate.
+
 **Reject** any candidate that runs a test suite (`pytest`, `jest`, `vitest`, `go test`,
 `cargo test`, `flutter test`, `npm test`) — the whole point of the fast gate is that it is not
 the suite. If the user passed a command as the argument, use that instead of detecting.
@@ -56,6 +61,13 @@ denied by md-guard before the file exists. `-n` never overwrites. Then fill it i
 `## Commands` section only if the file has no `FAST GATE` row, and leave every other line
 alone.
 
+Then, if the file was just created by the copy (or its four detected sections still show
+template placeholders), run exactly
+`python ~/.claude/kit/scan_project.py --apply .` — it fills **Security
+surfaces**, **Layout**, **Conventions** and **Danger list** from what the tree actually
+contains, with evidence per line, and leaves any section a human already edited. Never write
+those sections yourself; if the script fails, say so and leave the placeholders.
+
 **A repo that has an `AGENTS.md` and no `CLAUDE.md` is the one case where writing the
 template takes something away.** Claude Code v2.1.277+ reads `AGENTS.md` as the project
 instructions only while no `CLAUDE.md`, `.claude/CLAUDE.md` or `CLAUDE.local.md` sits in the
@@ -70,12 +82,11 @@ Fill in, from what you measured:
   **Agents never run these** too
 - `<PROJECT NAME>` → the repo folder name
 
-**Those three edits and nothing else.** Two runs on identical repos must produce identical
-files; a line you add from a README or an AGENTS.md is variance, not setup.
+**Those three edits plus the scan, and nothing else.** Two runs on identical repos must
+produce identical files; a line you add from a README or an AGENTS.md is variance, not setup.
 
-Leave **Security surfaces in THIS repo**, **Layout** and **Danger list** as the template's
-visible placeholders. They are the user's to fill; a guessed security surface is worse than an
-empty one because a reviewer would trust it.
+The four detected sections are a floor: the global security-surface list still applies, and
+the user may add lines later. Do not add lines of your own.
 
 ## 3. Audit, then report
 
@@ -85,4 +96,5 @@ global rule, and that no local setting overrides the global output style or re-d
 user-scope MCP server.
 
 Report, in prose: the gate you chose and why, its measured time, whether the baseline was
-green, what the audit said, and the three placeholders left for the user. Then stop.
+green, what the audit said, and the four sections the scan filled, with how many lines each.
+Then stop.

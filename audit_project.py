@@ -100,6 +100,19 @@ if txt:
            f'{_prog.group(0)} — a checker script whose name says nothing (quality.py, ci.js) '
            'also trips this; rename it or name the tool it wraps' if _prog else '')
     ok('Agents never run these' in txt, 'names the commands agents must NOT run')
+    # The four sections /kit-init used to leave for the user to fill by hand stayed empty.
+    # scan_project.py fills them from the tree, so a surviving placeholder means the scan
+    # never ran - a reviewer then has no security surface, layout or danger list at all.
+    # ...and only inside those four: `<path>` in a repo's own prose about the template, or in
+    # a code fence showing one, is not an unfilled section. A fenced `## ` is masked first so
+    # a sample heading inside a block cannot end the section early.
+    _masked = re.sub(r'(?ms)^```.*?^```',
+                     lambda m: m.group(0).replace('\n## ', '\n#  '), txt)
+    _blocks = ''.join(re.findall(
+        r'(?ms)^## (?:Security surfaces[^\n]*|Layout|Conventions|Danger list)$.*?(?=^## |\Z)',
+        _masked))
+    ok('<path>' not in _blocks and '<dir>/' not in _blocks,
+       'no template placeholders left in CLAUDE.md (run /kit-init, which runs scan_project.py)')
 
 # 1b. Claude Code v2.1.277+ reads AGENTS.md as the project instructions only while no
 # CLAUDE.md sits in the working directory or above it, so the CLAUDE.md /kit-init writes

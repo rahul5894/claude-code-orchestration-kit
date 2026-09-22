@@ -120,6 +120,9 @@ Six sections, nothing else:
 6. STOP           report found/changed/need-to-know/my actions/blockers, then halt
 
 Output contract: as long as the report needs, no longer. Cite file:line. No pasted diffs.
+A builder writes its full report to reports/<NN>-builder.md and answers with a ten-line
+summary; I open the file only when the gate is red or Not done / Deviations / Blockers
+is not `none`. Read-only agents have no Write tool, so their report stays in the message.
 ```
 
 - **CONTEXT carries five anchors verbatim:** the base sha (`git diff <sha>...HEAD` is the

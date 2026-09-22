@@ -65,6 +65,7 @@ CLAUDE.md: kit block appended        (or "replaced" / "unchanged" on a re-run)
 settings.json: merged (backup written)
 md-guard: registered in settings.json
 md-guard self-check: 83/83 passed
+scan-project self-check: 38/38 passed
 done. ...
 ```
 
@@ -163,9 +164,13 @@ with a measured FAST GATE row**, and the kit now creates that itself:
    `go.mod` / `pubspec`, **runs it once and times it**, refuses anything over 60 s or
    containing a test runner, writes `CLAUDE.md` from `~/.claude/kit/project-template.md`
    with the real number in, and finishes with `python ~/.claude/kit/audit_project.py .`.
-3. Fill the three placeholders it leaves on purpose — **Security surfaces in THIS repo**,
-   **Layout**, **Danger list**. They are yours; a guessed security surface is worse than an
-   empty one because a reviewer would trust it.
+3. The four detected sections are filled by detection, not by hand. `/kit-init` also runs
+   `~/.claude/kit/scan_project.py --apply`,
+   which fills **Security surfaces in THIS repo**, **Layout**, **Conventions** and **Danger
+   list** from what the tree actually contains — one regex per category, counted per file,
+   the evidence on every line. It never guesses: a section where nothing was detected says
+   so and refreshes on the next `/kit-init`, and a section you filled in yourself is reported
+   `kept` and left alone. The detected security list is a floor, not a ceiling.
 
 Optional, when the repo has a docs folder: `qmd collection add <repo>/docs --name <repo>`.
 
@@ -396,6 +401,7 @@ report format. The skill is worth keeping, so the kit ships its own copy at
 
 - [ ] `pwsh install.ps1` printed `md-guard self-check: 83/83 passed`
 - [ ] the same run printed `kit-subagent-start self-check: 15/15 passed`
+- [ ] the same run printed `scan-project self-check: 38/38 passed`
 - [ ] `qmd search "<anything>" -c <collection> --full-path -n 5` printed `D:\...md:LINE` hits
 - [ ] `verify_live.py` C6 lists no unreviewed plugin
 - [ ] In a new Claude Code session, asking Claude to read a 300+ line `.md` whole is

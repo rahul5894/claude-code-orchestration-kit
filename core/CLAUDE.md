@@ -55,9 +55,9 @@ A bucket is one task's folder: `.claude/scratch/<slug>/` with `STATE.md`, `FINDI
   line per entry. **If you cannot** (every read-only agent), put it in your final message
   instead — the orchestrator files it. Never reach for a shell to get around a tool you
   were not given.
-- **Your final message IS your report. Never write `STATE.md` and never write a report
-  file** — the orchestrator owns the snapshot and files your report; `STATE.md` is replaced
-  rather than appended, so two writers lose each other's content.
+- **Your final message IS your report** (a builder writes the full one to `reports/` and
+  summarises it). **Never write `STATE.md`** — the orchestrator owns the snapshot; it is
+  replaced rather than appended, so two writers lose each other's content.
 
 ## The gate
 

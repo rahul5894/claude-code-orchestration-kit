@@ -972,8 +972,72 @@ chk('cp -n ~/.claude/kit/project-template.md ./CLAUDE.md' in _ki,
 # gate-kind list read as a candidate: two runs on identical repos disagreed on the row.
 chk('byte-compiler' in _ki and 'compileall' in _ki,
     '/kit-init refuses an interpreter byte-compile as the gate')
+# The builder's full report lives in a file and the chat gets ten lines (2026-09-22): the
+# user's chat window was filling with CHANGED/IMPACT/ARTIFACTS blocks written for the
+# orchestrator, not for them. All three files must agree or the builder gets two contracts.
+_bm = open('core/agents/builder.md', encoding='utf-8').read()
+chk('reports/<NN>-builder.md' in _bm and 'Full report:' in _bm,
+    'builder.md: full report to reports/<NN>-builder.md, ten-line summary in chat')
+chk('writes the full one to `reports/`' in open(SHARED, encoding='utf-8').read(),
+    'core/CLAUDE.md: the report-file rule names the builder exception')
+chk('reports/<NN>-builder.md' in orch_txt,
+    'orchestrator style: opens the builder report file only when a line is not none')
+# A checker the machine does not have is not a gate: one run invented `uvx ruff check .` on a
+# repo with no ruff anywhere, and the row it wrote could never be run by a builder.
+chk('not on PATH is a candidate only when' in _ki,
+    '/kit-init takes an uninstalled checker only when the repo declares it')
+# The four sections /kit-init used to leave as visible placeholders were never filled by
+# anyone, and a model filling them is worse than empty (a reviewer trusts a guessed security
+# surface). scan_project.py detects them; lose any link in this chain and they go back to
+# being placeholders without a single check going red.
+for _p, _why in [('scan_project.py', 'detects the four CLAUDE.md sections from the tree'),
+                 ('scan_project_test.py', 'its self-test')]:
+    chk(os.path.isfile(_p), f'{_p} exists ({_why})')
+chk("kit\\scan_project.py" in _inst, 'installer publishes scan_project.py to ~/.claude/kit')
+chk('scan_project_test.py' in _inst, 'installer runs the scanner self-test')
+chk('~/.claude/kit/scan_project.py --apply' in _ki,
+    '/kit-init runs the scanner against the repo it just wrote a CLAUDE.md for')
+chk('those sections yourself' in _ki,
+    '/kit-init never writes the four detected sections by hand')
+chk('three edits plus the scan, and nothing else' in _ki,
+    '/kit-init still pins its edit set, now including the scan')
+# A label is not the behaviour: run the real scanner on this repo (~0.3 s). It must exit 0
+# and emit all four headings, or /kit-init writes a CLAUDE.md with four empty sections.
+import subprocess, time
+
+_t0 = time.time()
+_sc = subprocess.run([sys.executable, 'scan_project.py', '.'],
+                     capture_output=True, text=True, encoding='utf-8', errors='replace')
+_sc_secs = time.time() - _t0
+chk(_sc.returncode == 0 and _sc_secs < 3,
+    f'scan_project.py runs on this repo in under 3 s ({_sc_secs:.2f} s, exit {_sc.returncode})',
+    (_sc.stderr or '')[-300:])
+chk(all(f'## {_h}' in (_sc.stdout or '') for _h in
+        ('Security surfaces in THIS repo', 'Layout', 'Conventions', 'Danger list')),
+    'scan_project.py prints all four sections (probe)', (_sc.stdout or '')[:200])
+# --apply rewrites placeholder LINES, never whole blocks: a block rewrite duplicated the
+# template's prose into the script, and one CRLF CLAUDE.md came back with mixed endings.
+_sp = open('scan_project.py', encoding='utf-8').read()
+chk('splitlines(keepends=True)' in _sp,
+    'scan_project.py --apply works line by line, keeping every line ending it found')
+_ph = re.search(r'PLACEHOLDER = re\.compile\((?:.|\n)*?\)\n', _sp)
+chk(bool(_ph) and 'nothing detected' in _ph.group(0),
+    'a "nothing detected" bullet counts as a placeholder, so it refreshes once there is something')
+_st = open('scan_project_test.py', encoding='utf-8').read()
+chk('rmtree' in _st,
+    'scan_project_test.py removes its temp tree (the installer runs it on every install)')
+# install.ps1 labels the test's LAST stdout line as `scan-project self-check: N/N passed`,
+# so a trailing print anywhere after the summary silently relabels the installer's output.
+_last_print = [ln for ln in _st.splitlines() if 'print(' in ln][-1:]
+chk(bool(_last_print) and '{passed}/{len(results)} passed' in _last_print[0],
+    'scan_project_test.py: last print is the N/N summary the installer labels',
+    (_last_print or ['no print( found'])[0].strip()[:200])
 _ap = open('audit_project.py', encoding='utf-8').read() if os.path.isfile('audit_project.py') else ''
 chk('@AGENTS.md' in _ap, 'audit_project.py catches a CLAUDE.md that ignores the AGENTS.md beside it')
+_pl = _ap.find('no template placeholders left in CLAUDE.md')
+chk(_pl > 0, 'audit_project.py flags a CLAUDE.md the scanner never filled')
+chk(_pl > 0 and 'Security surfaces' in _ap[max(0, _pl - 700):_pl],
+    'audit_project.py looks for placeholders inside the four sections, not in the whole file')
 # A `none` gate row is an answer, not a gap: both ends of the loop must say so.
 chk('A `none` row means `SKIPPED`' in open(SHARED, encoding='utf-8').read(),
     'core/CLAUDE.md tells the builder a none row means SKIPPED')
@@ -1056,7 +1120,7 @@ chk(0 <= _i_pol < _i_ser, 'installer applies the plugin policy before settings.j
 # The self-check counts are pinned in verify_live.py and quoted in the setup doc. They drifted
 # apart once already (doc said 42/42 while the suite had grown to 83), and a reader on a fresh
 # machine then reads a real pass as a failure.
-for _hook in ('md-guard', 'kit-subagent-start'):
+for _hook in ('md-guard', 'kit-subagent-start', 'scan-project'):
     _m = re.search(rf'{_hook} self-check (\d+/\d+)', _vl)
     chk(_m is not None and _m.group(1) in _setup,
         f'setup doc quotes the same self-check counts verify_live pins ({_hook})',

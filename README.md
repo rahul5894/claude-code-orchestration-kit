@@ -252,7 +252,7 @@ Add `.claude/scratch/` to `.gitignore`.
 ## extras: install only if you need them
 
 ```bash
-cp extras/project/CLAUDE.md             <repo>/CLAUDE.md            # then fill in the placeholders
+cp extras/project/CLAUDE.md             <repo>/CLAUDE.md            # or just run /kit-init
 cp extras/project/.claude/settings.json <repo>/.claude/settings.json
 cat extras/project/.gitignore-snippet  >> <repo>/.gitignore
 cp -r extras/project/.claude/scratch/_TEMPLATE <repo>/.claude/scratch/_TEMPLATE
@@ -260,6 +260,13 @@ cp -r extras/project/.claude/scratch/_TEMPLATE <repo>/.claude/scratch/_TEMPLATE
 
 Start Claude Code from the repo root. The paths in `settings.json` are matched from the
 folder you start in, so starting from a subfolder turns those rules off.
+
+`/kit-init` does the first line for you and fills it in: it detects and times the fast gate,
+then runs `scan_project.py --apply`, which writes the **Security surfaces**, **Layout**,
+**Conventions** and **Danger list** sections from what the tree actually contains, with the
+evidence on every line. Nothing in those four sections is guessed: they are filled by
+detection, and a section where the scan found nothing says so and refreshes on the next
+`/kit-init`.
 
 | | |
 |---|---|

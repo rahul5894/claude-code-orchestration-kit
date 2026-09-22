@@ -56,6 +56,7 @@ foreach ($r in $RETIRED_OUTPUT_STYLES) {
 New-Item -ItemType Directory -Force (Join-Path $dest 'kit') | Out-Null
 Copy-Item (Join-Path $kit 'extras\project\CLAUDE.md') (Join-Path $dest 'kit\project-template.md') -Force
 Copy-Item (Join-Path $kit 'audit_project.py')         (Join-Path $dest 'kit\audit_project.py')     -Force
+Copy-Item (Join-Path $kit 'scan_project.py')          (Join-Path $dest 'kit\scan_project.py')      -Force
 "agents:        " + ((Get-ChildItem (Join-Path $kit 'core\agents\*.md')).BaseName -join ', ')
 "commands:      " + ((Get-ChildItem (Join-Path $kit 'core\commands\*.md')).BaseName -join ', ')
 "skills:        " + ((Get-ChildItem (Join-Path $kit 'core\skills') -Directory).Name -join ', ')
@@ -286,6 +287,11 @@ else {
     }
     $t4 = & $py (Join-Path $dest 'hooks\kit-subagent-start_test.py') 2>&1 | Select-Object -Last 1
     "kit-subagent-start self-check: $t4"
+    # From the checkout, not $dest: the fixtures it builds read extras\project\CLAUDE.md
+    # beside it, and the published copy in kit\ has no extras\ next to it.
+    $t5 = & $py (Join-Path $kit 'scan_project_test.py') 2>&1 | Select-Object -Last 1
+    if ($LASTEXITCODE -ne 0) { "scan-project self-check: FAILED (exit $LASTEXITCODE) - see above" }
+    else { "scan-project self-check: $t5" }
 }
 
 "done. RESTART Claude Code: agents and output styles are read at startup, so the 'orchestrator'"

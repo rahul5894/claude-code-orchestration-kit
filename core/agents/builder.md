@@ -121,8 +121,24 @@ message below IS the report.
 
 ## Output contract
 
-As long as the report needs and no longer; the orchestrator reads it inline. No pasted
-diffs — the reviewer reads the diff itself.
+**The full report goes to a file, the chat gets a summary.** Write the report below to
+`<bucket>/reports/<NN>-builder.md` (NN = your brief's number; a second pass appends `-2`),
+with `Write`. Then your final message is ONLY this summary, at most ten lines:
+
+```
+Gate: <baseline last line> → <after last line>     Tests: <N/N or SKIPPED>
+Changed: <N files> — <comma-separated paths>
+Not done: <none | one line>
+Deviations: <none | one line each>
+Blockers: <none | one line>
+Full report: <bucket>/reports/<NN>-builder.md
+```
+
+The orchestrator opens the file only when the gate is red or a line above is not `none`.
+In the file: as long as the report needs and no longer; no pasted diffs — the reviewer reads
+the diff itself. **A line with nothing to say is left out**: no "not triggered", no "no
+version-sensitive claim". The `ARTIFACTS` block appears only when INTENT, TWINS or SOURCE
+actually fired.
 
 ```
 ## CHANGED
