@@ -132,13 +132,14 @@ print()
 print('=== 1. AGENT FRONTMATTER - docs-valid values only ===')
 MODELS = {'sonnet', 'opus', 'haiku', 'fable', 'inherit'}
 EFFORT = {'low', 'medium', 'high', 'xhigh', 'max'}
-# Fable thinks, Opus executes. The orchestrator is whatever /model says (Fable 5.1 high, or
-# Opus 5.5 xhigh once Fable quota is gone); the kit never sets it. The debugger INHERITS that
-# seat - hard reasoning follows the orchestrator, and inherit can never break on quota.
-# Everything that executes a decision already written down is pinned opus: that is how Fable
-# tokens are saved. The judge (verifier) runs high because it decides what gets fixed. The
-# locate agent shadows the built-in Explore on haiku, which has no effort parameter at all.
-PINS = {'Explore': ('haiku', None), 'researcher': ('opus', 'high'), 'builder': ('opus', 'high'),
+# The orchestrator is whatever /model says (Opus 5.5 high, or Fable 5.1 high); the kit never
+# sets it. The debugger INHERITS that seat. Executors that follow a decision already written
+# down run opus: builder high after the build benchmark (medium invented a business rule and
+# failed 9 of 17 hidden tests; a wrong build ships a regression), researcher medium (it only
+# reports facts the orchestrator checks). The two review agents (refuter, verifier) run high
+# because review is the one recall stage. The locate agent shadows the built-in Explore on
+# haiku, which has no effort parameter at all.
+PINS = {'Explore': ('haiku', None), 'researcher': ('opus', 'medium'), 'builder': ('opus', 'high'),
         'verifier': ('opus', 'high'), 'refuter': ('opus', 'high'), 'debugger': ('inherit', 'high')}
 COLORS = {'red', 'blue', 'green', 'yellow', 'purple', 'orange', 'pink', 'cyan'}
 AGENTKEYS = {'name', 'description', 'tools', 'disallowedTools', 'model', 'permissionMode',
@@ -556,6 +557,20 @@ chk(str(osd.get('keep-coding-instructions')).lower() == 'true',
     str(osd.get('keep-coding-instructions')))
 chk(osd.get('name') == 'orchestrator', 'orchestrator style: name matches the settings value',
     str(osd.get('name')))
+# The lean mode (kit-modes D001/D002/D004): the other style, same rules for the built-ins, and
+# the phrases that make it the lean mode - native review, the switch back, the handoff, the
+# reply format. Its body is main-session context on every turn, so it has a line budget.
+lsd, lstxt = fmx('core/output-styles/kit-lean.md')
+chk(lsd.get('name') == 'kit-lean', 'kit-lean style: name is kit-lean', str(lsd.get('name')))
+chk(str(lsd.get('keep-coding-instructions')).lower() == 'true',
+    'kit-lean style: keep-coding-instructions true (else it strips the built-ins)',
+    str(lsd.get('keep-coding-instructions')))
+lsbody = lstxt.split('\n---', 1)[-1].strip('\n').splitlines()
+chk(len(lsbody) <= 110, 'kit-lean style: body is <= 110 lines', str(len(lsbody)))
+for phrase in ('/code-review', '/security-review', '/output-style orchestrator', 'STATE.md',
+               'Aapko karna hai'):
+    # the body only: the description in the frontmatter names the review commands too
+    chk(phrase in '\n'.join(lsbody), f'kit-lean style: names {phrase}')
 # Only agents that take everything from the brief may skip it - and only if they restate the
 # tool rules, or they fall back to Grep on source and cost more than the flag saved.
 for p in agentfiles:
@@ -648,7 +663,7 @@ for concept, pat, owner in [
         ('ops loops go to general-purpose', r'goes to\s+`general-purpose`', ORCH),
         ('kit-init before any brief', r'`/kit-init` runs\s+before any brief', ORCH),
         ('clear after a closed bucket', r'A closed bucket ends the session: `/clear`', ORCH),
-        ('context boundary exit', r'context is past ~50%', ORCH),
+        ('context boundary exit', r'first time per 10-point band', ORCH),
         ('brief size cap', r'One brief stays under ~400 changed lines or ~8 files', ORCH),
         ('orchestrator turn budget', 'my own turns per task', ORCH)]:
     owners = [f for f in cfg if re.search(pat, open(f, encoding='utf-8').read())]
@@ -715,14 +730,14 @@ chk(su.get('subagentPromptCacheTtl') == '1h', 'settings: subagentPromptCacheTtl 
     str(su.get('subagentPromptCacheTtl')))
 # The split only works if the style is actually switched on. Installed-but-inactive was a
 # real defect once: the orchestrator's own rules were sitting on disk doing nothing.
-chk(su.get('outputStyle') == 'orchestrator', 'settings: outputStyle activates the style',
+chk(su.get('outputStyle') == 'kit-lean', 'settings: outputStyle activates the lean default style',
     str(su.get('outputStyle')))
 # The default branches a worktree from the default branch, hiding local work from the agent.
 chk(su.get('worktree', {}).get('baseRef') == 'head', 'settings: worktree.baseRef head',
     str(su.get('worktree')))
 ms = su.get('modelSettings', {})
-chk(ms.get('claude-opus-5-5', {}).get('effortLevel') == 'xhigh',
-    'modelSettings: opus 5.5 xhigh (fallback orchestrator seat; agent frontmatter overrides it)',
+chk(ms.get('claude-opus-5-5', {}).get('effortLevel') == 'high',
+    'modelSettings: opus 5.5 high (orchestrator seat; xhigh only with a measured gain)',
     str(ms.get('claude-opus-5-5')))
 chk(ms.get('claude-fable-5-1', {}).get('effortLevel') == 'high',
     'modelSettings: fable 5.1 high (the primary orchestrator seat)')
@@ -902,7 +917,9 @@ for p, why in [('core/hooks/kit-session-start.py', 'the SessionStart notice'),
                ('core/hooks/kit-subagent-report.py', 'the SubagentStop report filer'),
                ('core/hooks/kit-subagent-report_test.py', 'its self-test'),
                ('core/hooks/kit-subagent-start.py', 'the SubagentStart decisions injector'),
-               ('core/hooks/kit-subagent-start_test.py', 'its self-test')]:
+               ('core/hooks/kit-subagent-start_test.py', 'its self-test'),
+               ('core/hooks/kit-context.py', 'the Stop hook that asks for the handoff'),
+               ('core/hooks/kit-context_test.py', 'its self-test')]:
     chk(os.path.isfile(p), f'{p} exists ({why})')
 _inst = open('install.ps1', encoding='utf-8').read() if os.path.isfile('install.ps1') else ''
 for frag, label in [('kit-session-start.py', 'installer registers the SessionStart hook'),
@@ -915,13 +932,50 @@ for frag, label in [('kit-session-start.py', 'installer registers the SessionSta
                     ('builder|refuter|verifier|debugger|researcher',
                      'the injector matches the five briefed agents and never Explore'),
                     ('kit-subagent-start_test.py', 'installer runs the injector self-test'),
+                    ('kit-context.py', 'installer registers the Stop hook'),
+                    ("'Stop'", 'the handoff hook is hung on the Stop event'),
+                    ('kit-context_test.py', 'installer runs the context hook self-test'),
                     ("kit\\project-template.md", 'installer publishes the project template to ~/.claude/kit'),
-                    ("kit\\audit_project.py", 'installer publishes audit_project.py to ~/.claude/kit')]:
+                    ("kit\\audit_project.py", 'installer publishes audit_project.py to ~/.claude/kit'),
+                    ('kit_off_test.py', 'installer runs the per-project off-switch self-test'),
+                    ("rules\\orchestration-kit.md", 'installer writes the shared rules to their own '
+                     'file, which /kit-off can exclude per project')]:
     chk(frag in _inst, label)
+# Per-project off switch (2026-09-23): .claude/kit-off silences the kit in one project. A hook
+# that skips the check keeps writing _inbox files or denying Reads there, and nothing else shows it.
+chk(os.path.isfile('core/hooks/kit_off.py') and os.path.isfile('core/hooks/kit_off_test.py'),
+    'core/hooks/kit_off.py and its self-test exist')
+for _h in sorted(glob.glob('core/hooks/*.py')):
+    if _h.endswith('_test.py') or _h.endswith('kit_off.py'):
+        continue
+    _src = open(_h, encoding='utf-8').read()
+    chk('from kit_off import kit_off' in _src and 'kit_off(' in _src,
+        f'{os.path.basename(_h)} honours .claude/kit-off (md-guard: its .md checks only)')
+# The handoff (2026-09-23): what lives only in the chat must reach STATE.md, STATE.md stays
+# short, and /continue is the one word that resumes. Each clause here is one a rewrite could
+# drop without anything else noticing.
+_tk = open('core/commands/task.md', encoding='utf-8').read()
+_kc = open('core/hooks/kit-context.py', encoding='utf-8').read()
+_ct = open('core/commands/continue.md', encoding='utf-8').read() if os.path.isfile('core/commands/continue.md') else ''
+chk('## User said' in _tk and 'At most ~60 lines' in _tk and '[gotcha]' in _tk,
+    'task.md: STATE has User said, a ~60-line cap, and tagged FINDINGS read on demand')
+chk('User said' in _kc and '/continue' in _kc,
+    'kit-context asks for the User said section and points the user at /continue')
+chk('`task` skill' in _ct and '$ARGUMENTS' in _ct,
+    'core/commands/continue.md resumes through the task skill, slug optional')
+_un = open('uninstall.ps1', encoding='utf-8').read() if os.path.isfile('uninstall.ps1') else ''
+chk('SupportsShouldProcess' in _un and "rules\\orchestration-kit.md" in _un
+    and 'Nothing was changed' in _un,
+    'uninstall.ps1 exists, has -WhatIf, removes the rules file, stops on unreadable settings')
 # A hook `timeout` is SECONDS, not milliseconds: 5000 is 83 minutes of a wedged hook holding
 # up every Read, every session start and every finished subagent.
-chk('timeout = 5000' not in _inst and len(re.findall(r'timeout = 5\b', _inst)) == 4,
-    'all four hook registrations use timeout = 5 seconds, none the 5000 that reads as ms')
+# Every registration goes through Register-Hook, so its body is the one place one is set.
+_rh = re.search(r'function Register-Hook\b.*?\n}', _inst, re.S)
+chk(_rh is not None and 'timeout = 5000' not in _inst
+    and re.findall(r'timeout = \d+', _inst) == ['timeout = 5']
+    and 'timeout = 5' in _rh.group(0),
+    'every hook registration uses timeout = 5 seconds (set once, in Register-Hook), '
+    'none the 5000 that reads as ms')
 chk(all(r in su.get('permissions', {}).get('deny', [])
         for r in ('Agent(model:fable)', 'Agent(model:claude-fable-5-1)')),
     'settings deny an explicit Fable subagent, so a Fable spawn fails loudly instead of '
@@ -1120,9 +1174,10 @@ chk(0 <= _i_pol < _i_ser, 'installer applies the plugin policy before settings.j
 # The self-check counts are pinned in verify_live.py and quoted in the setup doc. They drifted
 # apart once already (doc said 42/42 while the suite had grown to 83), and a reader on a fresh
 # machine then reads a real pass as a failure.
-for _hook in ('md-guard', 'kit-subagent-start', 'scan-project'):
+for _hook in ('md-guard', 'kit-session-start', 'kit-subagent-report', 'kit-subagent-start',
+              'kit-context', 'scan-project'):
     _m = re.search(rf'{_hook} self-check (\d+/\d+)', _vl)
-    chk(_m is not None and _m.group(1) in _setup,
+    chk(_m is not None and f'{_hook} self-check: {_m.group(1)}' in _setup,
         f'setup doc quotes the same self-check counts verify_live pins ({_hook})',
         _m.group(1) if _m else 'no count pinned in verify_live.py')
 

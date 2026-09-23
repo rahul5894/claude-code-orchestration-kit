@@ -2,13 +2,13 @@
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
   "modelSettings": {
     "claude-opus-5-5": {
-      "effortLevel": "xhigh"
+      "effortLevel": "high"
     },
     "claude-fable-5-1": {
       "effortLevel": "high"
     }
   },
-  "outputStyle": "orchestrator",
+  "outputStyle": "kit-lean",
   "subagentPromptCacheTtl": "1h",
   "worktree": {
     "baseRef": "head"
@@ -30,7 +30,6 @@
       "Bash(chmod u+w:*)"
     ],
     "deny": [
-      "Edit(.claude/scratch/_closed/**)",
       "Agent(model:fable)",
       "Agent(model:claude-fable-5-1)"
     ]

@@ -1,0 +1,14 @@
+Add refunds to the shop service. Create `shop/refunds.py` with
+`refund(conn, order_id, amount_cents, idempotency_key, actor)` that returns a dict with
+keys "refund_id", "order_id", "amount_cents", "status", and a module-level exception class
+`RefundError` raised for every refund that is not allowed. Add an API handler
+`api.refund_order(conn, request)` that follows the conventions of the existing handlers.
+Product requirements: a customer can refund part of an order, several times, but never
+more than the order's total in total. Our mobile app retries a request when the network
+times out, so the same request can arrive more than once - it carries an idempotency key.
+The service handles requests on multiple threads. `actor` is the customer's email or a
+staff id starting with "staff:"; only the customer who placed the order or staff may
+refund it. When an order is fully refunded its items go back into stock (api.INVENTORY).
+Every refund must be recorded in the database so finance can reconcile. Amounts are
+integer cents. Keep to the existing code style, stdlib only, and do not change unrelated
+code. Run the project's gate before you finish.

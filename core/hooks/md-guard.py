@@ -1,9 +1,9 @@
-"""PreToolUse guard: big markdown docs go through qmd, never raw Read/cat.
+"""PreToolUse guard: big markdown docs are read in windows, never raw Read/cat whole.
 
 Read  -> deny when a .md file has >300 lines and no limit<=300 is given.
 Bash  -> deny when cat/sed/awk/grep/rg/head/tail READ a .md path that is big
          (or cannot be resolved) with no column cap. Writes (heredoc, redirect,
-         sed -i, tee), qmd calls, counts and capped output pass.
+         sed -i, tee), counts and capped output pass.
 Bash/PowerShell -> deny outright when the payload's agent_type is a read-only
          agent and the command has a named write shape (redirect, sed -i, tee,
          rm/mv/cp, tree-changing git, a write-mode open(), a package install).
@@ -14,6 +14,11 @@ import json
 import os
 import re
 import sys
+
+# The hook's own folder, explicitly: under PYTHONSAFEPATH=1 (or python -P / -I) the script dir
+# is not on sys.path, the import fails and the hook exits 1 - which fails open (refuter-02).
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from kit_off import kit_off  # noqa: E402
 
 MAX_LINES = 300
 CAP_RE = re.compile(
@@ -34,6 +39,19 @@ READERS = re.compile(
     r"|Get-Content|gc|type|Select-String|sls)\b", re.IGNORECASE
 )
 MD_PATH = re.compile(r"[^\s\"'|<>]+\.md\b", re.IGNORECASE)
+# A heredoc whose body is data (D009): a file-write line (`cat >[>] f`, `tee [-a] f`) whose
+# delimiter is quoted (`<<'EOF'`, `<<"EOF"`, `<<-'EOF'`), so nothing in the body expands.
+# Both are matched on the masked line (see _mask), never the `<<<` here-string.
+# A WHITELIST: the whole masked line must be one of these shapes, else nothing is stripped.
+# The target allows no `;|&<>()$` or quote, so `cat > f;bash <<'EOF'`, `tee >(bash) <<'EOF'`
+# and a second `<<` on the line never match - in each something else runs the body.
+_PATH = r"[\w./\\:~-]+"
+_CD = r"\s*(?:cd\s+" + _PATH + r"\s*&&\s*)?"
+HEREDOC_WRITE_RES = (
+    re.compile(_CD + r"(?:cat\s*>>?\s*" + _PATH + r"|tee\s+(?:-a\s+)?" + _PATH + r")"
+               r"\s+<<-?\s*(['\"])(\w+)\1\s*"),
+    re.compile(_CD + r"cat\s+<<-?\s*(['\"])(\w+)\1\s*>>?\s*" + _PATH + r"\s*"),
+)
 
 # A read-only agent's verdict is discarded whole if the tree moved under it, so the shell
 # writes it can name are denied here rather than found afterwards in a git diff.
@@ -58,7 +76,9 @@ _GIT_WRITE = (r"\bgit\s+(?:add|commit|checkout|switch|reset|clean|restore|rm|mv|
               r"|\bgit\s+worktree\b(?!\s+list)"
               r"|\bgit\s+branch\b[^;&|\n]*\s-[dDmMc]\b")
 # The two commands the project CLAUDE.md forbids every agent to run: both write ~/.claude.
-_FORBIDDEN = r"|install\.ps1|verify_live\.py"
+# kit_switch.py writes a project's settings.local.json and its kit-off marker. (install\.ps1
+# matches uninstall.ps1 too.)
+_FORBIDDEN = r"|install\.ps1|verify_live\.py|kit_switch\.py"
 # A command word: start of the string or just after a shell separator.
 _CMD = r"(?:^|[;&|(\n`]|\$\()\s*"
 BASH_WRITE_RE = re.compile(
@@ -72,7 +92,8 @@ BASH_WRITE_RE = re.compile(
     + r"|\bopen\(\s*[^)]*,\s*['\"][wax]"
     + r"|open\([^)]*mode\s*=\s*['\"][wax]"
     + r"|\b(?:os\.remove|os\.unlink|os\.rename|os\.makedirs|os\.mkdir|shutil\.\w+"
-      r"|\.write_text\(|\.write_bytes\(|\.unlink\(|\.rename\(|\.touch\()"
+      r"|\.write_text\(|\.write_bytes\(|\.unlink\(|\.rename\(|\.touch\("
+      r"|O_(?:CREAT|WRONLY|RDWR|APPEND|TRUNC)\b)"
     + r"|\bpip\s+install\b|\bnpm\s+(?:install|i|ci)\b|\buv\s+add\b|\bsudo\b"
     + _FORBIDDEN,
     re.IGNORECASE,
@@ -86,13 +107,10 @@ PS_WRITE_RE = re.compile(
     re.IGNORECASE,
 )
 
-HOW = (
-    "Fuzzy lookup: `qmd update && qmd search \"<query>\" -c <collection> "
-    "--full-path -n 5` then `qmd get \"<path>:<line>:<count>\"`. "
-    "Exact anchor: `grep -n \"<anchor>\" <file> | cut -c1-300` then Read with "
-    "offset+limit. Collections: `qmd collection list`; new repo: "
-    "`qmd collection add <docs-dir> --name <repo>`."
-)
+# qmd was the suggested route until 2026-09-23 and dropped: in 14 days it was called 10 times
+# against ~250 denials here - the model went to grep + Read windows anyway.
+HOW = ("Find the spot with `grep -n \"<anchor>\" <file> | cut -c1-300`, then Read with "
+       "offset+limit.")
 
 
 def deny(reason):
@@ -156,16 +174,50 @@ def _segment_reads_big_md(cmd):
     return not all(r and line_count(r) <= MAX_LINES for r in resolved)
 
 
+def _mask(line):
+    """The line with every quoted span's inside turned to `_` (same length, quotes kept) and
+    a trailing `# comment` cut, so a `<<` or `cat >` inside a string or a comment is inert."""
+    line = _QUOTED.sub(lambda m: m.group()[0] + "_" * (len(m.group()) - 2) + m.group()[0], line)
+    return re.sub(r"(?:^|\s)#.*", "", line)
+
+
+def _strip_heredocs(cmd):
+    """The command without the terminated bodies of quoted-delimiter write heredocs (D009):
+    only there is a body data. Every other `<<`, and an unterminated body, stays whole, so its
+    verdict is what it was before this existed."""
+    lines, out, i, clean = cmd.split("\n"), [], 0, True
+    while i < len(lines):
+        out.append(lines[i])
+        masked = _mask(lines[i])
+        m = next((m for r in HEREDOC_WRITE_RES if (m := r.fullmatch(masked))), None)
+        name = lines[i][m.start(2):m.end(2)] if m and clean else ""
+        # The terminator exactly as bash reads it: the bare name, with leading TABs only after
+        # `<<-`. A looser match (`  EOF`) ends the body early while bash reads on (refuter-04).
+        tabs = "\t" if "<<-" in masked else ""
+        end = next((j for j in range(i + 1, len(lines)) if lines[j].lstrip(tabs) == name),
+                   None) if re.fullmatch(r"\w+", name) else None
+        if end is None:
+            # Any other line can leave bash mid-string, mid-heredoc or mid-continuation, so a
+            # write line after it is not surely at a command position: `echo "x\"`, `cat <<X`,
+            # `bash -s \` would each run a "body" the guard stripped. Stop stripping for good.
+            clean = False
+        else:
+            i = end
+        i += 1
+    return "\n".join(out)
+
+
 def check_bash(inp):
-    cmd = inp.get("command", "")
+    # Bodies go for this READ check only. Write detection in main() reads the raw command,
+    # or `bash <<EOF` would hide any write inside its body (D007).
+    cmd = _strip_heredocs(inp.get("command", ""))
     # judge each `a && b ; c || d` segment on its own: `rm x.md && git status | head`
     # must not trip on the `head` of an unrelated segment
     for seg in re.split(r"&&|\|\||;|\n", cmd):
         if _segment_reads_big_md(seg):
             deny("md-guard: reading a .md file in a shell without a column cap "
                  "(long paragraph-lines blow the output). Add `| cut -c1-300` "
-                 "(PowerShell: `| % { $_.Substring(0,[Math]::Min(300,$_.Length)) }`), "
-                 "or use qmd. " + HOW)
+                 "(PowerShell: `| % { $_.Substring(0,[Math]::Min(300,$_.Length)) }`). " + HOW)
 
 
 def main():
@@ -180,8 +232,14 @@ def main():
         return
     tool = data.get("tool_name", "")
     inp = data.get("tool_input", {}) or {}
+    # /kit-off quiets the big-.md checks only. The read-only write guard below stays on in
+    # every project: it is the one write boundary refuter and debugger have, and a marker any
+    # shell can create must not be able to lift it (refuter-02, 2026-09-23: `python -c
+    # "os.open('.claude/kit-off', os.O_CREAT)"` passed, and every later write went unguarded).
+    off = kit_off()
     if tool == "Read":
-        check_read(inp)
+        if not off:
+            check_read(inp)
     elif tool in ("Bash", "PowerShell"):
         # `plugin:kit:refuter` is a refuter: the payload names the agent namespaced when the
         # agent comes from a plugin.
@@ -196,7 +254,8 @@ def main():
                 deny(f"md-guard: {agent_type} is a read-only agent and this command writes "
                      "(a file, the tree, or a remote). Report the change you wanted "
                      "instead; the orchestrator files it.")
-        check_bash(inp)
+        if not off:
+            check_bash(inp)
 
 
 if __name__ == "__main__":

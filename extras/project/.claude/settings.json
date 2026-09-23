@@ -3,9 +3,6 @@
     "CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH": "1"
   },
   "permissions": {
-    "deny": [
-      "Edit(.claude/scratch/_closed/**)"
-    ],
     "ask": [
       "Bash(git push:*)",
       "Bash(git reset --hard:*)",

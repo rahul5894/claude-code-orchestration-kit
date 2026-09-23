@@ -1,0 +1,48 @@
+Add coupons, checkout and an order summary report to the shop service.
+
+1. Coupons - create `shop/coupons.py` with a module-level exception class `CouponError`.
+`create_coupon(conn, actor, code, kind, value, min_total_cents=0, expires_on=None,
+max_redemptions=None)` stores a coupon and returns its code in upper case.
+- Only staff may create coupons: `actor` must be a string starting with "staff:".
+- `code`: 3 to 20 characters, each an ASCII letter, digit or "-". Codes are case-insensitive
+  ("save10" and "SAVE10" are the same coupon) and unique.
+- `kind` is "percent" (`value` an int from 1 to 100) or "fixed" (`value` an int of cents > 0).
+- `min_total_cents`: an int >= 0; the order subtotal must be at least this for the coupon to apply.
+- `expires_on`: None or a `datetime.date`; the coupon is valid up to and including that day.
+- `max_redemptions`: None (unlimited) or an int >= 1.
+Every invalid argument, a duplicate code and a non-staff actor raise `CouponError`.
+`redemption_count(conn, code)` returns how many times the coupon has been redeemed (0 for a
+code that exists but was never used; `CouponError` for an unknown code).
+
+2. Checkout - create `shop/checkout.py` with a module-level exception class `CheckoutError`.
+`checkout(conn, order_id, actor, coupon_code=None, today=None)` moves an order from "new" to
+"paid" and returns a dict with keys "order_id", "subtotal_cents", "discount_cents",
+"total_cents" and "coupon" (the coupon code in upper case, or None).
+- `today` is a `datetime.date`; when None, use the current UTC date.
+- Only the customer who placed the order (`actor` equal to the order's email) or staff
+  (`actor` starting with "staff:") may check it out.
+- Only an order in status "new" can be checked out.
+- Checkout reserves the stock of every item in `api.INVENTORY`. If any item cannot be
+  reserved, nothing stays reserved and the order stays "new".
+- A coupon applies at most once per order. A "percent" discount is subtotal * value / 100
+  rounded down to whole cents; a "fixed" discount is its value. The total is never below 0.
+- A coupon that does not exist, has expired, is used up or whose minimum is not met makes the
+  checkout fail. A coupon with `max_redemptions` must never be redeemed more times than that.
+- Every redemption is recorded in the database.
+Every checkout that is not allowed raises `CheckoutError`, and leaves the order, the stock and
+the coupon's redemption count as they were. The service handles requests on multiple threads:
+checkouts of different orders, and of the same order, can run at the same time.
+
+3. API - add `api.checkout_order(conn, request)` (request keys "order_id", "actor" and
+optional "coupon") and `api.create_coupon(conn, request)` (request keys "api_key", "actor",
+"code", "kind", "value" and the optional "min_total_cents", "expires_on" as an ISO date
+string, "max_redemptions"). Follow the conventions of the existing handlers; a handler never
+raises, whatever the request holds.
+
+4. Report - add `orders.summaries(conn, order_ids)` returning a dict mapping each order id to
+{"status": ..., "item_count": total quantity of its items, "total_cents": sum of qty * price}.
+Ids that do not exist are left out. Finance calls it with up to 10,000 ids at once, so it
+must not run one query per order.
+
+Keep to the existing code style, stdlib only, and do not change unrelated code. Run the
+project's gate before you finish.

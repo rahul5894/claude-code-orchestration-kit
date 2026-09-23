@@ -18,11 +18,16 @@ def repo(with_scratch=True):
     return d
 
 
-def run(payload):
+def run(payload, project_dir=None):
     """Raw UTF-8 bytes on stdin, the way Node's JSON.stringify feeds the real hook.
-    ensure_ascii=True would escape every non-ASCII character and hide the cp1252 defect."""
+    ensure_ascii=True would escape every non-ASCII character and hide the cp1252 defect.
+    The hook prefers CLAUDE_PROJECT_DIR, and a caller inside Claude Code has it set: without
+    stripping it every case below would file into the caller's own repo."""
     raw = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-    return subprocess.run([sys.executable, HOOK], input=raw, capture_output=True)
+    env = {k: v for k, v in os.environ.items() if k != "CLAUDE_PROJECT_DIR"}
+    if project_dir:
+        env["CLAUDE_PROJECT_DIR"] = project_dir
+    return subprocess.run([sys.executable, HOOK], input=raw, capture_output=True, env=env)
 
 
 def inbox(d):
@@ -140,6 +145,25 @@ for ignored, want_files, label in ((False, 0, "a repo that does NOT ignore .clau
     quiet &= p.stdout == b""
     _, names = inbox(d)
     cases.append((git.returncode == 0 and len(names) == want_files, label))
+
+# 10. payload cwd follows the shell's `cd` (2026-09-23: two reports lost after
+# `cd .claude/scratch`); CLAUDE_PROJECT_DIR is the launch root and wins.
+d, elsewhere = repo(), repo(with_scratch=False)
+p = run({"cwd": elsewhere, "agent_type": "kit-builder", "agent_id": "abcdef1234567890",
+         "last_assistant_message": "report"}, project_dir=d.replace(os.sep, "/"))
+quiet &= p.stdout == b""
+_, names = inbox(d)
+cases.append((len(names) == 1 and tree(elsewhere) == [],
+              "CLAUDE_PROJECT_DIR = fixture, payload cwd elsewhere -> filed in the fixture"))
+
+# 11. launched in a parent dir, then cd into the repo: the launch root has no scratch, cwd does.
+d, parent = repo(), repo(with_scratch=False)
+p = run({"cwd": d, "agent_type": "kit-builder", "agent_id": "abcdef1234567890",
+         "last_assistant_message": "report"}, project_dir=parent.replace(os.sep, "/"))
+quiet &= p.stdout == b""
+_, names = inbox(d)
+cases.append((len(names) == 1 and tree(parent) == [],
+              "CLAUDE_PROJECT_DIR without scratch, payload cwd with it -> filed under cwd"))
 
 cases.append((quiet, "stdout is empty on every run"))
 

@@ -33,6 +33,56 @@ CASES = [
     # (want, tool, input, agent_type)
     ("ALLOW", "Bash", {"command": f"cat > {tmp}/new.md <<EOF\nhi\nEOF"}, None),
     ("ALLOW", "Bash", {"command": f"cat >> {BIG} <<EOF\nrow\nEOF"}, None),
+    # a heredoc body is data: `type` + a .md name in it is not a read (denied 2026-09-23)
+    ("ALLOW", "Bash", {"command": f"cat >> {SMALL} <<'EOF'\n- type continue then read STATE.md\nEOF"}, None),
+    ("ALLOW", "Bash", {"command": f"cat >> {SMALL} <<-\"EOF\"\n- type continue then read STATE.md\n\tEOF"}, None),
+    ("DENY",  "Bash", {"command": f"cat >> {SMALL} <<'EOF'\nrow\nEOF\ncat {BIG}"}, None),
+    # unterminated: nothing is stripped, the verdict is what it was before stripping existed
+    ("DENY",  "Bash", {"command": f"cat >> {SMALL} <<'EOF'\n- type continue then read STATE.md"}, None),
+    # D009: a body is data only under a file-write line with a QUOTED delimiter. An unquoted
+    # one expands $(...) and backticks, an interpreter runs its body, and a `<<` inside quotes,
+    # a comment or arithmetic opens no heredoc at all - each of those is judged line by line.
+    ("DENY",  "Bash", {"command": f"cat <<EOF\n$(cat {BIG})\nEOF"}, None),
+    ("DENY",  "Bash", {"command": f"cat <<EOF\n`cat {BIG}`\nEOF"}, None),
+    ("DENY",  "Bash", {"command": f"bash <<'EOF'\ncat {BIG}\nEOF"}, None),
+    ("DENY",  "Bash", {"command": f"python - <<'EOF'\ncat {BIG}\nEOF"}, None),
+    ("DENY",  "Bash", {"command": f'echo "<<EOF"\ncat {BIG}\nEOF'}, None),
+    ("DENY",  "Bash", {"command": f"# see <<EOF\ncat {BIG}\nEOF"}, None),
+    ("DENY",  "Bash", {"command": f"echo $((1<<2))\ncat {BIG}\n2"}, None),
+    ("DENY",  "Bash", {"command": f"cat > {tmp}/x.txt \"<<'EOF'\"\ncat {BIG}\nEOF"}, None),
+    ("ALLOW", "Bash", {"command": f"cat > {tmp}/x.md <<\"EOF\"\n- type continue then read STATE.md\nEOF"}, None),
+    ("ALLOW", "Bash", {"command": f"tee -a {tmp}/x.md <<'EOF'\n- type continue then read STATE.md\nEOF"}, None),
+    ("DENY",  "Bash", {"command": f"tee {tmp}/x.md <<'EOF' | bash\ncat {BIG}\nEOF"}, None),
+    ("DENY",  "Bash", {"command": f"bash <<'EOF'; cat > {tmp}/f\ncat {BIG}\nEOF"}, None),
+    # a quote opened on an earlier line: the heredoc-looking line is inside a string, and the
+    # read after the string closes is real (found by /code-review 2026-09-23)
+    ("DENY",  "Bash", {"command": f"echo \"\ncat > {tmp}/f <<'EOF'\n\"; cat {BIG}\nEOF"}, None),
+    ("ALLOW", "Bash", {"command": f"cd {tmp} && cat >> {SMALL} <<'EOF'\n- type continue then read STATE.md\nEOF"}, None),
+    # only a whitelisted write line strips its body: a separator glued to the target, a
+    # second heredoc, or a process substitution hands the body to an interpreter (refuter-01)
+    ("DENY",  "Bash", {"command": f"cat > {tmp}/f;bash <<'EOF'\ncat {BIG}\nEOF"}, None),
+    ("DENY",  "Bash", {"command": f"cat > {tmp}/f|bash <<'EOF'\ncat {BIG}\nEOF"}, None),
+    ("DENY",  "Bash", {"command": f"tee {tmp}/x&&bash <<'EOF'\ncat {BIG}\nEOF"}, None),
+    ("DENY",  "Bash", {"command": f"bash <<'A'; cat > {tmp}/f <<'B'\ncat {BIG}\nA\nrow\nB"}, None),
+    ("DENY",  "Bash", {"command": f"bash <<'A' | cat > {tmp}/f <<'B'\ncat {BIG}\nA\nrow\nB"}, None),
+    ("DENY",  "Bash", {"command": f"cat > >(bash) <<'EOF'\ncat {BIG}\nEOF"}, None),
+    ("DENY",  "Bash", {"command": f"tee >(bash) <<'EOF'\ncat {BIG}\nEOF"}, None),
+    ("ALLOW", "Bash", {"command": f"cat <<'EOF' > {tmp}/x.md\n- type continue then read STATE.md\nEOF"}, None),
+    # an earlier line can leave bash inside an outer heredoc, a string or a continuation, so a
+    # write line after it strips nothing (refuter-03, each probed: bash ran the "body")
+    ("DENY",  "Bash", {"command": f"cat <<X\ncat > {tmp}/f <<'EOF'\nX\ncat {BIG}\nEOF"}, None),
+    ("DENY",  "Bash", {"command": f"cat <<X\ncat > /dev/null <<'EOF'\nX\ncat {BIG}\nEOF"}, "refuter"),
+    ("DENY",  "Bash", {"command": f"echo \"x\\\"\ncat > {tmp}/f <<'EOF'\n\"; cat {BIG}\nEOF"}, None),
+    ("DENY",  "Bash", {"command": f"bash -s \\\ntee {tmp}/f <<'EOF'\ncat {BIG}\nEOF"}, None),
+    # a near-terminator (`  EOF`, `EOF `) does not end the body for bash: the next "heredoc
+    # head" is body text, and its "body" runs (refuter-04, probed live)
+    ("DENY",  "Bash", {"command": f"cat > /dev/null <<'EOF'\n  EOF\ncat > /dev/null <<'true'\nEOF\ncat {BIG}\ntrue"}, None),
+    ("DENY",  "Bash", {"command": f"cat > /dev/null <<'EOF'\nEOF \ncat > /dev/null <<'true'\nEOF\ncat {BIG}\ntrue"}, "refuter"),
+    # an UNquoted delimiter expands $(...) in the body, so a write line's body is still judged
+    ("DENY",  "Bash", {"command": f"cat > {tmp}/f <<EOF\n$(cat {BIG})\nEOF"}, None),
+    # back-to-back quoted write heredocs: both bodies are data
+    ("ALLOW", "Bash", {"command": f"cat > {tmp}/a <<'EOF'\nread STATE.md\nEOF\ncat > {tmp}/b <<'EOF'\nread STATE.md\nEOF"}, None),
+    ("DENY",  "Bash", {"command": "bash <<EOF\nrm x\nEOF"}, "refuter"),
     ("ALLOW", "Bash", {"command": f'sed -i "s/a/b/" {BIG}'}, None),
     ("DENY",  "Bash", {"command": f'bash -c "cat {BIG}"'}, None),
     ("ALLOW", "Bash", {"command": f"grep -c line {BIG}"}, None),
@@ -68,6 +118,8 @@ CASES = [
     # command from a builder, or with no agent_type at all, stays allowed: this is a rule
     # about who is running, not about the command.
     ("DENY",  "Bash", {"command": f"echo hi > {tmp}/out.txt"}, "refuter"),
+    # the per-project off switch writes files; a read-only agent must not flip it (refuter-02)
+    ("DENY",  "Bash", {"command": "python ~/.claude/kit/kit_switch.py off ."}, "refuter"),
     ("ALLOW", "Bash", {"command": f"echo hi > {tmp}/out.txt"}, "builder"),
     ("ALLOW", "Bash", {"command": f"echo hi > {tmp}/out.txt"}, None),
     ("ALLOW", "Bash", {"command": "git status --short 2>&1"}, "refuter"),
@@ -76,6 +128,8 @@ CASES = [
     ("DENY",  "Bash", {"command": "git checkout -- x.py"}, "refuter"),
     ("ALLOW", "Bash", {"command": "git diff 4c52057...HEAD --stat"}, "refuter"),
     ("DENY",  "Bash", {"command": "python - <<'EOF'\nopen('x','w').write('1')\nEOF"}, "debugger"),
+    ("DENY",  "Bash", {"command": "python -c \"import os; os.close(os.open('k', os.O_CREAT))\""}, "refuter"),
+    ("ALLOW", "Bash", {"command": "python -c \"import os; print(os.open('k', os.O_RDONLY))\""}, "refuter"),
     ("ALLOW", "Bash", {"command": "python -c \"print(open('x').read())\""}, "refuter"),
     ("DENY",  "PowerShell", {"command": "Set-Content x.txt 'hi'"}, "refuter"),
     ("ALLOW", "Bash", {"command": "pytest tests/test_x.py -x -q"}, "debugger"),

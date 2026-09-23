@@ -1,7 +1,8 @@
 """SubagentStop hook: file every finished subagent's final message, so none is lost.
 
-Writes one <cwd>/.claude/scratch/_inbox/<UTC>-<agent_type>-<id8>.md per subagent from the
-payload's `last_assistant_message`; the transcript is never parsed. The hook is global, so
+Writes one <root>/.claude/scratch/_inbox/<UTC>-<agent_type>-<id8>.md per subagent from the
+payload's `last_assistant_message`, where <root> is the first of CLAUDE_PROJECT_DIR and the
+payload's `cwd` that has a .claude/scratch/ dir; the transcript is never parsed. The hook is global, so
 a project with no .claude/scratch/ is left completely alone, and so is one whose git would
 show the file. Prints nothing in any path: stdout from a hook can reach the model. Any
 crash = write nothing (fail open, dev tool).
@@ -13,6 +14,11 @@ import os
 import re
 import subprocess
 import sys
+
+# The hook's own folder, explicitly: under PYTHONSAFEPATH=1 (or python -P / -I) the script dir
+# is not on sys.path, the import fails and the hook exits 1 - which fails open (refuter-02).
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from kit_off import kit_off  # noqa: E402
 
 UNSAFE = re.compile(r"[^A-Za-z0-9._-]")
 
@@ -40,6 +46,8 @@ def clean(value):
 
 
 def main():
+    if kit_off():
+        return
     try:
         # Explicit UTF-8: sys.stdin uses the locale codec (cp1252 on Windows) and the payload
         # comes from JSON.stringify, which leaves non-ASCII raw. Decoding it wrong mangles
@@ -47,10 +55,15 @@ def main():
         data = json.loads(sys.stdin.buffer.read().decode("utf-8"))
     except Exception:
         return
-    scratch = os.path.join(data.get("cwd") or os.getcwd(), ".claude", "scratch")
+    # Payload cwd follows the shell's `cd`: after `cd .claude/scratch` (2026-09-23) two reports
+    # were never filed. CLAUDE_PROJECT_DIR is the launch root and does not move; payload cwd is
+    # the fallback for a session launched in a parent dir, then cd'd into the repo (D011).
     # Every project on the machine fires this. Only a repo that already keeps task buckets
     # gets written to; anywhere else the hook is a no-op.
-    if not os.path.isdir(scratch):
+    scratch = next((s for s in (os.path.join(r, ".claude", "scratch")
+                                for r in (os.environ.get("CLAUDE_PROJECT_DIR"), data.get("cwd")) if r)
+                    if os.path.isdir(s)), None)
+    if not scratch or kit_off(os.path.dirname(os.path.dirname(scratch))):
         return
     if git_would_see(scratch):
         return

@@ -1,10 +1,14 @@
-"""SessionStart notice: a project with no FAST GATE row gets one line of context, nothing else.
+"""SessionStart notice: the missing FAST GATE row, and the task buckets left open.
 
-Claude Code feeds SessionStart hooks a JSON object on stdin (`cwd`, `source`, ...) and treats
-raw stdout as additional context for the session. This hook prints ONE line when the current
-project's CLAUDE.md has no `FAST GATE` row, and prints nothing otherwise. It never writes a
-file: creating files in someone's repository on session open is the wrong shape, and the gate
-has to be MEASURED, which only `/kit-init` does.
+Claude Code feeds SessionStart hooks a JSON object on stdin (`cwd`, `source`, ...). This hook
+prints ONE JSON object whose `additionalContext` (to the model) carries a line when the
+project's CLAUDE.md has no `FAST GATE` row, and the last OPEN/BLOCKED rows of
+.claude/scratch/INDEX.md; when buckets exist and the session is a startup or a /clear,
+`systemMessage` names them to the user so that "/clear, then continue" needs no explanation.
+The INDEX is read from the first of CLAUDE_PROJECT_DIR and payload `cwd` that has a
+.claude/scratch/ dir (a session launched in a parent dir, then cd'd into the repo). Nothing to
+say = prints nothing. It never writes a file: creating files in someone's repository on
+session open is the wrong shape, and the gate has to be MEASURED, which only `/kit-init` does.
 
 Why it exists: without a named gate, an agent invents one and picks the slowest command it
 can find - measured once at two full pytest runs of 159 s each, for a project whose real fast
@@ -18,10 +22,49 @@ import os
 import re
 import sys
 
+# The hook's own folder, explicitly: under PYTHONSAFEPATH=1 (or python -P / -I) the script dir
+# is not on sys.path, the import fails and the hook exits 1 - which fails open (refuter-02).
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from kit_off import kit_off  # noqa: E402
+
 GATE_RE = re.compile(r"FAST GATE", re.IGNORECASE)
 NOTICE = ("orchestration-kit: this project has no FAST GATE row in CLAUDE.md. "
           "Run /kit-init before delegating anything - it detects the gate, times it, and "
           "writes the file. Until then, do not spawn a builder here.")
+BUCKETS = ("orchestration-kit: task notes from .claude/scratch/INDEX.md (open buckets; each "
+           "one's handoff is .claude/scratch/<slug>/STATE.md):")
+RESUME = ("If the user says continue or /continue (or names a bucket), resume it with the task skill's "
+          "'Continue a bucket' step (`/task <slug>`). Several open and the user did not say "
+          "which: ask one question.")
+MAX_ROWS = 8
+MAX_SLUG = 64
+MAX_STATUS = 20
+MAX_NEXT = 200
+# A slug is one path component, not a path (same rule as kit-subagent-start.py).
+SLUG_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
+# A cell boundary is a pipe not escaped as `\|`.
+CELL_RE = re.compile(r"(?<!\\)\|")
+
+
+def open_buckets(root):
+    """((slug, status, next action) per OPEN or BLOCKED row of INDEX.md - the last MAX_ROWS -,
+    how many earlier rows were left out). Cells are read the way open_slugs() in
+    kit-subagent-start.py reads them, so both hooks agree on what is open. INDEX.md is text
+    anyone can write: every cell is capped and a slug that is not one path component is dropped."""
+    out = []
+    try:
+        with open(os.path.join(root, ".claude", "scratch", "INDEX.md"),
+                  encoding="utf-8", errors="replace") as f:
+            for line in f:
+                cells = [c.strip() for c in CELL_RE.split(line.strip().strip("|"))]
+                if len(cells) >= 2 and cells[1].upper().startswith(("OPEN", "BLOCKED")):
+                    slug = cells[0].strip("*` ")
+                    if len(slug) <= MAX_SLUG and SLUG_RE.fullmatch(slug):
+                        out.append((slug, cells[1][:MAX_STATUS],
+                                    cells[3][:MAX_NEXT] if len(cells) >= 4 else ""))
+    except OSError:
+        return [], 0
+    return out[-MAX_ROWS:], max(0, len(out) - MAX_ROWS)
 
 
 def needs_init(root):
@@ -34,8 +77,11 @@ def needs_init(root):
 
 
 def main():
+    data = {}
     if len(sys.argv) >= 3 and sys.argv[1] == "--check":
-        root = sys.argv[2]
+        root = scratch_root = sys.argv[2]
+    elif kit_off():
+        return
     else:
         try:
             # Explicit UTF-8: sys.stdin uses the locale codec (cp1252 on Windows) and the
@@ -44,9 +90,30 @@ def main():
             data = json.loads(sys.stdin.buffer.read().decode("utf-8"))
         except Exception:
             data = {}
-        root = data.get("cwd") or os.getcwd()
-    if needs_init(root):
-        sys.stdout.write(NOTICE)
+        # CLAUDE_PROJECT_DIR first: payload cwd follows the shell's `cd`, the launch root does not.
+        root = os.environ.get("CLAUDE_PROJECT_DIR") or data.get("cwd") or os.getcwd()
+        # ...but a session launched in a parent dir has its buckets under cwd (D011).
+        scratch_root = next((r for r in (os.environ.get("CLAUDE_PROJECT_DIR"), data.get("cwd"))
+                             if r and os.path.isdir(os.path.join(r, ".claude", "scratch"))), None)
+        if scratch_root and kit_off(scratch_root):
+            scratch_root = None
+    context = [NOTICE] if needs_init(root) else []
+    buckets, more = open_buckets(scratch_root) if scratch_root else ([], 0)
+    if buckets:
+        rows = [f"- {slug} [{status}]: {nxt}" for slug, status, nxt in buckets]
+        if more:
+            rows.append(f"(+{more} more in .claude/scratch/INDEX.md)")
+        context.append("\n".join([BUCKETS] + rows + [RESUME]))
+    if not context:
+        return
+    out = {"hookSpecificOutput": {"hookEventName": "SessionStart",
+                                  "additionalContext": "\n\n".join(context)}}
+    # The user is told only when a session starts fresh; a resume or a compaction continues a
+    # conversation that already knows its bucket.
+    if buckets and data.get("source") in ("startup", "clear"):
+        out["systemMessage"] = ("Open task(s): " + ", ".join(slug for slug, _, _ in buckets)
+                                + " - type /continue to resume.")
+    sys.stdout.write(json.dumps(out))
 
 
 if __name__ == "__main__":

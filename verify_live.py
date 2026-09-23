@@ -224,6 +224,91 @@ for _label, _setup, _extra, _verify in [
            _detail)
     shutil.rmtree(_tmp, ignore_errors=True)
 
+print("\n=== C3b. uninstall.ps1 gives the machine back as it was ===")
+# Install, dry-run, uninstall, each in a throwaway HOME. The dry run must write nothing and the
+# uninstall must leave exactly what was there before. The "your own" machine holds everything
+# refuter-02 showed at risk: an ask rule and a $schema equal to the kit's, an effort the kit
+# overwrites, a plugin the kit disables, a file inside a kit skill folder, and a hook whose name
+# only starts like a kit hook's.
+_MINE = {"$schema": "https://json.schemastore.org/claude-code-settings.json",
+         "hooks": {"PreToolUse": [{"matcher": "Bash", "hooks": [
+             {"type": "command", "command": "echo mine"},
+             {"type": "command", "command": "python /x/.claude/hooks/md-guard.py.orig"}]}]},
+         "permissions": {"deny": ["Bash(rm -rf:*)"], "ask": ["Bash(git push:*)"]},
+         "env": {"MY_VAR": "1"},
+         "enabledPlugins": {"simple-english@simple-english": True},
+         "modelSettings": {"claude-opus-5-5": {"effortLevel": "xhigh"}}}
+# A comment of the user's that merely starts like the kit's header sits before the real block:
+# only the real block may go (refuter-02).
+_OLD_KEEP = '# Mine\n\n<!-- orchestration-kit: my notes -->\n## My own rules\nkeep me\n\n## Tail'
+_OLD_BLOCK = _OLD_KEEP.replace('## Tail', '<!-- orchestration-kit (fork of SirRuggie/x, source D:/old) -->\n'
+                               'old rules\n<!-- /orchestration-kit -->\n\n## Tail\n')
+
+
+def _snap(d):
+    out = {'settings.json': {}, 'CLAUDE.md': ''}
+    for p in d.rglob('*'):
+        rel = p.relative_to(d).as_posix()
+        if p.is_dir() or '.bak-kit' in rel or '__pycache__' in rel:
+            continue
+        t = p.read_text(encoding='utf-8', errors='replace')
+        out[rel] = (json.loads(t) if t.strip() else {}) if rel == 'settings.json' else (
+            t.strip() if rel == 'CLAUDE.md' else t)
+    return out
+
+
+def _ps(script, tmp, *a):
+    env = dict(os.environ, USERPROFILE=tmp, HOME=tmp, CLAUDE_CONFIG_DIR=str(pathlib.Path(tmp) / '.claude'))
+    return subprocess.run(['pwsh', '-File', script, *a], capture_output=True, text=True,
+                          encoding='utf-8', errors='replace', env=env)
+
+
+for _label, _files, _expect in [
+        ('nothing installed', {}, None),
+        ('an empty CLAUDE.md', {'CLAUDE.md': ''}, None),
+        ('an empty settings.json', {'settings.json': ''}, None),
+        ('your own hooks, rules, agents and values', {'CLAUDE.md': '# My rules\n\nbe nice\n',
+         'settings.json': json.dumps(_MINE), 'agents/mine.md': 'x', 'hooks/mine.py': 'x',
+         'skills/review-precision/my-notes.md': 'mine'}, 'restored'),
+        ('an old kit block in CLAUDE.md', {'CLAUDE.md': _OLD_BLOCK}, 'block')]:
+    _tmp = tempfile.mkdtemp(prefix='kit-rt-')
+    _d = pathlib.Path(_tmp) / '.claude'
+    for _rel, _body in _files.items():
+        (_d / _rel).parent.mkdir(parents=True, exist_ok=True)
+        (_d / _rel).write_text(_body, encoding='utf-8')
+    _d.mkdir(exist_ok=True)
+    _before = _snap(_d)
+    try:
+        _ri = _ps('install.ps1', _tmp)
+        _mid = _snap(_d)
+        _rw = _ps('uninstall.ps1', _tmp, '-WhatIf')
+        _dry = _rw.returncode == 0 and _snap(_d) == _mid
+        _ru = _ps('uninstall.ps1', _tmp)
+        _after = _snap(_d)
+    except OSError as e:
+        ok(False, f'uninstall round trip could run ({_label})', str(e))
+        break
+    if _expect == 'restored':
+        _dry = _dry and 'your values from before the kit kept or restored' in _ru.stdout
+    if _expect == 'block':
+        _before['CLAUDE.md'] = _OLD_KEEP
+        _dry = _dry and 'rules/orchestration-kit.md' in _mid and '(fork of' not in _mid['CLAUDE.md']
+    _diff = [k for k in set(_before) | set(_after) if _before.get(k) != _after.get(k)]
+    ok(_ri.returncode == 0 and _ru.returncode == 0 and _dry and not _diff,
+       f'install + uninstall round trip: {_label}',
+       f'install rc={_ri.returncode} uninstall rc={_ru.returncode} dry-run ok={_dry} differs={_diff[:3]}')
+    shutil.rmtree(_tmp, ignore_errors=True)
+_tmp = tempfile.mkdtemp(prefix='kit-rt-')
+_d = pathlib.Path(_tmp) / '.claude'
+_d.mkdir()
+_ps('install.ps1', _tmp)
+(_d / 'settings.json').write_text('{ not json', encoding='utf-8')
+_have = sorted(p.relative_to(_d).as_posix() for p in _d.rglob('*'))
+_ru = _ps('uninstall.ps1', _tmp)
+ok(_ru.returncode != 0 and sorted(p.relative_to(_d).as_posix() for p in _d.rglob('*')) == _have,
+   'uninstall refuses an unreadable settings.json and removes nothing', f'rc={_ru.returncode}')
+shutil.rmtree(_tmp, ignore_errors=True)
+
 print("\n=== C4. qartez, which every agent's search depends on ===")
 # An upgraded qartez whose server was never restarted serves the pre-upgrade behaviour to
 # every agent while the version string says otherwise - silent, and invisible to every other
@@ -312,7 +397,9 @@ for _proj in sorted(pathlib.Path(r'D:\Projects').glob('*')) if pathlib.Path(r'D:
         except ValueError:
             _offenders.append(f'{_proj.name}/{_rel}: unparseable')
             continue
-        if 'outputStyle' in _d:
+        # .claude/kit-off = switched off on purpose by /kit-off: not silent, so not an offender.
+        if (_d.get('outputStyle') not in (None, 'kit-lean', 'orchestrator')
+                and not (_proj / '.claude' / 'kit-off').is_file()):
             _offenders.append(f'{_proj.name}/{_rel}: outputStyle={_d["outputStyle"]!r} (kit OFF there)')
         for _k in KILLERS:
             if _k in (_d.get('env') or {}):
@@ -446,9 +533,9 @@ except (OSError, ValueError) as e:
     s = {}
     ok(False, 'settings.json exists and parses', f'{type(e).__name__}: {e}')
 for label, got, want in [
-        ('outputStyle', s.get('outputStyle'), 'orchestrator'),
+        ('outputStyle', s.get('outputStyle'), 'kit-lean'),
         ('fable effort', s.get('modelSettings', {}).get('claude-fable-5-1', {}).get('effortLevel'), 'high'),
-        ('opus effort', s.get('modelSettings', {}).get('claude-opus-5-5', {}).get('effortLevel'), 'xhigh'),
+        ('opus effort', s.get('modelSettings', {}).get('claude-opus-5-5', {}).get('effortLevel'), 'high'),
         ('subagent cache TTL', s.get('subagentPromptCacheTtl'), '1h'),
         ('agent teams off', s.get('env', {}).get('CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS'), '0'),
         ('spawn depth', s.get('env', {}).get('CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH'), '1')]:
@@ -500,21 +587,42 @@ ok(r.returncode == 0, f"validate_kit.py exits 0 -- {tally[-1] if tally else 'no 
 # This is the run AFTER the one at the top of this script, so it is the one that can prove
 # idempotency: a tree already installed must report unchanged.
 r2 = install()
-said = [l for l in r2.stdout.splitlines() if 'unchanged' in l or 'kit block' in l or 'settings.json' in l]
+said = [l for l in r2.stdout.splitlines()
+        if 'unchanged' in l or 'kit block' in l or 'orchestration-kit.md' in l or 'settings.json' in l]
 ok(r2.returncode == 0 and sum('unchanged' in l for l in said) == 2,
    'installer reports unchanged on an already-installed tree', said)
+# The shared rules live in their own file so /kit-off can exclude them per project. A copy
+# still between markers in ~/.claude/CLAUDE.md would load twice and survive /kit-off.
+_rules = HOME / 'rules' / 'orchestration-kit.md'
+ok(_rules.is_file() and norm(_rules.read_text(encoding='utf-8')).endswith(
+       norm(pathlib.Path('core/CLAUDE.md').read_text(encoding='utf-8'))),
+   '~/.claude/rules/orchestration-kit.md carries core/CLAUDE.md')
+ok('<!-- orchestration-kit' not in ((HOME / 'CLAUDE.md').read_text(encoding='utf-8')
+                                    if (HOME / 'CLAUDE.md').is_file() else ''),
+   '~/.claude/CLAUDE.md holds no old kit block (it would load twice)')
+for _st in ('kit_off self-check: 11/11 passed', 'kit-switch self-check: 11/11 passed'):
+    ok(_st in r2.stdout, _st, [l for l in r2.stdout.splitlines() if _st.split(':')[0] in l])
 # The "fully global" pieces: the SessionStart notice and the two files /kit-init reads from
 # ~/.claude/kit. Without them a new project starts with no gate and nothing says so.
-ok('kit-session-start self-check: 8/8 passed' in r2.stdout,
-   'kit-session-start self-check 8/8',
+ok('kit-session-start self-check: 18/18 passed' in r2.stdout,
+   'kit-session-start self-check 18/18',
    [l for l in r2.stdout.splitlines() if 'kit-session-start' in l])
-for _kf in ('project-template.md', 'audit_project.py', 'scan_project.py'):
+for _kf in ('project-template.md', 'audit_project.py', 'scan_project.py', 'kit_switch.py'):
     ok((HOME / 'kit' / _kf).exists(), f'~/.claude/kit/{_kf} published for /kit-init')
 _hk = subprocess.run([sys.executable, str(HOME / 'hooks' / 'kit-session-start.py'), '--check', str(KIT)],
                      capture_output=True, text=True, encoding='utf-8', errors='replace')
-ok('FAST GATE' not in (_hk.stdout or ''),
+# Parsed, not substring-matched: stdout also carries INDEX next actions, and one that says
+# "FAST GATE" would fail a raw search. Only the notice's opening words mean a missing row.
+_hk_out = (_hk.stdout or '').strip()
+# A crashed hook (e.g. an ImportError) prints nothing too, so the exit code must be 0 as well.
+try:
+    _hk_ok = _hk.returncode == 0 and (not _hk_out or 'has no FAST GATE row' not in str(
+        json.loads(_hk_out).get('hookSpecificOutput', {}).get('additionalContext', '')))
+except (ValueError, AttributeError):
+    _hk_ok = False
+ok(_hk_ok,
    'the installed SessionStart hook is quiet in this repo (it has a FAST GATE row)',
-   (_hk.stdout or '')[:120])
+   _hk_out[:120] or (_hk.stderr or '').strip()[-120:])
 # The INSTALLED injector, not the checkout's: a half-copied or older one would emit malformed
 # JSON into every spawn's context, and a spawn is the one place that is never watched.
 _ss_hk = subprocess.run([sys.executable, str(HOME / 'hooks' / 'kit-subagent-start.py'),
@@ -522,23 +630,26 @@ _ss_hk = subprocess.run([sys.executable, str(HOME / 'hooks' / 'kit-subagent-star
                         capture_output=True, text=True, encoding='utf-8', errors='replace')
 _ss_out = (_ss_hk.stdout or '').strip()
 try:
-    _ss_ok = not _ss_out or json.loads(_ss_out).get(
-        'hookSpecificOutput', {}).get('hookEventName') == 'SubagentStart'
-except ValueError:
+    _ss_ok = _ss_hk.returncode == 0 and (not _ss_out or json.loads(_ss_out).get(
+        'hookSpecificOutput', {}).get('hookEventName') == 'SubagentStart')
+except (ValueError, AttributeError):
     _ss_ok = False
 ok(_ss_ok, 'the installed SubagentStart injector emits nothing or a well-formed context',
-   _ss_out[:160])
+   _ss_out[:160] or (_ss_hk.stderr or '').strip()[-160:])
 print("  NOTE  per-project state is checked by `python audit_project.py <repo>`, not here")
 # These counts are pinned on purpose: a suite that silently shrinks is the failure this
 # catches. Bump them WITH the test, never to make a red line green.
-ok('83/83 passed' in r2.stdout, 'md-guard self-check 83/83',
+ok('md-guard self-check: 121/121 passed' in r2.stdout, 'md-guard self-check 121/121',
    [l for l in r2.stdout.splitlines() if 'md-guard' in l])
-ok('kit-subagent-report self-check: 10/10 passed' in r2.stdout,
-   'kit-subagent-report self-check 10/10',
+ok('kit-subagent-report self-check: 12/12 passed' in r2.stdout,
+   'kit-subagent-report self-check 12/12',
    [l for l in r2.stdout.splitlines() if 'kit-subagent-report' in l])
-ok('kit-subagent-start self-check: 15/15 passed' in r2.stdout,
-   'kit-subagent-start self-check 15/15',
+ok('kit-subagent-start self-check: 18/18 passed' in r2.stdout,
+   'kit-subagent-start self-check 18/18',
    [l for l in r2.stdout.splitlines() if 'kit-subagent-start' in l])
+ok('kit-context self-check: 21/21 passed' in r2.stdout,
+   'kit-context self-check 21/21',
+   [l for l in r2.stdout.splitlines() if 'kit-context' in l])
 ok('scan-project self-check: 38/38 passed' in r2.stdout,
    'scan-project self-check 38/38',
    [l for l in r2.stdout.splitlines() if 'scan-project' in l])

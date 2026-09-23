@@ -8,3 +8,7 @@ Thumbs.db
 
 # Live MCP config carries API keys; commit the template, keep the real one local
 .mcp.json
+
+# Benchmark runs: clones, patches and scores stay local
+bench/results/
+bench/.venv/

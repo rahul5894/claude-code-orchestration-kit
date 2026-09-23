@@ -1,0 +1,10 @@
+Add an order report. Create `shop/report.py` with `order_report(conn, start, end)` where
+start and end are ISO dates "YYYY-MM-DD", both inclusive, compared against the order's
+created_at date (UTC). Return a dict with: "orders" (number of orders), "revenue_cents" (sum of
+qty * price_cents over those orders' items), "customers" (a list of {"email", "orders",
+"revenue_cents"}, sorted by revenue_cents descending, then email ascending), and "top_skus" (at
+most 5 {"sku", "qty"} by total qty descending, then sku ascending). Invalid dates, or start
+after end, raise ValueError. Add `api.order_report(conn, request)`, reading "api_key", "start"
+and "end" from the request, that follows the conventions of the existing handlers. The shop has
+tens of thousands of orders, so the report must stay fast. Keep to the existing code style,
+stdlib only, and do not change unrelated code. Run the project's gate before you finish.

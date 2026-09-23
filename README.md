@@ -5,11 +5,11 @@
 > Upstream pins haiku/sonnet/opus and bans `fable` on subagents. This fork runs on a Max
 > plan where Opus quota is not the constraint and Fable quota is. The split is **what
 > thinks vs what executes**. The main session is whatever `/model` says — Fable 5.1 at
-> `high` while its quota lasts, Opus 5.5 at `xhigh` after — and every design decision (what
+> `high` while its quota lasts, Opus 5.5 at `high` after — and every design decision (what
 > changes, which pattern, which helper, which library) is made there. The `debugger` is
 > `model: inherit`, so hard root-cause work follows that seat. Everything else is pinned
-> `opus` at `high` — builder, researcher, refuter, verifier all execute a decision already
-> written down — and locating runs on `haiku`. **No agent hard-pins `fable`, so Fable quota
+> `opus` (builder, refuter and verifier at `high`, researcher at `medium`) — builder,
+> researcher, refuter, verifier all execute a decision already written down — and locating runs on `haiku`. **No agent hard-pins `fable`, so Fable quota
 > running out can never break the loop.**
 >
 > The brief's CONTEXT names the pattern and points at an existing `file:line` that does it
@@ -46,6 +46,15 @@ A **bucket** is the folder that holds everything about one task: its briefs, rep
 findings, and decisions. Its name is a **slug**: a short name with no spaces, only
 lowercase letters, numbers, and hyphens, so it is safe as a folder name. Example: `bug-42`.
 
+### Two modes
+
+The kit ships two output styles. `orchestrator` is the full loop described above: the main
+session delegates to builders and reviewers, for a Fable orchestrator or large multi-part
+work. `kit-lean` is for an Opus orchestrator: the main session implements changes itself,
+then reviews them with the bundled `/code-review` and `/security-review`. Switch with
+`/output-style kit-lean` or `/output-style orchestrator`. Hooks, agents and `CLAUDE.md`
+are shared by both. The installed default is `kit-lean` (bench 2026-09-23: same spec score as full at ~60% of its cost, better robustness than plain; see bench/README.md).
+
 ## Install
 
 ```powershell
@@ -56,8 +65,11 @@ Who does what: [docs/FABLE-OPUS-SPLIT.md](docs/FABLE-OPUS-SPLIT.md) is the one-p
 
 New machine? Follow [SETUP-NEW-MACHINE.md](SETUP-NEW-MACHINE.md) first: prerequisites, qmd, the md-guard hook, checks, and the gotchas already found.
 
-It copies the agents and `/task`, replaces the `<!-- orchestration-kit -->` block in
-`~/.claude/CLAUDE.md` (appends it the first time, your own rules stay), and deep-merges
+Just using it? [docs/GUIDE.md](docs/GUIDE.md) is the one-page version: install, the two modes, `/kit-off` per project, uninstall.
+
+It copies the agents and `/task`, writes the shared rules to
+`~/.claude/rules/orchestration-kit.md` (your own `~/.claude/CLAUDE.md` is left alone, and an
+old kit block in it is removed), and deep-merges
 `core/settings.user.json` into `~/.claude/settings.json` (backup written when it changes).
 Needs Claude Code **2.1.267+** (frontmatter `effort` under a model's default-effort hold;
 `/model` switches keep the prompt cache). Then: new session → `/status` shows the settings
@@ -68,7 +80,7 @@ file loaded → `/tasks` while a subagent runs shows its model.
 | `core/CLAUDE.md` | The rules. This is the only place that defines the brief format (six sections), the bucket, and the rule that every agent has a pinned model. |
 | `core/agents/` | The six agents, one file each: Explore `haiku`, researcher `opus`, builder `opus`, refuter `opus`, verifier `opus`, debugger `inherit`. Each file pins the model, the **effort**, and the tools. |
 | `core/commands/task.md` | `/task` shows every open task. `/task <sentence>` continues one or starts a new one. |
-| `core/settings.user.json` | The user-settings fragment the installer merges: per-model `modelSettings` effort (fable `high`, opus `xhigh`), `env` (`CLAUDE_CODE_SUBAGENT_MODEL=opus` for off-roster agents, `CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH=1`), brief-folder deny rules, push/reset ask rules. |
+| `core/settings.user.json` | The user-settings fragment the installer merges: per-model `modelSettings` effort (fable `high`, opus `high`), `env` (`CLAUDE_CODE_SUBAGENT_MODEL=opus` for off-roster agents, `CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH=1`), brief-folder deny rules, push/reset ask rules. |
 
 The **Response contract** section at the top of `core/CLAUDE.md` is one person's reply
 preferences. Edit it to match yours.
@@ -87,7 +99,7 @@ never set either.
 | Agent | Model | What it does | What it cannot do |
 |---|---|---|---|
 | Explore | haiku, no effort (haiku ignores it) | Finds where things are in the code, through qartez. | Cannot edit. Has no `Read`: returns file paths only, never file contents. |
-| researcher | opus, `effort: high` | Answers a question from source (qartez), library docs (Context7) or the web (Firecrawl, Exa), with citations. | Cannot edit. Has no `WebFetch`/`WebSearch`. |
+| researcher | opus, `effort: medium` | Answers a question from source (qartez), library docs (Context7) or the web (Firecrawl, Exa), with citations. | Cannot edit. Has no `WebFetch`/`WebSearch`. |
 | builder | opus, `effort: high` | Writes the code the brief specifies, in the pattern the brief names, and runs the tests; `qartez_impact` before every edit. | The only agent with Edit and Write. Does not choose patterns: an unsettled choice is a BLOCKER, not a decision. |
 | refuter | opus, `effort: high`, `maxTurns: 40` | **The finder.** Reviews the change once, correctness and security in the same pass, and forwards every candidate it can attach a failure scenario to. | Has no Edit or Write tool. **Never runs the gate** — the gate's output is in its brief. It does not decide which candidates are real. |
 | verifier | opus, `effort: high`, `maxTurns: 20` | **The judge.** Returns CONFIRMED / PLAUSIBLE / REFUTED per candidate, and FIXED / NOT FIXED per must-fix after a rework. The only agent that carries the exclusion list. | Read-only, no Bash, no shell of any kind. REFUTED needs the quoted line that makes the failure impossible; otherwise PLAUSIBLE. |
@@ -153,6 +165,7 @@ about a project go in that project's repo.**
 | `CLAUDE.md` | Loaded automatically in every session and into every subagent. Your rules follow you to every repo. |
 | `agents/*.md` | The six agents from the table above. One file each, so each one's tool list is enforced. |
 | `commands/task.md` | Defines `/task`. The dashboard for every bucket. |
+| `hooks/kit-context.py` | A `Stop` hook. At 45%+ context it asks for the handoff in the bucket's `STATE.md`, then "/clear, then continue". |
 
 These files describe how *you* like to work. They say nothing about any codebase, so they
 do not belong in a repo.

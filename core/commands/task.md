@@ -67,17 +67,39 @@ branch <x> @ <sha>, tree clean|N dirty
 ## Scope — out
 ## Current subtask
 ## Next action
+## User said
+<!-- decisions, preferences, answers and constraints given only in chat: in no file otherwise -->
+## Changed + verified
+<!-- files touched · commit/sha · the check that proved each -->
+## Dead ends
+<!-- tried · failed · why, so the next session does not retry it -->
 ## Active agents
 | agent | brief | launched | ends when | running/terminal/unknown |
 ## Open questions
 ## Blockers
 ```
+STATE.md is the handoff a fresh session resumes from. It must make the next session need
+nothing from this conversation, in as few tokens as that takes:
+- **Only what the next session cannot rebuild.** Never what `git status`/`git diff`, the code
+  or a file already says; point at it instead (`install.ps1:87`, `FINDINGS:23`, `D007`).
+- **What exists only in the chat goes under User said**, in the user's terms: every approval,
+  refusal, preference and pending question, each with its why in one clause. It is the one
+  thing no file can give back; a cold-read test found the whys the part most often missing.
+- **No line contradicts another.** A fact that changed is rewritten where it stands; the old
+  one is deleted, never left beside the new one to be guessed between.
+- Fragments, not sentences. `→` for cause, numbers instead of adjectives, exact commands.
+  One fact once: a finding or decision is cited by its line or ID, never restated.
+- Done work that no next step depends on is dropped; FINDINGS, DECISIONS and git keep it.
+- **At most ~60 lines.** Longer means history crept in: move it to FINDINGS.
+- Before `/clear`, check it answers alone: what is the goal · what is done and how was it
+  proven · the exact next action · what must not be retried · what the user decided or still
+  has to decide. A gap is a line to add; a line that answers none of them is a line to cut.
 
 **FINDINGS.md**
 ```markdown
 # FINDINGS — <slug>
 <!-- Append-only. Land here WHEN DISCOVERED, not at end of session. -->
-<!-- Each: what · file:line · evidence · what tested it (or "nothing tested this") -->
+<!-- Each: - <date> [gotcha|dead-end|fact|measure] what · file:line · evidence · what tested it (or "nothing tested this") -->
 ```
 
 **DECISIONS.md**
@@ -93,7 +115,10 @@ branch <x> @ <sha>, tree clean|N dirty
 
 ## 5. Continue a bucket
 
-1. Read `STATE.md`, the tail of `DECISIONS.md`, then `FINDINGS.md`.
+1. Read `STATE.md` and `DECISIONS.md` whole. In `FINDINGS.md` skip only the `[fact]` and
+   `[measure]` lines STATE does not cite (`grep -vn "\[fact\]\|\[measure\]" FINDINGS.md | cut -c1-300` shows the rest);
+   `[gotcha]`, `[dead-end]` and untagged older lines are always read. It is append-only, so
+   a cited line number never moves.
 2. **Verify before trusting.** Check the recorded branch and HEAD against
    `git rev-parse --abbrev-ref HEAD`, `git rev-parse --short HEAD`, `git status --short`.
    Where the file and the repo disagree, **the repo is right**: correct the file and say

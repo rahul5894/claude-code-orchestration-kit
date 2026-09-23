@@ -57,7 +57,9 @@ DOTDOT = project("dotdot", [("..", "OPEN")], {"..": "1. escaped the bucket\n"})
 ABS = project("abs", [(os.path.join(tmp, "one", ".claude", "scratch", "alpha"), "OPEN")], {})
 BOLD = project("bold", [("**kit-x**", "OPEN")], {"kit-x": "1. use X\n"})
 BLOCKED = project("blocked", [("kappa", "OPEN (blocked)")], {"kappa": "1. use X\n"})
-BIGTWO = project("bigtwo", [("theta", "OPEN"), ("iota", "OPEN")],
+# A bare BLOCKED status is a bucket kit-session-start lists; both hooks agree on what is open.
+BLOCKEDBARE = project("blockedbare", [("lambda", "BLOCKED")], {"lambda": "1. use X\n"})
+BIGTWO = project("bigtwo",[("theta", "OPEN"), ("iota", "OPEN")],
                  {"theta": "1. use X " + "y" * 20000, "iota": "1. use Y\n"})
 
 CASES = [
@@ -78,22 +80,38 @@ CASES = [
     ("CONTEXT", "stdin", BLOCKED, ["kappa", "use X"]),
     ("CONTEXT", "check", BIGTWO, ["Files:", ".claude/scratch/theta/DECISIONS.md",
                                   ".claude/scratch/iota/DECISIONS.md", "truncated"]),
+    # Payload cwd follows the shell's `cd`; CLAUDE_PROJECT_DIR (the launch root) wins.
+    ("CONTEXT", "envdir", ONE, ["alpha", "use X"]),
+    ("CONTEXT", "stdin", BLOCKEDBARE, ["lambda", "use X"]),
+    # Launched in a parent dir, then cd into the repo: the launch root has no scratch, cwd does.
+    ("CONTEXT", "fallback", ONE, ["alpha", "use X"]),
 ]
 
 contract_bad = []
 
 
 def run(how, root):
+    # The hook prefers CLAUDE_PROJECT_DIR and a caller inside Claude Code has it set, so every
+    # run starts without it; only `envdir` puts it back, pointing at `root`.
+    env = {k: v for k, v in os.environ.items() if k != "CLAUDE_PROJECT_DIR"}
     if how == "stdin":
         # Raw UTF-8 bytes, the way JSON.stringify feeds the real hook. text=True would encode
         # with the locale codec and the non-ASCII case could never run.
         raw = json.dumps({"cwd": root, "agent_type": "builder"}, ensure_ascii=False).encode("utf-8")
-        p = subprocess.run([sys.executable, HOOK], input=raw, capture_output=True, cwd=root)
+        p = subprocess.run([sys.executable, HOOK], input=raw, capture_output=True, cwd=root, env=env)
+    elif how == "envdir":
+        env["CLAUDE_PROJECT_DIR"] = root.replace(os.sep, "/")
+        raw = json.dumps({"cwd": NOSCRATCH, "agent_type": "builder"}, ensure_ascii=False).encode("utf-8")
+        p = subprocess.run([sys.executable, HOOK], input=raw, capture_output=True, cwd=NOSCRATCH, env=env)
+    elif how == "fallback":
+        env["CLAUDE_PROJECT_DIR"] = NOSCRATCH.replace(os.sep, "/")
+        raw = json.dumps({"cwd": root, "agent_type": "builder"}, ensure_ascii=False).encode("utf-8")
+        p = subprocess.run([sys.executable, HOOK], input=raw, capture_output=True, cwd=root, env=env)
     elif how == "check":
-        p = subprocess.run([sys.executable, HOOK, "--check", root], capture_output=True)
+        p = subprocess.run([sys.executable, HOOK, "--check", root], capture_output=True, env=env)
     else:
         p = subprocess.run([sys.executable, HOOK], input=b"{not json",
-                           capture_output=True, cwd=root)
+                           capture_output=True, cwd=root, env=env)
     out = p.stdout.decode("utf-8", "replace").strip()
     if not out:
         return "QUIET", ""

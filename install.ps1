@@ -1,7 +1,8 @@
 #Requires -Version 7
 # Installs or re-syncs this kit into ~/.claude. Idempotent: run it after every kit change
-# and on every new machine. Nothing here replaces a file you own; CLAUDE.md and
-# settings.json are merged, agents and commands are copied (the kit is their source of truth).
+# and on every new machine. Nothing here replaces a file you own; settings.json is merged,
+# agents, commands and rules/orchestration-kit.md are copied (the kit is their source of truth).
+# uninstall.ps1 reverses it.
 $ErrorActionPreference = 'Stop'
 $kit  = $PSScriptRoot
 $dest = Join-Path $env:USERPROFILE '.claude'
@@ -57,24 +58,42 @@ New-Item -ItemType Directory -Force (Join-Path $dest 'kit') | Out-Null
 Copy-Item (Join-Path $kit 'extras\project\CLAUDE.md') (Join-Path $dest 'kit\project-template.md') -Force
 Copy-Item (Join-Path $kit 'audit_project.py')         (Join-Path $dest 'kit\audit_project.py')     -Force
 Copy-Item (Join-Path $kit 'scan_project.py')          (Join-Path $dest 'kit\scan_project.py')      -Force
+Copy-Item (Join-Path $kit 'kit_switch.py')            (Join-Path $dest 'kit\kit_switch.py')        -Force
 "agents:        " + ((Get-ChildItem (Join-Path $kit 'core\agents\*.md')).BaseName -join ', ')
 "commands:      " + ((Get-ChildItem (Join-Path $kit 'core\commands\*.md')).BaseName -join ', ')
 "skills:        " + ((Get-ChildItem (Join-Path $kit 'core\skills') -Directory).Name -join ', ')
 "output-styles: " + ((Get-ChildItem (Join-Path $kit 'core\output-styles\*.md')).BaseName -join ', ')
 
-# 2. CLAUDE.md: replace the marker block, append it if absent. Your own rules stay.
-$md    = Join-Path $dest 'CLAUDE.md'
-$block = "<!-- orchestration-kit (fork of SirRuggie/claude-code-orchestration-kit, source $kit) -->`n" +
-         (Get-Content (Join-Path $kit 'core\CLAUDE.md') -Raw) + "<!-- /orchestration-kit -->`n"
-$cur   = Read-Text $md
-$pat   = '(?s)<!-- orchestration-kit.*?<!-- /orchestration-kit -->\r?\n?'
-$new   = if ($cur -match $pat) { [regex]::Replace($cur, $pat, $block.Replace('$', '$$')) }
-         else { $cur.TrimEnd() + "`n`n" + $block }
+# 2. The kit's shared rules: their own user-level rules file, loaded every session like
+#    ~/.claude/CLAUDE.md. A separate file is what lets /kit-off drop the kit from ONE project
+#    (claudeMdExcludes) while your own CLAUDE.md keeps loading there. Measured live 2026-09-23 on
+#    2.1.280: the file reaches the main session and subagents, and the exclude removes it from both.
+$rf    = Join-Path $dest 'rules\orchestration-kit.md'
+New-Item -ItemType Directory -Force (Split-Path $rf) | Out-Null
+$rules = "<!-- orchestration-kit (fork of SirRuggie/claude-code-orchestration-kit, source $kit) -->`n" +
+         (Get-Content (Join-Path $kit 'core\CLAUDE.md') -Raw)
 # Compare LF-normalized: Write-Lf strips CRLF on write, so a raw compare never matches and
-# the block is rewritten on every run, hiding whether anything actually changed.
-if ($new.Replace("`r`n", "`n") -ne $cur.Replace("`r`n", "`n")) {
-    Write-Lf $md $new; "CLAUDE.md: kit block " + ($(if ($cur -match $pat) { 'replaced' } else { 'appended' })) }
-else { "CLAUDE.md: unchanged" }
+# the file is rewritten on every run, hiding whether anything actually changed.
+if ($rules.Replace("`r`n", "`n") -ne (Read-Text $rf).Replace("`r`n", "`n")) {
+    Write-Lf $rf $rules; "rules/orchestration-kit.md: written" }
+else { "rules/orchestration-kit.md: unchanged" }
+# Earlier versions put the same rules between markers in ~/.claude/CLAUDE.md. Left there, they
+# would load twice and survive /kit-off, so the block comes out. Your own text stays.
+$md  = Join-Path $dest 'CLAUDE.md'
+$cur = Read-Text $md
+# The exact header every install wrote (git log -S: one form only), and never across a second
+# one: a comment of yours that merely starts `<!-- orchestration-kit` must not become the start
+# of the span that gets deleted (refuter-02).
+$pat = '(?s)\r?\n?\r?\n?<!-- orchestration-kit \(fork of (?:(?!<!-- orchestration-kit).)*?<!-- /orchestration-kit -->\r?\n?\r?\n?'
+if ($cur -match $pat) {
+    Copy-Item $md "$md.bak-kit-$(Get-Date -Format yyyyMMdd-HHmmss-fff)"
+    $rest = [regex]::Replace($cur, $pat, "`n`n").Trim()
+    Write-Lf $md $(if ($rest) { "$rest`n" } else { '' })
+    "CLAUDE.md: old kit block removed (now in rules/orchestration-kit.md; backup written)"
+}
+if ((Read-Text $md).Contains('<!-- orchestration-kit (fork of')) {
+    Write-Warning "~/.claude/CLAUDE.md still holds an old kit header with no end marker. Delete that block by hand: it loads twice and /kit-off cannot drop it."
+}
 
 # 3. settings.json: deep-merge core/settings.user.json. Objects merge, lists union, scalars win.
 $sf   = Join-Path $dest 'settings.json'
@@ -92,6 +111,41 @@ function Merge-Into($dst, $src) {
         if ($v -is [Collections.IDictionary] -and $dst[$k] -is [Collections.IDictionary]) { Merge-Into $dst[$k] $v }
         elseif ($v -is [array] -and $dst[$k] -is [array]) { $dst[$k] = @(@($dst[$k]) + @($v) | Select-Object -Unique) }
         else { $dst[$k] = $v }
+    }
+}
+# One kit hook in the parsed settings: re-assert matcher, command and timeout on the entry that
+# already runs $file, else append one. $matcher $null = the event takes none (Stop): no key.
+# Uses $py and $dest from step 5. $ev, not $event: $Event is an automatic variable.
+# A hook runs the kit's script when its command ENDS in .claude/hooks/<file> (a closing quote
+# allowed). The old `*md-guard.py*` also took over a user's own md-guard.py.orig hook: rewrote
+# its command and the matcher of its whole entry (verify_live C3b, 2026-09-23).
+function Test-Runs($h, $file) {
+    $h -is [Collections.IDictionary] -and
+        ("$($h['command'])".Replace('\', '/') -match ('/\.claude/hooks/' + [regex]::Escape($file) + '["'']?\s*$'))
+}
+function Register-Hook($set, $ev, $matcher, $file, $label) {
+    $cmd = "$py " + (Join-Path $dest "hooks\$file").Replace('\', '/')
+    if (-not $set['hooks']) { $set['hooks'] = [ordered]@{} }
+    if (-not $set['hooks'][$ev]) { $set['hooks'][$ev] = @() }
+    $entries = @($set['hooks'][$ev])
+    # `$_ -and` first: a pre-existing entry with no `hooks` key makes @($_['hooks']) a @($null),
+    # and indexing $null['command'] throws "Cannot index into a null array" - the whole install
+    # dying on one hand-written entry.
+    $mine = $entries | Where-Object { @($_['hooks']) | Where-Object { Test-Runs $_ $file } }
+    if ($mine) {
+        $changed = $false
+        # timeout is re-asserted like matcher: it is in SECONDS, and an install that
+        # predates that fix left 5000 (83 minutes) in the user's settings. Only correcting
+        # it on a FRESH install would never reach the machines that already have it.
+        foreach ($e in $mine) { if ($null -ne $matcher) { $e['matcher'] = $matcher }; foreach ($h in @($e['hooks']) | Where-Object { Test-Runs $_ $file }) { if ($h['command'] -ne $cmd) { $h['command'] = $cmd; $changed = $true }; if ($h['timeout'] -ne 5) { $h['timeout'] = 5; $changed = $true } } }
+        "${label}: " + $(if ($changed) { 'python path updated' } else { 'already registered' })
+    } else {
+        $new = [ordered]@{}
+        if ($null -ne $matcher) { $new['matcher'] = $matcher }
+        $new['hooks'] = @([ordered]@{ type = 'command'; command = $cmd; timeout = 5 })
+        $entries += $new
+        $set['hooks'][$ev] = $entries
+        "${label}: registered in settings.json"
     }
 }
 Merge-Into $set $frag
@@ -157,13 +211,13 @@ if ($pre['subagentPromptCacheTtl'] -and $pre['subagentPromptCacheTtl'] -ne '1h')
 }
 
 # 5. md-guard hook: copy the script, pin a Python 3.12+ path, register once in settings.json.
-#    Big markdown files must go through qmd; this hook denies whole-file Read / uncapped shell reads.
+#    Big markdown files are read in windows; this hook denies whole-file Read / uncapped shell reads.
 New-Item -ItemType Directory -Force (Join-Path $dest 'hooks') | Out-Null
 Copy-Item (Join-Path $kit 'core\hooks\*.py') (Join-Path $dest 'hooks') -Force
 # The wildcard copy is silent about a file missing from the clone, and the blocks below then
 # register a command pointing at nothing - every Read, session start and finished subagent
 # would spawn a python that dies. Fail the install instead.
-$missing = @('md-guard.py', 'kit-session-start.py', 'kit-subagent-report.py', 'kit-subagent-start.py') |
+$missing = @('md-guard.py', 'kit-session-start.py', 'kit-subagent-report.py', 'kit-subagent-start.py', 'kit-context.py', 'kit_off.py') |
     Where-Object { -not (Test-Path (Join-Path $dest "hooks\$_")) }
 if ($missing) { throw "Hook script(s) missing from the kit checkout, nothing registered: $($missing -join ', ')" }
 $py = $null
@@ -175,126 +229,44 @@ foreach ($name in 'python3.13', 'python3.12', 'python', 'python3', 'py') {
 }
 if (-not $py) { Write-Warning "md-guard: no Python 3.12+ on PATH. Install one (winget install Python.Python.3.12) and re-run."; }
 else {
-    $hookCmd = "$py " + (Join-Path $dest 'hooks\md-guard.py').Replace('\', '/')
+    # One read, five registrations, one write. The hooks section is written after step 3's
+    # write, so step 3's backup predates it: take our own - and only when something the user
+    # could want back changes. On a fresh machine the file here is the one step 3 just wrote,
+    # so a backup of it preserves nothing.
     $set = if ((Read-Text $sf).Trim()) { Read-Text $sf | ConvertFrom-Json -AsHashtable } else { [ordered]@{} }
-    if (-not $set['hooks']) { $set['hooks'] = [ordered]@{} }
-    if (-not $set['hooks']['PreToolUse']) { $set['hooks']['PreToolUse'] = @() }
-    $entries = @($set['hooks']['PreToolUse'])
-    # `$_ -and` first: a pre-existing entry with no `hooks` key makes @($_['hooks']) a @($null),
-    # and indexing $null['command'] throws "Cannot index into a null array" - the whole install
-    # dying on one hand-written entry. All four sites below are the same shape.
-    $mine = $entries | Where-Object { @($_['hooks']) | Where-Object { $_ -and "$($_['command'])" -like '*md-guard.py*' } }
-    if ($mine) {
-        $changed = $false
-        # timeout is re-asserted like matcher: it is in SECONDS, and an install that
-        # predates that fix left 5000 (83 minutes) in the user's settings. Only correcting
-        # it on a FRESH install would never reach the machines that already have it.
-        foreach ($e in $mine) { $e['matcher'] = 'Read|Bash|PowerShell'; foreach ($h in $e['hooks']) { if ($h['command'] -ne $hookCmd) { $h['command'] = $hookCmd; $changed = $true }; if ($h['timeout'] -ne 5) { $h['timeout'] = 5; $changed = $true } } }
-        "md-guard: " + $(if ($changed) { 'python path updated' } else { 'already registered' })
-    } else {
-        $entries += [ordered]@{ matcher = 'Read|Bash|PowerShell'; hooks = @([ordered]@{ type = 'command'; command = $hookCmd; timeout = 5 }) }
-        $set['hooks']['PreToolUse'] = $entries
-        "md-guard: registered in settings.json"
-    }
-    # Step 3's backup predates this rewrite, so take our own - and only when we change
-    # something the user could want back. On a fresh machine the file here is the one step 3
-    # just wrote, so a backup of it preserves nothing.
+    Register-Hook $set 'PreToolUse' 'Read|Bash|PowerShell' 'md-guard.py' 'md-guard'
+    # 6. kit-session-start: the missing-FAST-GATE line and the open-bucket list. Writes nothing.
+    Register-Hook $set 'SessionStart' 'startup|resume|clear|compact' 'kit-session-start.py' 'kit-session-start'
+    # 7. kit-subagent-report: file every finished subagent's final message into the project's
+    #    .claude/scratch/_inbox/, so a report is never lost to a forgotten write.
+    #    '*' = activates on every occurrence of the event, whatever the agent type
+    Register-Hook $set 'SubagentStop' '*' 'kit-subagent-report.py' 'kit-subagent-report'
+    # 8. kit-subagent-start: inject the DECISIONS.md of every OPEN bucket into a spawned agent.
+    #    The five briefed agents only: Explore runs omitClaudeMd and stays tiny on purpose
+    Register-Hook $set 'SubagentStart' 'builder|refuter|verifier|debugger|researcher' 'kit-subagent-start.py' 'kit-subagent-start'
+    # 9. kit-context: at the end of a finished turn, measure context and ask for the handoff.
+    Register-Hook $set 'Stop' $null 'kit-context.py' 'kit-context'
     $out  = ($set | ConvertTo-Json -Depth 20) + "`n"
     $prev = Read-Text $sf
     if ($out.Replace("`r`n", "`n") -ne $prev.Replace("`r`n", "`n")) {
         if ($sfPre) { Copy-Item $sf "$sf.bak-kit-$(Get-Date -Format yyyyMMdd-HHmmss-fff)" }
         Write-Lf $sf $out
     }
-    $t = & $py (Join-Path $dest 'hooks\md-guard_test.py') 2>&1 | Select-Object -Last 1
-    "md-guard self-check: $t"
-
-    # 6. kit-session-start hook: one line of context when the project has no FAST GATE row.
-    #    Same registration shape as md-guard, on SessionStart. It never writes a file.
-    $startCmd = "$py " + (Join-Path $dest 'hooks\kit-session-start.py').Replace('\', '/')
-    $set = if ((Read-Text $sf).Trim()) { Read-Text $sf | ConvertFrom-Json -AsHashtable } else { [ordered]@{} }
-    if (-not $set['hooks']) { $set['hooks'] = [ordered]@{} }
-    if (-not $set['hooks']['SessionStart']) { $set['hooks']['SessionStart'] = @() }
-    $sEntries = @($set['hooks']['SessionStart'])
-    $sMine = $sEntries | Where-Object { @($_['hooks']) | Where-Object { $_ -and "$($_['command'])" -like '*kit-session-start.py*' } }
-    if ($sMine) {
-        $changed = $false
-        foreach ($e in $sMine) { $e['matcher'] = 'startup|resume|clear|compact'; foreach ($h in $e['hooks']) { if ($h['command'] -ne $startCmd) { $h['command'] = $startCmd; $changed = $true }; if ($h['timeout'] -ne 5) { $h['timeout'] = 5; $changed = $true } } }
-        "kit-session-start: " + $(if ($changed) { 'python path updated' } else { 'already registered' })
-    } else {
-        $sEntries += [ordered]@{ matcher = 'startup|resume|clear|compact'; hooks = @([ordered]@{ type = 'command'; command = $startCmd; timeout = 5 }) }
-        $set['hooks']['SessionStart'] = $sEntries
-        "kit-session-start: registered in settings.json"
+    foreach ($f in 'md-guard_test.py', 'kit-session-start_test.py', 'kit-subagent-report_test.py',
+                   'kit-subagent-start_test.py', 'kit-context_test.py', 'kit_off_test.py') {
+        $t = & $py (Join-Path $dest "hooks\$f") 2>&1 | Select-Object -Last 1
+        $f.Replace('_test.py', '') + " self-check: $t"
     }
-    $out  = ($set | ConvertTo-Json -Depth 20) + "`n"
-    $prev = Read-Text $sf
-    if ($out.Replace("`r`n", "`n") -ne $prev.Replace("`r`n", "`n")) {
-        if ($sfPre) { Copy-Item $sf "$sf.bak-kit-$(Get-Date -Format yyyyMMdd-HHmmss-fff)" }
-        Write-Lf $sf $out
-    }
-    $t2 = & $py (Join-Path $dest 'hooks\kit-session-start_test.py') 2>&1 | Select-Object -Last 1
-    "kit-session-start self-check: $t2"
-
-    # 7. kit-subagent-report hook: file every finished subagent's final message into the
-    #    project's .claude/scratch/_inbox/, so a report is never lost to a forgotten write.
-    $repCmd = "$py " + (Join-Path $dest 'hooks\kit-subagent-report.py').Replace('\', '/')
-    $set = if ((Read-Text $sf).Trim()) { Read-Text $sf | ConvertFrom-Json -AsHashtable } else { [ordered]@{} }
-    if (-not $set['hooks']) { $set['hooks'] = [ordered]@{} }
-    if (-not $set['hooks']['SubagentStop']) { $set['hooks']['SubagentStop'] = @() }
-    $rEntries = @($set['hooks']['SubagentStop'])
-    $rMine = $rEntries | Where-Object { @($_['hooks']) | Where-Object { $_ -and "$($_['command'])" -like '*kit-subagent-report.py*' } }
-    if ($rMine) {
-        $changed = $false
-        foreach ($e in $rMine) { $e['matcher'] = '*'; foreach ($h in $e['hooks']) { if ($h['command'] -ne $repCmd) { $h['command'] = $repCmd; $changed = $true }; if ($h['timeout'] -ne 5) { $h['timeout'] = 5; $changed = $true } } }
-        "kit-subagent-report: " + $(if ($changed) { 'python path updated' } else { 'already registered' })
-    } else {
-        # '*' = activates on every occurrence of the event, whatever the agent type
-        $rEntries += [ordered]@{ matcher = '*'; hooks = @([ordered]@{ type = 'command'; command = $repCmd; timeout = 5 }) }
-        $set['hooks']['SubagentStop'] = $rEntries
-        "kit-subagent-report: registered in settings.json"
-    }
-    $out  = ($set | ConvertTo-Json -Depth 20) + "`n"
-    $prev = Read-Text $sf
-    if ($out.Replace("`r`n", "`n") -ne $prev.Replace("`r`n", "`n")) {
-        if ($sfPre) { Copy-Item $sf "$sf.bak-kit-$(Get-Date -Format yyyyMMdd-HHmmss-fff)" }
-        Write-Lf $sf $out
-    }
-    $t3 = & $py (Join-Path $dest 'hooks\kit-subagent-report_test.py') 2>&1 | Select-Object -Last 1
-    "kit-subagent-report self-check: $t3"
-
-    # 8. kit-subagent-start hook: inject the DECISIONS.md of every OPEN bucket into a spawned
-    #    agent, so a settled decision binds an agent that never saw the conversation.
-    $ssCmd = "$py " + (Join-Path $dest 'hooks\kit-subagent-start.py').Replace('\', '/')
-    $set = if ((Read-Text $sf).Trim()) { Read-Text $sf | ConvertFrom-Json -AsHashtable } else { [ordered]@{} }
-    if (-not $set['hooks']) { $set['hooks'] = [ordered]@{} }
-    if (-not $set['hooks']['SubagentStart']) { $set['hooks']['SubagentStart'] = @() }
-    $ssEntries = @($set['hooks']['SubagentStart'])
-    $ssMine = $ssEntries | Where-Object { @($_['hooks']) | Where-Object { $_ -and "$($_['command'])" -like '*kit-subagent-start.py*' } }
-    if ($ssMine) {
-        $changed = $false
-        foreach ($e in $ssMine) { $e['matcher'] = 'builder|refuter|verifier|debugger|researcher'; foreach ($h in $e['hooks']) { if ($h['command'] -ne $ssCmd) { $h['command'] = $ssCmd; $changed = $true }; if ($h['timeout'] -ne 5) { $h['timeout'] = 5; $changed = $true } } }
-        "kit-subagent-start: " + $(if ($changed) { 'python path updated' } else { 'already registered' })
-    } else {
-        # The five briefed agents only: Explore runs omitClaudeMd and stays tiny on purpose
-        $ssEntries += [ordered]@{ matcher = 'builder|refuter|verifier|debugger|researcher'; hooks = @([ordered]@{ type = 'command'; command = $ssCmd; timeout = 5 }) }
-        $set['hooks']['SubagentStart'] = $ssEntries
-        "kit-subagent-start: registered in settings.json"
-    }
-    $out  = ($set | ConvertTo-Json -Depth 20) + "`n"
-    $prev = Read-Text $sf
-    if ($out.Replace("`r`n", "`n") -ne $prev.Replace("`r`n", "`n")) {
-        if ($sfPre) { Copy-Item $sf "$sf.bak-kit-$(Get-Date -Format yyyyMMdd-HHmmss-fff)" }
-        Write-Lf $sf $out
-    }
-    $t4 = & $py (Join-Path $dest 'hooks\kit-subagent-start_test.py') 2>&1 | Select-Object -Last 1
-    "kit-subagent-start self-check: $t4"
     # From the checkout, not $dest: the fixtures it builds read extras\project\CLAUDE.md
     # beside it, and the published copy in kit\ has no extras\ next to it.
+    $t6 = & $py (Join-Path $dest 'kit\kit_switch.py') --selftest 2>&1 | Select-Object -Last 1
+    "kit-switch self-check: $t6"
     $t5 = & $py (Join-Path $kit 'scan_project_test.py') 2>&1 | Select-Object -Last 1
     if ($LASTEXITCODE -ne 0) { "scan-project self-check: FAILED (exit $LASTEXITCODE) - see above" }
     else { "scan-project self-check: $t5" }
 }
 
-"done. RESTART Claude Code: agents and output styles are read at startup, so the 'orchestrator'"
+"done. RESTART Claude Code: agents and output styles are read at startup, so the 'kit-lean'"
 "      style (the main session's own rules) only applies to a new session. Then /output-style"
 "      confirms it is active, /status confirms the settings file loaded, and /context shows"
 "      what the shared CLAUDE.md now costs per spawn."

@@ -33,7 +33,7 @@ Fable is the orchestrator. It is the only seat that:
 The `debugger` agent is `model: inherit`, so a hard root-cause hunt also runs on Fable
 while you are on Fable, and on Opus once Fable quota is gone. Nothing else inherits.
 
-## What Opus does (every other subagent, pinned `opus` at `high`)
+## What Opus does (every other subagent, pinned `opus`: builder, refuter and verifier at `high`, researcher at `medium`)
 
 | Agent | Does | Never does |
 |---|---|---|
@@ -78,7 +78,7 @@ while you are on Fable, and on Opus once Fable quota is gone. Nothing else inher
   `PONYTAIL_SUBAGENT_MATCHER`, and to the main session in full.
 - qartez is the code search for every agent; `Grep`/`Glob` are denied everywhere. `OUT OF
   INDEX` means "grep the tree", never a reason.
-- md-guard keeps big markdown behind qmd, and keeps `refuter` and `debugger` from writing.
+- md-guard keeps big markdown to windowed reads, and keeps `refuter` and `debugger` from writing.
 - The gate is per project (`FAST GATE` row, written once by `/kit-init`); reviewers never
   run it, builders run it twice.
 

@@ -27,8 +27,9 @@ load.
   have never seen (verified: a fresh verifier got the stub for a symbol the orchestrator had
   read). Re-read with `fresh=true`; judge nothing you do not hold.
 - **The web is Firecrawl → Exa → Context7**, never `WebFetch`/`WebSearch`.
-- **Never read a document wholesale.** Anything over ~300 lines is reached through qmd or
-  qartez windows. An unbounded doc read is how one step costs 80k tokens and returns no code.
+- **Never read a document wholesale.** Anything over ~300 lines is reached through
+  `grep -n | cut -c1-300` + a Read window, or qartez windows. An unbounded doc read is how
+  one step costs 80k tokens and returns no code.
 - Respect the brief's tool-call budget. Well past it means you are solving a different
   problem than the one briefed: stop and report.
 

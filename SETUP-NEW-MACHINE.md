@@ -41,7 +41,7 @@ Install these first. Open a new terminal after each install so PATH updates.
 | Claude Code (VS Code extension or CLI) | the host | `claude --version` |
 | PowerShell 7 | runs `install.ps1` | `pwsh --version` |
 | Git | clones the kit | `git --version` |
-| Node 22 or newer | qmd is an npm package | `node --version` |
+| Node 22 or newer | optional: npm-based MCP servers | `node --version` |
 | Python 3.12 or newer, on PATH | runs the md-guard hook | `python -c "import sys; print(sys.version)"` |
 
 If Python is missing: `winget install Python.Python.3.12`. The installer looks for
@@ -61,20 +61,38 @@ Expected output, in this order:
 ```
 agents:        builder, debugger, Explore, refuter, researcher, verifier
 commands: task
-CLAUDE.md: kit block appended        (or "replaced" / "unchanged" on a re-run)
+rules/orchestration-kit.md: written  (or "unchanged" on a re-run)
 settings.json: merged (backup written)
 md-guard: registered in settings.json
-md-guard self-check: 83/83 passed
+kit-session-start: registered in settings.json
+kit-subagent-report: registered in settings.json
+kit-subagent-start: registered in settings.json
+kit-context: registered in settings.json
+md-guard self-check: 121/121 passed
+kit-session-start self-check: 18/18 passed
+kit-subagent-report self-check: 12/12 passed
+kit-subagent-start self-check: 18/18 passed
+kit-context self-check: 21/21 passed
+kit_off self-check: 11/11 passed
+kit-switch self-check: 11/11 passed
 scan-project self-check: 38/38 passed
 done. ...
 ```
 
 What the installer does. It copies `core/agents/*.md` and `core/commands/*.md` into
-`~/.claude/`. It writes the kit block into `~/.claude/CLAUDE.md` between two marker
-comments and leaves your own text alone. It deep-merges `core/settings.user.json` into
+`~/.claude/`. It writes the shared rules to `~/.claude/rules/orchestration-kit.md`, a file of
+their own so `/kit-off` can drop them from one project, and leaves `~/.claude/CLAUDE.md` to you
+(an old kit block between marker comments there is removed, with a backup). It deep-merges `core/settings.user.json` into
 `~/.claude/settings.json` and writes a backup first. It copies `core/hooks/*.py` into
 `~/.claude/hooks/` and registers the md-guard hook once. It is safe to run again after
 every kit change. A second run prints `unchanged` and `already registered`.
+
+Two modes. The installer copies both output styles into `~/.claude/output-styles/`:
+`orchestrator` (the full delegate-and-review loop, for a Fable orchestrator or large
+multi-part work) and `kit-lean` (an Opus main session that implements itself and reviews
+with the native `/code-review` and `/security-review`). `settings.json` activates
+`kit-lean`, the default. Switch with `/output-style kit-lean` or
+`/output-style orchestrator`; hooks and agents are the same in both.
 
 Checks:
 
@@ -156,8 +174,10 @@ with a measured FAST GATE row**, and the kit now creates that itself:
 
 1. Open the repo in Claude Code. A global `SessionStart` hook (`kit-session-start.py`) sees
    there is no FAST GATE row and injects one line telling the orchestrator to run `/kit-init`
-   before delegating anything. It writes nothing. A `SubagentStart` hook
-   (`kit-subagent-start.py`) injects the `DECISIONS.md` of every OPEN bucket in
+   before delegating anything. It also lists the open task buckets for the model and, on
+   startup and `/clear`, shows you "Open task(s): ... - type /continue to resume". It writes
+   nothing. A `SubagentStart` hook
+   (`kit-subagent-start.py`) injects the `DECISIONS.md` of every OPEN or BLOCKED bucket in
    `.claude/scratch/INDEX.md` into each spawned agent, so a settled decision binds an agent
    that never saw the conversation.
 2. Run `/kit-init`. It detects the gate from `package.json` / `pyproject` / `Makefile` /
@@ -172,7 +192,6 @@ with a measured FAST GATE row**, and the kit now creates that itself:
    so and refreshes on the next `/kit-init`, and a section you filled in yourself is reported
    `kept` and left alone. The detected security list is a floor, not a ceiling.
 
-Optional, when the repo has a docs folder: `qmd collection add <repo>/docs --name <repo>`.
 
 **Never add to a project what the kit already provides globally.** `audit_project.py`
 flags it: a `## Qartez MCP` section, a restated web-tool order, an `outputStyle` in
@@ -190,44 +209,17 @@ those tools' own global skills and docs, never in a repo's `docs/`. What a proje
 `crypto-media-audit`, `mcp-tools` for its Maestro/postgres servers; the scraper:
 `county-onboarding`).
 
-## 3. qmd (local markdown search)
+## 3. qmd: dropped (2026-09-23)
 
-qmd is the search engine that keeps big markdown docs out of the context window. It
-indexes `.md` files and returns file, line and a short window instead of the whole file.
-
-```powershell
-npm install -g @tobilu/qmd
-qmd --version                                    # 2.8.3 or newer
-qmd collection add D:\Projects\PrideConnect\Planning --name planning
-qmd update
-qmd search "next session pick" -c planning --full-path -n 5
-```
-
-The last command must print hits with `D:\...\file.md:LINE` paths. If it prints
-`qmd://` URIs, `--full-path` is missing.
-
-One collection per project. Add one the first time you use qmd in a repo:
-`qmd collection add <docs-dir> --name <repo>`. The docs dir is the folder that holds the
-project's planning markdown, or the repo root. `qmd collection list` shows what exists.
-
-Rules that are not optional:
-
-- Always pass `-c <collection>`. Without it, other projects' documents leak into the
-  results.
-- Always pass `--full-path`. Without it, nothing else can open the hit.
-- Read a hit with `qmd get "<path>:<line>:<count>"`. Never pipe qmd into `head`,
-  `tail` or `sed`. It slices itself, and piping breaks its document ids.
-- Run `qmd cleanup` after you move or delete documents. `qmd update` alone leaves ghost
-  entries.
-- Never run `qmd embed`, `qmd query` or `qmd vsearch`. See "What we found" below.
-- Do not install the qmd Claude Code plugin or skill. Its instructions say "default to
-  `qmd query`", which hangs on this setup. The routing rules live in
-  `~/.claude/CLAUDE.md` instead.
+The kit no longer uses qmd. Over 14 days of transcripts it was called 10 times against about
+250 md-guard denials: after a denial the model went to `grep -n ... | cut -c1-300` and a
+`Read` window anyway. md-guard now suggests exactly that. A qmd install you already have does
+no harm; `npm uninstall -g @tobilu/qmd` removes it.
 
 ## 4. md-guard hook
 
 `~/.claude/hooks/md-guard.py` is a PreToolUse hook on `Read`, `Bash` and `PowerShell`.
-It makes the qmd rules enforced instead of remembered.
+It makes "read big docs in windows" enforced instead of remembered.
 
 It denies:
 
@@ -241,20 +233,26 @@ It denies:
   `agent_type` is `refuter` or `debugger` — the two read-only agents that hold a shell.
 
 It allows: small files, writes from anyone else (`>`, `>>`, heredocs, `sed -i`, `tee`), counts
-(`wc`, `grep -c`), capped output (`| cut -c1-300`, PowerShell `.Substring(`), any
-command that calls `qmd`, and `git` commands. Each `&&` / `;` segment of a command is
+(`wc`, `grep -c`), capped output (`| cut -c1-300`, PowerShell `.Substring(`), and `git`
+commands. Each `&&` / `;` segment of a command is
 judged on its own, so `rm big.md; git status | head` passes.
 
-The deny message tells Claude the exact qmd or capped command to run instead.
+The deny message tells Claude the capped `grep -n` + `Read` window to use instead.
 
-Check: `python ~/.claude/hooks/md-guard_test.py` prints `83/83 passed`. The test
+Check: `python ~/.claude/hooks/md-guard_test.py` prints `121/121 passed`. The test
 builds its own fixtures in a temp folder, so it runs on any machine. The installer runs
 it for you.
 
 `~/.claude/hooks/kit-subagent-start.py` is the other half of the same idea: a `SubagentStart`
-hook that injects the `DECISIONS.md` of every OPEN bucket in `.claude/scratch/INDEX.md` into
+hook that injects the `DECISIONS.md` of every OPEN or BLOCKED bucket in `.claude/scratch/INDEX.md` into
 each spawned builder, refuter, verifier, debugger and researcher, capped at 6000 characters.
-Check: `python ~/.claude/hooks/kit-subagent-start_test.py` prints `15/15 passed`.
+Check: `python ~/.claude/hooks/kit-subagent-start_test.py` prints `18/18 passed`.
+
+`~/.claude/hooks/kit-context.py` is a `Stop` hook. At 45%+ context, the first stop in each
+10-point band asks the model to write the handoff into the bucket's `STATE.md` and tell you
+"/clear, then /continue"; later stops show "Context N% full". It stays silent while a
+background agent runs and never blocks a headless `claude -p` run.
+Check: `python ~/.claude/hooks/kit-context_test.py` prints `21/21 passed`.
 
 Known gaps, on purpose:
 
@@ -303,7 +301,7 @@ report format. The skill is worth keeping, so the kit ships its own copy at
   not install anything older than 2.5.2 on Windows.
 - Some of our planning docs have paragraph-long lines. A `grep -n "^## " file | head -80`
   returned 123 KB because 80 lines were 1.5 KB each. `head` limits lines, not columns.
-  This is why the hook demands a column cap and why the qmd window is the right tool.
+  This is why the hook demands a column cap.
 - The hook's first version had four false positives that would have broken daily
   work: heredoc writes, `cat >>` appends, `sed -i` edits, and a `head` in an unrelated
   command segment. It also missed `bash -c` and the PowerShell tool. All six are now
@@ -389,22 +387,20 @@ report format. The skill is worth keeping, so the kit ships its own copy at
 |---|---|---|
 | `md-guard: no Python 3.12+ on PATH` | Python missing or old | install 3.12, open a new terminal, re-run `install.ps1` |
 | Hook never fires | settings loaded before the change | start a new Claude Code session |
-| Hook fires on a file you must read | it has more than 300 lines | `Read` with `offset` + `limit`, or `qmd get "<path>:<line>:<count>"` |
-| `qmd search` returns other projects' docs | `-c` missing | add `-c <collection>` |
-| `qmd search` prints `qmd://` URIs | `--full-path` missing | add `--full-path` |
-| `qmd query` hangs | no embeddings, model download | never use it; use `qmd search` |
-| `qmd` command not found after npm install | npm global bin not on PATH | `npm config get prefix`, add that folder to PATH |
+| Hook fires on a file you must read | it has more than 300 lines | `grep -n "<anchor>" <file> \| cut -c1-300`, then `Read` with `offset` + `limit` |
 | Two md-guard entries in settings.json | edited by hand | delete one; the installer only ever adds one |
 | Agents ignore their `effort` | `CLAUDE_CODE_EFFORT_LEVEL` set in `env` | remove it from `settings.json` |
 
 ## 7. Final checklist
 
-- [ ] `pwsh install.ps1` printed `md-guard self-check: 83/83 passed`
-- [ ] the same run printed `kit-subagent-start self-check: 15/15 passed`
+- [ ] `pwsh install.ps1` printed `md-guard self-check: 121/121 passed`
+- [ ] the same run printed `kit-session-start self-check: 18/18 passed`
+- [ ] the same run printed `kit-subagent-report self-check: 12/12 passed`
+- [ ] the same run printed `kit-subagent-start self-check: 18/18 passed`
+- [ ] the same run printed `kit-context self-check: 21/21 passed`
 - [ ] the same run printed `scan-project self-check: 38/38 passed`
-- [ ] `qmd search "<anything>" -c <collection> --full-path -n 5` printed `D:\...md:LINE` hits
 - [ ] `verify_live.py` C6 lists no unreviewed plugin
 - [ ] In a new Claude Code session, asking Claude to read a 300+ line `.md` whole is
-      denied and the message names the qmd command
+      denied and the message names the capped `grep -n` + `Read` window
 - [ ] `/next-item` (or any task) shows builder then ONE refuter on Opus in the Agent map;
       a rework shows builder then verifier, never a second refuter pair
