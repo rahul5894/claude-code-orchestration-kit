@@ -448,7 +448,7 @@ except (OSError, ValueError) as e:
 for label, got, want in [
         ('outputStyle', s.get('outputStyle'), 'orchestrator'),
         ('fable effort', s.get('modelSettings', {}).get('claude-fable-5-1', {}).get('effortLevel'), 'high'),
-        ('opus effort', s.get('modelSettings', {}).get('claude-opus-5', {}).get('effortLevel'), 'xhigh'),
+        ('opus effort', s.get('modelSettings', {}).get('claude-opus-5-5', {}).get('effortLevel'), 'xhigh'),
         ('subagent cache TTL', s.get('subagentPromptCacheTtl'), '1h'),
         ('agent teams off', s.get('env', {}).get('CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS'), '0'),
         ('spawn depth', s.get('env', {}).get('CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH'), '1')]:

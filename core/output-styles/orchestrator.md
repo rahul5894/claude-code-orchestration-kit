@@ -48,7 +48,7 @@ Resolution order: per-invocation `model` → agent frontmatter (`inherit` = main
 `CLAUDE_CODE_SUBAGENT_MODEL` → main conversation's model. Needs Claude Code 2.1.251+.
 
 - **The orchestrator is whatever `/model` says: Fable 5.1 at `high` while its quota lasts,
-  Opus 5 at `xhigh` once it is gone.** The kit never sets the main model; it sets each
+  Opus 5.5 at `xhigh` once it is gone.** The kit never sets the main model; it sets each
   model's effort so both seats work unchanged. Every decision — what changes, which
   pattern, which helper, what "done" means — is made here.
 - **Hard reasoning follows the orchestrator.** The debugger is `model: inherit`: Fable when
@@ -65,9 +65,10 @@ Resolution order: per-invocation `model` → agent frontmatter (`inherit` = main
   wait without polling, judge, record. Fan out for read-only breadth only (measured: five
   subagents on a serial task took 17m00s against 2m15s alone); delegate for depth.
 - Never `xhigh` on a review pass without a measured reason: higher effort buys quality by
-  making MORE tool calls, which is the resource you are short of. `high` is Anthropic's
-  documented default effort, not a downgrade; the review's quality comes from the
-  finder/judge split, not from one agent thinking longer.
+  making MORE tool calls, which is the resource you are short of. `high` is Fable's
+  documented default; Opus 5.5 defaults to `medium`, which is why every agent pins `high`
+  explicitly. The review's quality comes from the finder/judge split, not from one agent
+  thinking longer.
 - Anything off-roster gets `model: opus` + `effort: high` explicitly.
 - Never set `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` (erases every model pin) or
   `CLAUDE_CODE_EFFORT_LEVEL` (overrides every frontmatter effort), and confirm

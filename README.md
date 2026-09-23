@@ -5,7 +5,7 @@
 > Upstream pins haiku/sonnet/opus and bans `fable` on subagents. This fork runs on a Max
 > plan where Opus quota is not the constraint and Fable quota is. The split is **what
 > thinks vs what executes**. The main session is whatever `/model` says — Fable 5.1 at
-> `high` while its quota lasts, Opus 5 at `xhigh` after — and every design decision (what
+> `high` while its quota lasts, Opus 5.5 at `xhigh` after — and every design decision (what
 > changes, which pattern, which helper, which library) is made there. The `debugger` is
 > `model: inherit`, so hard root-cause work follows that seat. Everything else is pinned
 > `opus` at `high` — builder, researcher, refuter, verifier all execute a decision already
@@ -75,7 +75,7 @@ preferences. Edit it to match yours.
 
 **Verified against the official docs on 2026-09-14** (`code.claude.com/docs/en/sub-agents`,
 `model-config`, `settings`): model order = per-invocation → frontmatter →
-`CLAUDE_CODE_SUBAGENT_MODEL` → main (2.1.251+) · effort levels on Fable 5.1 / Opus 5 =
+`CLAUDE_CODE_SUBAGENT_MODEL` → main (2.1.251+) · effort levels on Fable 5.1 / Opus 5.5 =
 `low medium high xhigh max`; `modelSettings`/`effortLevel` accept everything but `max` ·
 frontmatter `effort` overrides the session level but **not** `CLAUDE_CODE_EFFORT_LEVEL`, so
 that variable is never set here · `CLAUDE_CODE_SUBAGENT_MODEL` alone leaves the built-in

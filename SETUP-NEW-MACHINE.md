@@ -5,7 +5,7 @@ It takes about 20 minutes. Every step has a check. Do not skip a check.
 
 Which model runs which agent, and why, is not repeated here: see `docs/FABLE-OPUS-SPLIT.md`.
 
-Last verified: 2026-09-18 on Windows 11, Claude Code 2.1.276, qmd 2.8.3, Python 3.12.10.
+Last verified: 2026-09-23 on Windows 11, Claude Code 2.1.280 (2.1.280+ required: older builds reject `claude-opus-5-5` and map `opus` to Opus 5), qmd 2.8.3, Python 3.12.10.
 
 **`claude --version` is not the version your session is running.** Measured 2026-09-18: the
 CLI binary at `~/.local/bin/claude.exe` reported **2.1.270** while the running VS Code

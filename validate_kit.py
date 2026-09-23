@@ -133,7 +133,7 @@ print('=== 1. AGENT FRONTMATTER - docs-valid values only ===')
 MODELS = {'sonnet', 'opus', 'haiku', 'fable', 'inherit'}
 EFFORT = {'low', 'medium', 'high', 'xhigh', 'max'}
 # Fable thinks, Opus executes. The orchestrator is whatever /model says (Fable 5.1 high, or
-# Opus 5 xhigh once Fable quota is gone); the kit never sets it. The debugger INHERITS that
+# Opus 5.5 xhigh once Fable quota is gone); the kit never sets it. The debugger INHERITS that
 # seat - hard reasoning follows the orchestrator, and inherit can never break on quota.
 # Everything that executes a decision already written down is pinned opus: that is how Fable
 # tokens are saved. The judge (verifier) runs high because it decides what gets fixed. The
@@ -721,9 +721,9 @@ chk(su.get('outputStyle') == 'orchestrator', 'settings: outputStyle activates th
 chk(su.get('worktree', {}).get('baseRef') == 'head', 'settings: worktree.baseRef head',
     str(su.get('worktree')))
 ms = su.get('modelSettings', {})
-chk(ms.get('claude-opus-5', {}).get('effortLevel') == 'xhigh',
-    'modelSettings: opus 5 xhigh (fallback orchestrator seat; agent frontmatter overrides it)',
-    str(ms.get('claude-opus-5')))
+chk(ms.get('claude-opus-5-5', {}).get('effortLevel') == 'xhigh',
+    'modelSettings: opus 5.5 xhigh (fallback orchestrator seat; agent frontmatter overrides it)',
+    str(ms.get('claude-opus-5-5')))
 chk(ms.get('claude-fable-5-1', {}).get('effortLevel') == 'high',
     'modelSettings: fable 5.1 high (the primary orchestrator seat)')
 chk(all(v.get('effortLevel') != 'max' for v in ms.values()),

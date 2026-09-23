@@ -1,13 +1,13 @@
-# Who does what: Fable 5.1 and Opus 5 in this kit
+# Who does what: Fable 5.1 and Opus 5.5 in this kit
 
-Written 2026-09-20 for Claude Code 2.1.276. This is the reference for "which seat does
+Written 2026-09-20, updated 2026-09-23 for Opus 5.5 on Claude Code 2.1.280+ (where `opus` resolves to it). This is the reference for "which seat does
 which work", so that a new machine, a new project, or a new plugin lands on the same split.
 The rules themselves live in `core/output-styles/orchestrator.md` and `core/CLAUDE.md`;
 this page only explains the shape.
 
 ## The one sentence
 
-Fable 5.1 sits in the main session and does every act of judgment. Opus 5 sits in the
+Fable 5.1 sits in the main session and does every act of judgment. Opus 5.5 sits in the
 subagents and does every act of execution. Haiku locates. Nothing else runs.
 
 ## What Fable does (the main session, `/model fable`)
