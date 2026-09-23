@@ -9,12 +9,14 @@ score the result.
 | Path | What |
 |---|---|
 | `fixture/` | the base repo every arm starts from (a small stdlib order service) |
+| `fixture-<t>/` | a ticket's own base repo when it has one (`billing`: a legacy service with seeded bugs and a `check.py`) |
 | `tickets/<t>.txt` | the prompt, given verbatim to every arm |
 | `hidden/<t>/test_spec*.py` | what the ticket asks for |
 | `hidden/<t>/test_robust*.py` | robustness classes the ticket implies (bad input, never crash) |
 | `hidden/<t>/test_security*.py` | who may do what, hostile input (optional group) |
+| `hidden/<t>/test_bugs*.py` | defects seeded in the fixture's own code that the ticket asks the arm to find (optional group) |
 | `ref/<t>/`, `naive/<t>/` | files copied over the fixture's `shop/` to prove the tests: ref passes all, naive fails some |
-| `score.py <repo> --ticket <t>` | one JSON line: spec, robust, security P/T, LOC added/removed, files changed under `shop/`, and `quality` |
+| `score.py <repo> --ticket <t>` | one JSON line: spec, bugs, robust, security P/T, LOC added/removed, files changed under the package, and `quality` |
 | `variants/` | alternative project `CLAUDE.md` files for `run_arm.py --claude-md` (e.g. a gate with linters) |
 | `run_arm.py` | one arm, one ticket: clone, run `claude -p`, score, save `results/` |
 | `results/` | gitignored: one `.json` + `.patch` per run |
@@ -45,6 +47,9 @@ pylint`; without it `quality` says SKIPPED):
 
 - `lint_added` / `lint_codes`: ruff F (unused, undefined), B (likely bugs), SIM, UP (outdated
   syntax), C4, PERF, RET, PIE, C901 (a function over complexity 10).
+- `lint_fixed` / `lint_introduced` / `lint_fixed_codes`: findings of the untouched fixture the arm
+  removed, and findings in code it wrote (matched by file, code and message, not line). Since
+  the billing bench the set also has DTZ, E711/E712/E722, PTH, FURB and BLE.
 - `dead_code_added`: vulture findings at >= 80% (unused import or argument, unreachable code)
   plus unused private names. At 60% vulture calls every public function of a library dead.
 - `duplicate_blocks_added`: pylint duplicate-code, 5+ similar lines.
@@ -128,3 +133,31 @@ Caveats: n=2 per arm, all 9 ran at once (wall times share one machine), and the 
 gate uses the same ruff rules the metric counts - which is the point of a gate, not a trick.
 
 To test a new model (e.g. Fable 5.x), run the same rows with `--model <id>` and compare.
+
+### Bench E: the billing ticket (2026-09-24, 2.1.280, Opus 5.5 xhigh for every arm)
+
+A hard ticket on a legacy fixture (`fixture-billing/`): plan changes with proration, a
+concurrent-safe billing run, a keyset-paged statement API, plus "fix every bug you find and
+modernise the package". The fixture hides 13 docstring-contradicting bugs and 24 lint findings,
+and ships a `check.py` (ruff F/E9, vulture, unit tests) that every arm must leave green, like a
+project's own `check:all`. Hidden tests: 18 spec, 13 bugs, 6 robust, 8 security. ref 45/45,
+naive 18/45, fixture 1/45. Wave 1 ran 6 arms at once; `lean-fix` (kit-lean with the report and
+test rule, via `--style-file`) ran 3 at once, so its wall times had less contention.
+
+| Arm | Hidden (45) | Wall s | Cost $ | Package LOC+ | Test LOC+ | Legacy lint fixed /24 | Bug list in report |
+|---|---|---|---|---|---|---|---|
+| plain xhigh | 45, 45, 45 | 1389, 831, 733 | 6.25, 3.56, 3.13 | 595, 572, 645 | 680, 666, 720 | 24, 24, 24 | 3/3 |
+| kit-lean xhigh | 45, 45, 45 | 585, 765, 663 | 2.88, 3.83, 3.55 | 340, 409, 369 | 232, 248, 191 | 21, 24, 21 | 0/3 |
+| kit-lean-fix xhigh | 45, 45, 45 | 847, 763, 860 | 4.41, 4.29, 4.66 | 366, 391, 425 | 303, 355, 327 | 24, 21, 24 | 3/3 |
+
+Beyond the hidden tests (probed or read from the final messages): a customer email starting
+`staff:` passes as staff - closed by plain 1/3, kit-lean 2/3, kit-lean-fix 1/3. A customer can
+farm credit by backdating `on` (upgrade late, downgrade early, repeat) - flagged by kit-lean 5/6
+runs (its `/security-review`), plain 0/3; nobody fixed it because the ticket allows it. Savepoint
+nesting / new indexes / dataclasses: plain 3/3, 3/3, 2/3; kit-lean(+fix) 1/6, 2/6, 0/6.
+
+Reading it: correctness ties again (every run 45/45: Opus 5.5 xhigh alone clears this ticket).
+kit-lean-fix against plain: median wall +2%, cost about equal, ~35% less package code, half the
+test code, same report. Its edge is spotting business-logic abuse; plain's is more tests and
+more database hardening. The "report is my own last message" rule (kit-lean.md step 7) fixed
+the lost bug list 3/3. n=3 per arm.

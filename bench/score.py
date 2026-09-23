@@ -14,6 +14,7 @@ import re
 import subprocess
 import sys
 import unittest
+from collections import Counter
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 GROUP_TIMEOUT = 600
@@ -55,20 +56,39 @@ def git(repo, *args):
                           encoding="utf-8", errors="replace", check=True).stdout
 
 
-def loc(repo):
+def fixture_of(ticket):
+    """(fixture dir, package name): bench/fixture-<ticket>/ when it exists, else bench/fixture/.
+    The package is the fixture's one top-level dir with an __init__.py, other than tests/."""
+    tree = os.path.join(HERE, f"fixture-{ticket}")
+    if not os.path.isdir(tree):
+        tree = os.path.join(HERE, "fixture")
+    pkg = next(n for n in sorted(os.listdir(tree)) if n != "tests"
+               and os.path.isfile(os.path.join(tree, n, "__init__.py")))
+    return tree, pkg
+
+
+def loc(repo, pkg="shop"):
+    """Lines of Python the arm added/removed in `pkg` (bytecode caches and other files are not
+    code), plus the lines of tests it added under tests/."""
     base = git(repo, "rev-list", "--max-parents=0", "HEAD").split()[-1]
-    added = removed = files = 0
-    # a file whose line endings flipped would otherwise count every line as changed
-    for line in git(repo, "diff", "--numstat", "--ignore-cr-at-eol", base, "--", "shop/").splitlines():
-        a, r, _ = line.split("\t", 2)
-        added += int(a) if a.isdigit() else 0
-        removed += int(r) if r.isdigit() else 0
-        files += 1
-    for path in git(repo, "ls-files", "--others", "--exclude-standard", "--", "shop/").splitlines():
-        with open(os.path.join(repo, path), "rb") as f:
-            added += len(f.read().splitlines())
-        files += 1
-    return {"loc_added": added, "loc_removed": removed, "files_changed": files}
+
+    def count(spec):
+        added = removed = files = 0
+        # a file whose line endings flipped would otherwise count every line as changed
+        for line in git(repo, "diff", "--numstat", "--ignore-cr-at-eol", base, "--", spec).splitlines():
+            a, r, _ = line.split("\t", 2)
+            added += int(a) if a.isdigit() else 0
+            removed += int(r) if r.isdigit() else 0
+            files += 1
+        for path in git(repo, "ls-files", "--others", "--exclude-standard", "--", spec).splitlines():
+            with open(os.path.join(repo, path), "rb") as f:
+                added += len(f.read().splitlines())
+            files += 1
+        return added, removed, files
+
+    added, removed, files = count(f"{pkg}/*.py")
+    return {"loc_added": added, "loc_removed": removed, "files_changed": files,
+            "test_loc_added": count("tests/*.py")[0]}
 
 
 def score(repo, ticket):
@@ -77,11 +97,13 @@ def score(repo, ticket):
     if not os.path.isdir(hidden):
         sys.exit(f"no hidden tests for ticket {ticket!r}: {hidden}")
     line = {"ticket": ticket, "spec": run_group(repo, hidden, "test_spec*.py")}
-    for group in ("robust", "security"):
+    # bugs: defects seeded in the fixture's own code that the ticket asks the arm to find
+    for group in ("bugs", "robust", "security"):
         has = any(n.startswith(f"test_{group}") and n.endswith(".py") for n in os.listdir(hidden))
         line[group] = run_group(repo, hidden, f"test_{group}*.py") if has else "0/0"
-    line.update(loc(repo))
-    line["quality"] = quality(repo)
+    fixture, pkg = fixture_of(ticket)
+    line.update(loc(repo, pkg))
+    line["quality"] = quality(repo, fixture, pkg)
     return line
 
 
@@ -89,8 +111,10 @@ VENV_PY = os.path.join(HERE, ".venv", "Scripts" if os.name == "nt" else "bin",
                        "python.exe" if os.name == "nt" else "python")
 # Lint findings the arm ADDED: unused/undefined names (F), likely bugs (B), simplifiable (SIM),
 # outdated syntax (UP), needless comprehensions (C4), perf anti-patterns (PERF), return style
-# (RET), no-op code (PIE), functions over complexity 10 (C901).
-RUFF_RULES = "F,B,SIM,UP,C4,PERF,RET,PIE,C901"
+# (RET), no-op code (PIE), functions over complexity 10 (C901); since the billing bench also
+# naive datetimes (DTZ), `== None`/bare except (E711/E712/E722), os.path over pathlib (PTH),
+# refurb idioms (FURB), blind `except Exception` (BLE). Bench D's numbers used the first nine.
+RUFF_RULES = "F,B,SIM,UP,C4,PERF,RET,PIE,C901,DTZ,E711,E712,E722,PTH,FURB,BLE"
 
 
 def _tool(args, cwd):
@@ -99,19 +123,19 @@ def _tool(args, cwd):
     return proc.stdout
 
 
-def _metrics(tree):
-    """Counts for the shop/ package under `tree`. Each is a count of findings or definitions."""
+def _metrics(tree, pkg="shop"):
+    """Counts for the `pkg` package under `tree`. Each is a count of findings or definitions."""
     import ast
     ruff = json.loads(_tool(["ruff", "check", "--isolated", "--no-cache", "--select", RUFF_RULES,
-                             "--target-version", "py312", "--output-format", "json", "shop"], tree) or "[]")
+                             "--target-version", "py312", "--output-format", "json", pkg], tree) or "[]")
     # At 60% vulture calls every public function of a library dead (it has no callers here), so
     # only what is dead for sure counts: >= 80% (unused import/argument, unreachable code) and an
     # unused PRIVATE name ('_helper'), which nothing outside the module may call.
-    dead = [l for l in _tool(["vulture", "shop", "--min-confidence", "60"], tree).splitlines()
+    dead = [l for l in _tool(["vulture", pkg, "--min-confidence", "60"], tree).splitlines()
             if (m := re.search(r"\((\d+)% confidence", l)) and (int(m[1]) >= 80 or " '_" in l)]
     dup = _tool(["pylint", "--disable=all", "--enable=duplicate-code", "--min-similarity-lines=5",
-                 "--score=n", "shop"], tree).count("R0801")
-    cc = json.loads(_tool(["radon", "cc", "-j", "shop"], tree) or "{}")
+                 "--score=n", pkg], tree).count("R0801")
+    cc = json.loads(_tool(["radon", "cc", "-j", pkg], tree) or "{}")
     blocks = {}
     for f, bs in cc.items():
         if not isinstance(bs, list):
@@ -124,7 +148,7 @@ def _metrics(tree):
                 body = "\n".join(lines[b["lineno"] - 1:b["endline"]])
                 blocks[(f, b.get("classname"), b["name"])] = (b["complexity"], body)
     defs = classes = unparsable = 0
-    for root, _, names in os.walk(os.path.join(tree, "shop")):
+    for root, _, names in os.walk(os.path.join(tree, pkg)):
         for n in names:
             if n.endswith(".py"):
                 try:
@@ -135,21 +159,31 @@ def _metrics(tree):
                     continue
                 defs += sum(isinstance(x, (ast.FunctionDef, ast.AsyncFunctionDef)) for x in nodes)
                 classes += sum(isinstance(x, ast.ClassDef) for x in nodes)
+    # a finding's identity without its line number, so a moved line is not "fixed + introduced"
+    keys = [(os.path.basename(r.get("filename", "")), r.get("code"), r.get("message")) for r in ruff]
     return {"lint": len(ruff), "lint_codes": sorted({r["code"] for r in ruff if r.get("code")}),
+            "lint_keys": keys,
             "dead_code": len(dead), "duplicate_blocks": dup, "functions": defs, "classes": classes,
             "unparsable_files": unparsable, "blocks": blocks}
 
 
-def quality(repo):
+def quality(repo, fixture=None, pkg="shop"):
     """What the arm added, measured against the untouched fixture: lint findings, vulture dead
     code, pylint duplicate blocks, new functions/classes, and radon complexity of new code."""
     if not os.path.isfile(VENV_PY):
         return "SKIPPED (no bench/.venv: python -m venv bench/.venv, then pip install ruff vulture radon pylint)"
-    base, final = _metrics(os.path.join(HERE, "fixture")), _metrics(repo)
+    base = _metrics(fixture or os.path.join(HERE, "fixture"), pkg)
+    final = _metrics(repo, pkg)
+    before, after = Counter(base["lint_keys"]), Counter(final["lint_keys"])
     new_cc = [c for k, (c, body) in final["blocks"].items() if base["blocks"].get(k) != (c, body)]
     return {
         "unparsable_files": final["unparsable_files"],
         "lint_added": final["lint"] - base["lint"],
+        # the fixture's own findings the arm removed, and findings in code it wrote
+        "lint_fixed": sum((before - after).values()),
+        "lint_introduced": sum((after - before).values()),
+        "lint_fixed_codes": sorted({k[1] for k in (before - after)}),
+        "lint_final": final["lint"],
         "lint_codes": [c for c in final["lint_codes"] if c not in base["lint_codes"]],
         "dead_code_added": final["dead_code"] - base["dead_code"],
         "duplicate_blocks_added": final["duplicate_blocks"] - base["duplicate_blocks"],

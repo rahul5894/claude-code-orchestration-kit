@@ -14,7 +14,7 @@ import sys
 import tempfile
 import time
 
-from score import VENV_PY, score
+from score import VENV_PY, fixture_of, score
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 STYLES = {"lean": "kit-lean", "full": "orchestrator"}
@@ -28,7 +28,13 @@ def git(repo, *args):
 
 def make_clone(ticket, arm, claude_md=None):
     clone = tempfile.mkdtemp(prefix=f"bench-{ticket}-{arm}-")
-    shutil.copytree(os.path.join(HERE, "fixture"), clone, dirs_exist_ok=True)
+    shutil.copytree(fixture_of(ticket)[0], clone, dirs_exist_ok=True)
+    check = os.path.join(clone, "check.py")
+    if os.path.isfile(check):  # the project's full check runs its linters from bench/.venv
+        with open(check, encoding="utf-8") as f:
+            text = f.read().replace("{VENV_PY}", VENV_PY.replace("\\", "/"))
+        with open(check, "w", encoding="utf-8", newline="\n") as f:
+            f.write(text)
     if claude_md:
         # part of the base commit, so it never counts as the arm's change
         with open(claude_md, encoding="utf-8") as f:
@@ -38,6 +44,9 @@ def make_clone(ticket, arm, claude_md=None):
     git(clone, "init", "-q")
     git(clone, "add", "-A")
     git(clone, "commit", "-q", "-m", "base")
+    # a real repo has origin/HEAD; /security-review diffs against it and fails without one
+    git(clone, "update-ref", "refs/remotes/origin/main", "HEAD")
+    git(clone, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
     return clone
 
 

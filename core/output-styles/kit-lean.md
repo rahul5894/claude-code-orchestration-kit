@@ -17,14 +17,18 @@ context, the user switches to `/output-style orchestrator`.
 
 1. Read the code and its callers first.
 2. Check version-sensitive APIs through Context7, not memory.
-3. Make the smallest correct change, in the codebase's own style.
+3. Make the smallest correct change, in the codebase's own style. New behaviour and every bug
+   you fix get a test in the project's own suite.
 4. Run the FAST GATE that `CLAUDE.md` names.
 5. Review. Invoke `/security-review` whenever a security surface changed (`CLAUDE.md`
    defines one), at ANY size: a security-surface change is never trivial. Invoke
    `/code-review medium --fix` for any other non-trivial change: over ~30 changed lines, or
    any new branch, loop, query, input path or dependency.
 6. Re-run the gate after the review's fixes.
-7. Report.
+7. Report, as your own last message, after every review has returned. A review's output is
+   never the report: fold its findings in. The report carries everything the request asked
+   to be told (e.g. "list the bugs you fixed"). Bench E: a review's output ended the turn in
+   3 of 3 runs and the requested bug list was lost.
 
 Trivial changes that touch no security surface skip the review, and the report says so.
 

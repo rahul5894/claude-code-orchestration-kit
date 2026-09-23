@@ -1,0 +1,62 @@
+Add mid-cycle plan changes, the monthly billing run and a customer statement to the billing service.
+
+You also own the `billing` package from now on. It was written in a hurry: while you work, fix
+every real bug you find in the existing modules (their docstrings state the intended behaviour)
+and bring the code up to current Python 3.12 practice. Keep every existing public function's
+name and parameters. List the bugs you fixed in your final message.
+
+1. Plan changes - add `change_plan(conn, subscription_id, new_plan, actor, on)` to
+`billing/subscriptions.py`. `on` is a `datetime.date`. It switches an active subscription to
+another plan from `on` on, and returns a dict with keys "subscription_id", "plan" (the new
+plan), "invoice_id" (an int, or None) and "credit_added_cents".
+- `actor` must be the subscription's customer (their email, in any letter case) or staff
+  (a string starting with "staff:").
+- Only an active subscription can change; `new_plan` must be a known plan different from the
+  current one; `on` must lie inside the current period (period_start <= on < period_end).
+- credit = `prorate(old monthly price, period_start, period_end, on)`;
+  charge = `prorate(new monthly price, period_start, period_end, on)`.
+- If charge > credit (an upgrade): issue an invoice dated `on` with exactly two lines, in this
+  order: ("Unused time on <old plan>", -credit) and ("Remaining time on <new plan>", charge);
+  "credit_added_cents" is 0.
+- Otherwise (a downgrade): no invoice; add credit - charge to the customer's `credit_cents`
+  and return it as "credit_added_cents"; "invoice_id" is None.
+- The period does not change.
+Every change that is not allowed raises `SubscriptionError` and changes nothing. The service
+runs on many threads, each with its own connection to the same database file: two changes of
+the same subscription can arrive at the same time, and each must see the result of the other
+(the same upgrade sent twice at once is billed once; the second call fails because the plan is
+already the new one).
+
+2. Billing run - add `run_billing(conn, today)` to `billing/subscriptions.py`. For every
+active subscription whose `period_end <= today` it renews the subscription period by period
+until its period_end is after `today`, issuing one invoice per renewed period, dated that
+period's first day, and returns the ids of the invoices it issued in the order issued.
+- Periods stay anchored on the day the subscription started (see `subscribe`): a subscription
+  started on Jan 31 renews for Feb 28 - Mar 31, then Mar 31 - Apr 30.
+- A renewal invoice's first line is ("Plan <plan> <period start> to <period end>", monthly
+  price), dates in ISO form. If the customer has credit, a second line ("Credit applied",
+  -min(credit, monthly price)) uses it up and the customer's credit_cents is reduced by that
+  amount.
+- Cancelled subscriptions are never billed.
+- Running it again for the same day issues nothing new; runs for the same day on several
+  threads at once, each with its own connection, issue every invoice exactly once.
+- Finance runs it over 50,000 subscriptions: the number of SELECT statements it runs must not
+  grow with the number of due subscriptions.
+
+3. API - in `billing/api.py`, following the conventions of the existing handlers:
+- `change_plan(conn, request)`: request keys "api_key", "actor", "subscription_id", "plan",
+  and "on" (an ISO date string; missing means today's UTC date). 200 with the dict from
+  change_plan (plus "status"); 400 for a malformed or disallowed request; 403 for a bad api key
+  or an actor who may not change this subscription; 404 for an unknown subscription.
+- `statement(conn, request)`: request keys "api_key", "actor", "customer_id", and the optional
+  "limit" (1 to 100, default 20) and "cursor". Returns 200 {"invoices": [...], "next_cursor":
+  ...}: the customer's invoices, newest first (highest id first), each as {"number",
+  "issued_on", "total_cents", "status"}; "next_cursor" is a string to pass as "cursor" for the
+  next page, or None on the last page. Invoices created between two page requests must not
+  make a later page repeat or skip an invoice. A customer may read only their own statement,
+  staff any (403 otherwise); an unknown customer is 404; a bad limit or cursor is 400.
+- A handler never raises, whatever the request holds, and never puts internal error details
+  (exception text, tracebacks) in a response.
+
+Stdlib only. Before you finish, run `python check.py` (the project's full check: lint, dead
+code, unit tests) and leave it passing.
