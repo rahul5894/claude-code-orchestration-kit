@@ -161,3 +161,25 @@ kit-lean-fix against plain: median wall +2%, cost about equal, ~35% less package
 test code, same report. Its edge is spotting business-logic abuse; plain's is more tests and
 more database hardening. The "report is my own last message" rule (kit-lean.md step 7) fixed
 the lost bug list 3/3. n=3 per arm.
+
+**Wave G (2026-09-24): ponytail uninstalled, all 9 runs at once.** The kit-lean rows above ran
+with the user's ponytail plugin loaded (its SessionStart rules: shortest diff, "YAGNI applies to
+tests"); plain (`--safe-mode`) never had it. With it gone, the same ticket again, plus
+`kit-lean-v2` (`bench/variants/kit-lean-v2.md`: both reviews in parallel, and a trust-boundary
+sweep of the code the ticket hands over, not only the diff).
+
+| Arm | Hidden (45) | Wall s | Cost $ | Package LOC+ | Test LOC+ | Legacy lint fixed /24 | `staff:` email closed | Credit farming flagged |
+|---|---|---|---|---|---|---|---|---|
+| plain xhigh | 45, 45, 45 | 1321, 839, 704 | 5.76, 3.18, 2.93 | 605, 496, 570 | 638, 663, 591 | 24, 24, 24 | 2/3 | 0/3 |
+| kit-lean xhigh | 45, 45, 45 | 856, 1073, 894 | 4.71, 4.91, 4.29 | 526, 499, 549 | 611, 605, 529 | 24, 21, 24 | 0/3 | 1/3 |
+| kit-lean-v2 xhigh | 45, 45, 45 | 1011, 960, 997 | 5.02, 4.50, 4.98 | 535, 509, 544 | 559, 612, 681 | 24, 24, 24 | 1/3 | 2/3 |
+
+Every run's final message carried the bug list. Reading it: without ponytail, kit-lean writes
+as much package and test code as plain (the earlier "35% less code, half the tests" was
+ponytail's doing). Median wall: plain 839 s, kit-lean 894 s (+7%), v2 997 s (+19%); mean cost
++17% and +22%. v2 caught one more of each probe than kit-lean, which at n=3 is within noise
+(kit-lean flagged credit farming 1/3 here and 3/3 in an earlier ponytail-off wave). v2 was
+not promoted: it missed the "time within plain +5%" bar and its catches are not separable
+from noise. Correctness still ties (45/45 x9). `num_turns`/`duration_ms` in a run's JSON
+cover only the last segment when the session woke on a background task; `wall_s` is the
+harness's own clock.

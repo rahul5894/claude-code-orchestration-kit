@@ -49,9 +49,10 @@ DOCS = sorted(slash(f) for f in glob.glob('docs/*.md'))
 # repeats that template's headings and preamble. Excluding it keeps the duplication check
 # meaningful; without it the kit could not follow its own template without going red.
 # extras/rejected is a verbatim archive of what we do NOT install. It is not config and is
-# deliberately allowed to echo other files.
+# deliberately allowed to echo other files. bench/variants/ holds trial copies of a shipped
+# style or CLAUDE.md (run_arm --style-file / --claude-md): echoing the original is their job.
 cfgfiles = [f for f in files
-            if not f.startswith('extras/rejected/') and f != 'CLAUDE.md']
+            if not f.startswith(('extras/rejected/', 'bench/variants/')) and f != 'CLAUDE.md']
 
 print('=== 0. NO LITERAL CONTROL CHARACTERS IN SOURCE ===')
 # Found 2026-09-18: validate_kit.py carried two 0x08 bytes where \\b was intended, so a
@@ -715,13 +716,7 @@ chk(env.get('CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH') == '1', 'env: spawn depth 1'
 chk(env.get('CLAUDE_CODE_SUBAGENT_MODEL') == 'opus', 'env: off-roster subagent model opus')
 chk(env.get('CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS') == '0',
     'env: agent teams pinned off (a named subagent would become a ~7x-token teammate)')
-# The ponytail plugin's own SubagentStart hook has no matcher, so unscoped it injects ~1,347
-# tokens into EVERY spawn. It earns that in an agent that writes or diagnoses code; a finder
-# and a judge write none. The main session keeps it in full - SessionStart ignores this var.
-pm = env.get('PONYTAIL_SUBAGENT_MATCHER', '')
-chk(pm and all(a in pm for a in ('builder', 'debugger'))
-    and not any(a in pm for a in ('refuter', 'verifier', 'Explore', 'researcher')),
-    'env: ponytail scoped to the agents that touch code', repr(pm))
+chk('PONYTAIL_SUBAGENT_MATCHER' not in env, 'env: no ponytail pin (the plugin is disabled, bench E)')
 chk('CLAUDE_CODE_EFFORT_LEVEL' not in env,
     'env: CLAUDE_CODE_EFFORT_LEVEL absent (would override frontmatter effort)')
 chk('CLAUDE_CODE_SUBAGENT_MODEL_FORCE' not in env, 'env: _FORCE absent (would erase model pins)')
@@ -1143,8 +1138,8 @@ for _m in ('disable', 'allow'):
         chk(isinstance(_why, str) and _why.strip(), f'plugins.json {_m}[{_id}] gives a reason')
 chk('simple-english@simple-english' in (_pl.get('disable') or {}),
     'plugins.json disables simple-english (its hooks fight the report rules)')
-# The env pin above already assumes ponytail runs, so silence here would be a contradiction.
-chk('ponytail@ponytail' in (_pl.get('allow') or {}), 'plugins.json allows ponytail')
+# Bench E: ponytail's rules halved the arm's tests and dropped DB hardening (FINDINGS kit-modes).
+chk('ponytail@ponytail' in (_pl.get('disable') or {}), 'plugins.json disables ponytail')
 chk(os.path.isfile('core/skills/simple-english/LICENSE'),
     'core/skills/simple-english/LICENSE ships (the copy is MIT, attribution required)')
 _se = 'core/skills/simple-english/SKILL.md'

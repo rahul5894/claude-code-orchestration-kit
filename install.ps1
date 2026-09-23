@@ -34,6 +34,9 @@ $pol = Get-Content $pj -Raw | ConvertFrom-Json -AsHashtable
 $RETIRED_AGENTS = @('scout')         # dropped in v2: the Explore shadow does locating
 $RETIRED_SKILLS = @()                # skill folders a later version renames or drops
 $RETIRED_OUTPUT_STYLES = @()         # output styles a later version renames or drops
+# settings.json env keys a later version drops, with the value the kit wrote. Merge-Into only
+# adds, so without this a dropped key lives on forever; a user's own value is left alone.
+$RETIRED_ENV = @{ 'PONYTAIL_SUBAGENT_MATCHER' = '^(builder|debugger)$' }  # ponytail gone, bench E
 New-Item -ItemType Directory -Force (Join-Path $dest 'agents'), (Join-Path $dest 'commands'),
     (Join-Path $dest 'skills'), (Join-Path $dest 'output-styles') | Out-Null
 Copy-Item (Join-Path $kit 'core\agents\*.md')        (Join-Path $dest 'agents')        -Force
@@ -149,6 +152,13 @@ function Register-Hook($set, $ev, $matcher, $file, $label) {
     }
 }
 Merge-Into $set $frag
+if ($set['env'] -is [Collections.IDictionary]) {
+    foreach ($k in $RETIRED_ENV.Keys) {
+        if ($set['env'].Contains($k) -and $set['env'][$k] -eq $RETIRED_ENV[$k]) {
+            $set['env'].Remove($k); "env:      removed retired '$k'"
+        }
+    }
+}
 
 # 3b. core/plugins.json `disable`: a plugin whose hooks fire in every session cannot be
 # half-disabled - Claude Code has no per-plugin hook switch - so the whole plugin goes off and

@@ -1,10 +1,10 @@
 {
   "$comment": "Plugins whose hooks run in every session. install.ps1 applies `disable`; verify_live.py section C6 fails on any enabled plugin with a SessionStart, UserPromptSubmit or Stop hook that is in neither map.",
   "disable": {
+    "ponytail@ponytail": "bench E 2026-09-24: its SessionStart rules (shortest diff, YAGNI applies to tests) cut the arm's test code ~50% and its DB hardening; with it off kit-lean matched plain Opus on both. User removed it.",
     "simple-english@simple-english": "SessionStart injects ~700 tokens of reply rules, PostToolUse lints every .md edit, Stop nags 'five sentences or fewer' after replies; all three fight the orchestrator's report rules. The skill ships in core/skills/simple-english as slash-only."
   },
   "allow": {
-    "ponytail@ponytail": "integrated: PONYTAIL_SUBAGENT_MATCHER scopes its SubagentStart hook to builder|debugger",
     "remember@claude-plugins-official": "memory hooks only, no reply-style rules",
     "watch@claude-video": "SessionStart prints a one-line setup notice",
     "last30days@last30days-skill": "SessionStart prints a one-line source notice"

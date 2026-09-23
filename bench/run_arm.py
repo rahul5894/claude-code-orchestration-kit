@@ -73,7 +73,10 @@ def build_command(args, prompt, clone):
         os.makedirs(dest, exist_ok=True)
         shutil.copy(args.style_file, dest)
         style = style_name(args.style_file)
-    cmd += ["--settings", json.dumps({"outputStyle": style})]
+    settings = {"outputStyle": style}
+    if args.no_plugin:  # separate the kit from the user's other plugins (e.g. ponytail)
+        settings["enabledPlugins"] = {p: False for p in args.no_plugin}
+    cmd += ["--settings", json.dumps(settings)]
     return cmd + (["--effort", args.effort] if args.effort else [])
 
 
@@ -86,12 +89,16 @@ def main():
     parser.add_argument("--style-file", help="an output style to install in the clone (lean/full)")
     parser.add_argument("--claude-md", help="replace the fixture's CLAUDE.md (a gate variant); "
                         "{VENV_PY} in it becomes bench/.venv's python")
+    parser.add_argument("--no-plugin", action="append", default=[],
+                        help="disable a plugin for this arm (lean/full), e.g. ponytail@ponytail")
     parser.add_argument("--tag", default="run")
     parser.add_argument("--timeout", type=int, default=2700)
     parser.add_argument("--cleanup", action="store_true", help="delete the clone afterwards")
     args = parser.parse_args()
     if args.style_file and args.arm == "plain":
         parser.error("--style-file needs --arm lean or full (plain runs with --safe-mode)")
+    if args.no_plugin and args.arm == "plain":
+        parser.error("--no-plugin needs --arm lean or full (plain's --safe-mode loads no plugin)")
     with open(os.path.join(HERE, "tickets", f"{args.ticket}.txt"), encoding="utf-8") as f:
         prompt = f.read().strip()
     # score() needs it; found only after the paid run, the run is spent and no record written
@@ -136,6 +143,7 @@ def main():
         "model": args.model,
         "effort": args.effort or ("high" if args.arm == "plain" else None),
         "claude_md": args.claude_md,
+        "no_plugin": args.no_plugin,
         "wall_s": wall_s,
         "timed_out": timed_out,
         "returncode": returncode,

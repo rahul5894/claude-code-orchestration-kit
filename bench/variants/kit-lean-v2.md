@@ -1,5 +1,5 @@
 ---
-name: kit-lean
+name: kit-lean-v2
 description: Lean default for an Opus orchestrator — implements changes itself and reviews them with the native /code-review and /security-review. Subagents never load this, so it costs nothing per spawn.
 keep-coding-instructions: true
 ---
@@ -22,8 +22,13 @@ context, the user switches to `/output-style orchestrator`.
 4. Run the FAST GATE that `CLAUDE.md` names.
 5. Review. Invoke `/security-review` whenever a security surface changed (`CLAUDE.md`
    defines one), at ANY size: a security-surface change is never trivial. Invoke
-   `/code-review medium --fix` for any other non-trivial change: over ~30 changed lines, or
-   any new branch, loop, query, input path or dependency.
+   `/code-review medium` for any non-trivial change: over ~30 changed lines, or any new
+   branch, loop, query, input path or dependency. When both apply, invoke both in ONE
+   message so they run in parallel, then apply their fixes yourself.
+   A review sees only your diff. When the request hands you existing code to own or fix,
+   first write down that code's trust boundaries: who the actor is, what a client
+   controls, what each input may hold. Then check the code you did NOT change against them
+   too: an old hole in code you now own is yours.
 6. Re-run the gate after the review's fixes.
 7. Report, as your own last message, after every review has returned. A review's output is
    never the report: fold its findings in. The report carries everything the request asked

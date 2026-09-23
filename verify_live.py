@@ -185,12 +185,21 @@ def install_into(setup):
     return r, d, tmp
 
 
+# The allowed plugin is read from the policy, so this keeps testing "an allowed one" whatever
+# plugins.json lists; the env pin is one install.ps1 retired ($RETIRED_ENV, value as written).
+_ALLOWED = next(iter(json.loads(pathlib.Path('core/plugins.json').read_text(encoding='utf-8'))['allow']))
+_RETIRED_PIN = ('PONYTAIL_SUBAGENT_MATCHER', '^(builder|debugger)$')
+
+
 def _policy_applied(d):
     """Step 3b's own probe: without a state that HAS an enabledPlugins map, the plugin policy
-    loop never executes in any of these runs and could be dead code."""
-    _p = json.loads((d / 'settings.json').read_text(encoding='utf-8')).get('enabledPlugins') or {}
-    return ((_p.get('simple-english@simple-english') is False
-             and _p.get('ponytail@ponytail') is True), str(_p)[:200])
+    loop never executes in any of these runs and could be dead code. Also: the retired env
+    pin is gone and the user's own env key stays."""
+    _s = json.loads((d / 'settings.json').read_text(encoding='utf-8'))
+    _p, _e = _s.get('enabledPlugins') or {}, _s.get('env') or {}
+    return ((_p.get('simple-english@simple-english') is False and _p.get(_ALLOWED) is True
+             and _RETIRED_PIN[0] not in _e and _e.get('KIT_PROBE_OWN') == '1'),
+            str(_p)[:150] + ' env=' + str(sorted(_e))[:120])
 
 
 for _label, _setup, _extra, _verify in [
@@ -204,7 +213,8 @@ for _label, _setup, _extra, _verify in [
          'not json', None),
         ('a settings.json that enables a disabled plugin',
          lambda d: (d / 'settings.json').write_text(
-             '{"enabledPlugins": {"simple-english@simple-english": true, "ponytail@ponytail": true}}',
+             json.dumps({'enabledPlugins': {'simple-english@simple-english': True, _ALLOWED: True},
+                         'env': {_RETIRED_PIN[0]: _RETIRED_PIN[1], 'KIT_PROBE_OWN': '1'}}),
              encoding='utf-8'),
          None, _policy_applied)]:
     _r, _d, _tmp = install_into(_setup)
@@ -220,7 +230,7 @@ for _label, _setup, _extra, _verify in [
             _cond, _detail = _verify(_d)
         except (OSError, ValueError, AttributeError) as e:
             _cond, _detail = False, f'{type(e).__name__}: {e}'
-        ok(_cond, 'installer disables a policy-disabled plugin and leaves an allowed one on',
+        ok(_cond, 'installer disables a policy-disabled plugin, leaves an allowed one on, drops a retired env pin',
            _detail)
     shutil.rmtree(_tmp, ignore_errors=True)
 

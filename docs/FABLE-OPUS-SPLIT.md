@@ -74,8 +74,8 @@ while you are on Fable, and on Opus once Fable quota is gone. Nothing else inher
   are disabled; `verify_live.py` section C6 names any new one that is neither. A plugin
   that wants to change how replies read (simple-english) is shipped as a slash-only skill
   instead, so it runs only when you call it.
-- Ponytail stays: its lazy-code rules are scoped to `builder` and `debugger` through
-  `PONYTAIL_SUBAGENT_MATCHER`, and to the main session in full.
+- Ponytail is gone (2026-09-24): in bench E its rules halved the tests an arm wrote and
+  dropped its DB hardening; `core/plugins.json` disables it if it is ever reinstalled.
 - qartez is the code search for every agent; `Grep`/`Glob` are denied everywhere. `OUT OF
   INDEX` means "grep the tree", never a reason.
 - md-guard keeps big markdown to windowed reads, and keeps `refuter` and `debugger` from writing.
