@@ -139,6 +139,57 @@ extra.append(("b0" not in context(o) and "b1 " not in context(o)
 o = run("stdin", BUCKETS, source="compact")
 extra.append(("live-one" in context(o) and "systemMessage" not in o,
               "source compact -> additionalContext, no systemMessage"))
+# After a compaction the newest open STATE.md rides along; startup never carries it.
+for slug, body in (("live-one", "Next: LIVE-CODEWORD\n"), ("old-one", "DONE-CODEWORD\n")):
+    os.makedirs(os.path.join(BUCKETS, ".claude", "scratch", slug), exist_ok=True)
+    with open(os.path.join(BUCKETS, ".claude", "scratch", slug, "STATE.md"), "w", encoding="utf-8") as f:
+        f.write(body)
+o = run("stdin", BUCKETS, source="compact")
+extra.append(("LIVE-CODEWORD" in context(o) and "DONE-CODEWORD" not in context(o),
+              "source compact -> the open bucket's STATE.md is in the context, a DONE one's is not"))
+o = run("stdin", BUCKETS)
+extra.append(("LIVE-CODEWORD" not in context(o), "source startup -> no STATE.md content"))
+for i, slug in enumerate(("b3", "b7")):
+    os.makedirs(os.path.join(MANY, ".claude", "scratch", slug))
+    p = os.path.join(MANY, ".claude", "scratch", slug, "STATE.md")
+    with open(p, "w", encoding="utf-8") as f:
+        f.write(f"STATE-OF-{slug}\n" + ("z" * 9000 if slug == "b7" else ""))
+    os.utime(p, (1_700_000_000 + i, 1_700_000_000 + i))
+o = run("stdin", MANY, source="compact")
+extra.append(("STATE-OF-b7" in context(o) and "STATE-OF-b3" not in context(o)
+              and "z" * 5900 in context(o) and "z" * 6001 not in context(o) and "cut at 6000" in context(o),
+              "two open STATE.md -> only the newest, cut at 6000 bytes with a marker"))
+# The newest "STATE.md" is a directory: the next newest readable one is used instead.
+os.makedirs(os.path.join(MANY, ".claude", "scratch", "b9", "STATE.md"))
+o = run("stdin", MANY, source="compact")
+extra.append(("STATE-OF-b7" in context(o) and "hookSpecificOutput" in o,
+              "newest STATE.md is a directory -> falls back to the older readable one"))
+# A cut in the middle of a UTF-8 character must not break the JSON or silence the hook.
+CUT = bucket_project("cut", True, [("u8", "OPEN", "x")])
+os.makedirs(os.path.join(CUT, ".claude", "scratch", "u8"))
+with open(os.path.join(CUT, ".claude", "scratch", "u8", "STATE.md"), "wb") as f:
+    f.write(b"a" * 5999 + "é".encode("utf-8") + b"tail\xff\xfe")
+o = run("stdin", CUT, source="compact")
+extra.append(("_bad" not in o and "a" * 5999 in context(o) and "u8 [OPEN]" in context(o),
+              "multi-byte char cut at the cap, invalid bytes -> valid JSON, text kept"))
+# kit-off in the project silences the new path too.
+open(os.path.join(CUT, ".claude", "kit-off"), "w").close()
+o = run("stdin", CUT, source="compact")
+extra.append(("a" * 100 not in context(o), "kit-off + compact -> no STATE.md content"))
+# A cloned repo's STATE.md as a symlink to a file outside the scratch dir is never read.
+LINK = bucket_project("link", True, [("ln", "OPEN", "x")])
+os.makedirs(os.path.join(LINK, ".claude", "scratch", "ln"))
+secret = os.path.join(tmp, "secret.txt")
+with open(secret, "w", encoding="utf-8") as f:
+    f.write("SECRET-OUTSIDE-SCRATCH\n")
+try:
+    os.symlink(secret, os.path.join(LINK, ".claude", "scratch", "ln", "STATE.md"))
+except OSError:
+    print("SKIP symlinked STATE.md (this machine cannot create symlinks); total drops by one")
+else:
+    o = run("stdin", LINK, source="compact")
+    extra.append(("SECRET-OUTSIDE-SCRATCH" not in context(o) and "ln [OPEN]" in context(o),
+                  "STATE.md symlinked outside the scratch dir -> not read, bucket still listed"))
 # Launched in a parent dir, then cd into the repo: the launch root has no scratch, cwd does.
 o = run("stdin", BUCKETS, project_dir=WITHOUT.replace(os.sep, "/"))
 extra.append(("live-one" in context(o),

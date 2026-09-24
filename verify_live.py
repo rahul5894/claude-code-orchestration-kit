@@ -612,8 +612,8 @@ for _st in ('kit_off self-check: 11/11 passed', 'kit-switch self-check: 12/12 pa
     ok(_st in r2.stdout, _st, [l for l in r2.stdout.splitlines() if _st.split(':')[0] in l])
 # The "fully global" pieces: the SessionStart notice and the two files /kit-init reads from
 # ~/.claude/kit. Without them a new project starts with no gate and nothing says so.
-ok('kit-session-start self-check: 18/18 passed' in r2.stdout,
-   'kit-session-start self-check 18/18',
+ok('kit-session-start self-check: 25/25 passed' in r2.stdout,
+   'kit-session-start self-check 25/25',
    [l for l in r2.stdout.splitlines() if 'kit-session-start' in l])
 for _kf in ('project-template.md', 'audit_project.py', 'scan_project.py', 'kit_switch.py'):
     ok((HOME / 'kit' / _kf).exists(), f'~/.claude/kit/{_kf} published for /kit-init')
