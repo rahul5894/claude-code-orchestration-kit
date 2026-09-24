@@ -608,7 +608,7 @@ ok(_rules.is_file() and norm(_rules.read_text(encoding='utf-8')).endswith(
 ok('<!-- orchestration-kit' not in ((HOME / 'CLAUDE.md').read_text(encoding='utf-8')
                                     if (HOME / 'CLAUDE.md').is_file() else ''),
    '~/.claude/CLAUDE.md holds no old kit block (it would load twice)')
-for _st in ('kit_off self-check: 11/11 passed', 'kit-switch self-check: 11/11 passed'):
+for _st in ('kit_off self-check: 11/11 passed', 'kit-switch self-check: 12/12 passed'):
     ok(_st in r2.stdout, _st, [l for l in r2.stdout.splitlines() if _st.split(':')[0] in l])
 # The "fully global" pieces: the SessionStart notice and the two files /kit-init reads from
 # ~/.claude/kit. Without them a new project starts with no gate and nothing says so.
