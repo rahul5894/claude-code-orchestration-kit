@@ -159,6 +159,11 @@ if ($set['env'] -is [Collections.IDictionary]) {
         }
     }
 }
+# kit-lean was the installed style until kit-modes D013; the fragment no longer sets one, so
+# a user's own style is never touched. Only the value the kit itself wrote is taken back.
+if ($set['outputStyle'] -eq 'kit-lean') {
+    $set.Remove('outputStyle'); "outputStyle: removed the retired kit default 'kit-lean'"
+}
 
 # 3b. core/plugins.json `disable`: a plugin whose hooks fire in every session cannot be
 # half-disabled - Claude Code has no per-plugin hook switch - so the whole plugin goes off and
@@ -276,7 +281,7 @@ else {
     else { "scan-project self-check: $t5" }
 }
 
-"done. RESTART Claude Code: agents and output styles are read at startup, so the 'kit-lean'"
-"      style (the main session's own rules) only applies to a new session. Then /output-style"
-"      confirms it is active, /status confirms the settings file loaded, and /context shows"
+"done. RESTART Claude Code: agents and output styles are read at startup, so they only"
+"      apply to a new session. The kit sets no output style; /output-style kit-lean or"
+"      orchestrator opts in. /status confirms the settings file loaded, and /context shows"
 "      what the shared CLAUDE.md now costs per spawn."

@@ -138,7 +138,8 @@ def _selftest():
     import tempfile
     fails = []
     base = tempfile.mkdtemp(prefix="kit-switch-")
-    # The machine's own ~/.claude/settings.json never takes part: installed means kit-lean.
+    # The machine's own ~/.claude/settings.json never takes part. The fixture is a user who
+    # opted into kit-lean at user level; the shipped state (no user style) is tested last.
     USER_SETTINGS = os.path.join(base, "user-settings.json")
     with open(USER_SETTINGS, "w", encoding="utf-8") as f:
         f.write('{"outputStyle": "kit-lean"}')
@@ -213,8 +214,14 @@ def _selftest():
         ok(False, "a failed settings write: off raises")
     except (OSError, SystemExit):
         ok(not os.path.exists(marker), "a failed settings write takes the record back with it")
+    # The shipped state since kit-modes D013: no user-level style, so off must not write one.
+    with open(USER_SETTINGS, "w", encoding="utf-8") as f:
+        f.write("{}")
+    _, marker, mid, end = rt(None)
+    ok(mid == {"claudeMdExcludes": [EXCLUDE]} and end == {} and not os.path.exists(marker),
+       "no user style (as installed): off excludes the rules only, on leaves {}")
     shutil.rmtree(base, ignore_errors=True)
-    total = 11
+    total = 12
     print(f"{total - len(fails)}/{total} passed")
     return 1 if fails else 0
 

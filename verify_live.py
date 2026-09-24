@@ -382,12 +382,10 @@ if _doc:
        'no project-local qartez skill shadowing the global one')
 
 print("\n=== C5. no project silently switches the kit off ===")
-# A project-local `outputStyle` BEATS the user-level one, so one line in one repo's
-# .claude/settings.local.json disables the whole orchestrator there - roster, delegation
-# threshold, model pinning - with nothing anywhere reporting it. Proven 2026-09-19: in the
-# one repo that still had it, the session transcript showed "Concise style loaded: YES,
-# orchestrator style loaded: NO". audit_project.py catches it per repo; this catches it
-# across every repo at once, which is the only way you would notice.
+# Project settings BEAT user settings, so one env key in one repo's .claude/settings*.json
+# silently defeats the kit's pins there, with nothing anywhere reporting it. audit_project.py
+# catches it per repo; this catches it across every repo at once. (Until kit-modes D013 a
+# project-local outputStyle was checked too: it switched the then-installed kit style off.)
 KILLERS = ('CLAUDE_CODE_EFFORT_LEVEL', 'CLAUDE_CODE_SUBAGENT_MODEL_FORCE',
            'CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS', 'CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH')
 try:
@@ -407,10 +405,8 @@ for _proj in sorted(pathlib.Path(r'D:\Projects').glob('*')) if pathlib.Path(r'D:
         except ValueError:
             _offenders.append(f'{_proj.name}/{_rel}: unparseable')
             continue
-        # .claude/kit-off = switched off on purpose by /kit-off: not silent, so not an offender.
-        if (_d.get('outputStyle') not in (None, 'kit-lean', 'orchestrator')
-                and not (_proj / '.claude' / 'kit-off').is_file()):
-            _offenders.append(f'{_proj.name}/{_rel}: outputStyle={_d["outputStyle"]!r} (kit OFF there)')
+        # A project's own outputStyle is no longer checked: since kit-modes D013 the kit sets no
+        # style, so a local one switches nothing of the kit off.
         for _k in KILLERS:
             if _k in (_d.get('env') or {}):
                 _offenders.append(f'{_proj.name}/{_rel}: env.{_k}={_d["env"][_k]!r}')
@@ -543,13 +539,15 @@ except (OSError, ValueError) as e:
     s = {}
     ok(False, 'settings.json exists and parses', f'{type(e).__name__}: {e}')
 for label, got, want in [
-        ('outputStyle', s.get('outputStyle'), 'kit-lean'),
         ('fable effort', s.get('modelSettings', {}).get('claude-fable-5-1', {}).get('effortLevel'), 'high'),
         ('opus effort', s.get('modelSettings', {}).get('claude-opus-5-5', {}).get('effortLevel'), 'high'),
         ('subagent cache TTL', s.get('subagentPromptCacheTtl'), '1h'),
         ('agent teams off', s.get('env', {}).get('CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS'), '0'),
         ('spawn depth', s.get('env', {}).get('CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH'), '1')]:
     ok(got == want, f"{label} = {want}", str(got))
+# D013: the kit sets no style; a user-level kit-lean is the retired default install.ps1 removes.
+ok(s.get('outputStyle') != 'kit-lean', 'no leftover user-level kit-lean style (opt-in per project)',
+   f"{s.get('outputStyle')!r} - run install.ps1")
 # Absent is fine: the plugin was never installed on this machine, and the installer only
 # writes `false` for ids the user's settings already name. Only `true` is the failure.
 ok((s.get('enabledPlugins') or {}).get('simple-english@simple-english') is not True,

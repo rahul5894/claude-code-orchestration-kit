@@ -90,8 +90,8 @@ every kit change. A second run prints `unchanged` and `already registered`.
 Two modes. The installer copies both output styles into `~/.claude/output-styles/`:
 `orchestrator` (the full delegate-and-review loop, for a Fable orchestrator or large
 multi-part work) and `kit-lean` (an Opus main session that implements itself and reviews
-with the native `/code-review` and `/security-review`). `settings.json` activates
-`kit-lean`, the default. Switch with `/output-style kit-lean` or
+with the native `/code-review` and `/security-review`). `settings.json` gets no output style:
+Claude Code's own default stays (both kit modes are opt-in). Switch with `/output-style kit-lean` or
 `/output-style orchestrator`; hooks and agents are the same in both.
 
 Checks:
@@ -194,9 +194,8 @@ with a measured FAST GATE row**, and the kit now creates that itself:
 
 
 **Never add to a project what the kit already provides globally.** `audit_project.py`
-flags it: a `## Qartez MCP` section, a restated web-tool order, an `outputStyle` in
-`.claude/settings.local.json` (local beats user — it switched the orchestrator off in one
-repo for weeks), a `.mcp.json` entry for a server already at user scope, and a
+flags it: a `## Qartez MCP` section, a restated web-tool order,
+a `.mcp.json` entry for a server already at user scope, and a
 `.claude/skills/<name>` that shadows a global skill of the same name (a June copy of
 `firecrawl` was silently beating the August global one). Each is re-paid by every subagent
 on every spawn and drifts from the global text.

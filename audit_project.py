@@ -161,11 +161,8 @@ for rel in ('.claude/settings.json', '.claude/settings.local.json'):
     d = load_json(root / rel)
     if d is None:
         continue
-    # /kit-off switched it off on purpose: its marker is the record that the style is deliberate.
-    ok(d.get('outputStyle') in (None, 'kit-lean', 'orchestrator')
-       or (root / '.claude' / 'kit-off').is_file(),
-       f'{rel}: no non-kit outputStyle override (it would switch the kit off here; kit-lean and orchestrator are the two kit modes)',
-       str(d.get('outputStyle')))
+    # No outputStyle check since kit-modes D013: the kit sets no style, so a local one (e.g.
+    # /output-style kit-lean) switches nothing of the kit off.
     ok('worktree' not in d, f'{rel}: no worktree key (the kit sets it globally)')
     env = d.get('env') or {}
     ok(not any(k in env for k in ('CLAUDE_CODE_EFFORT_LEVEL', 'CLAUDE_CODE_SUBAGENT_MODEL_FORCE',

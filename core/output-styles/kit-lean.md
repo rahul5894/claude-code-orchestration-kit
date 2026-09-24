@@ -1,6 +1,6 @@
 ---
 name: kit-lean
-description: Lean default for an Opus orchestrator — implements changes itself and reviews them with the native /code-review and /security-review. Subagents never load this, so it costs nothing per spawn.
+description: Lean opt-in mode for an Opus orchestrator — implements changes itself and reviews them with the native /code-review and /security-review. Subagents never load this, so it costs nothing per spawn.
 keep-coding-instructions: true
 ---
 

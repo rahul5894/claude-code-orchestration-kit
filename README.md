@@ -53,7 +53,7 @@ session delegates to builders and reviewers, for a Fable orchestrator or large m
 work. `kit-lean` is for an Opus orchestrator: the main session implements changes itself,
 then reviews them with the bundled `/code-review` and `/security-review`. Switch with
 `/output-style kit-lean` or `/output-style orchestrator`. Hooks, agents and `CLAUDE.md`
-are shared by both. The installed default is `kit-lean` (bench 2026-09-23: same spec score as full at ~60% of its cost, better robustness than plain; see bench/README.md).
+are shared by both. Both are opt-in: the kit sets no output style, because bench E wave G (2026-09-24) showed plain Opus 5.5 xhigh tying kit-lean on every hidden test, 7% faster and 17% cheaper (bench/README.md). The kit keeps its hooks, rules and session handoff (`/task`, `/continue`).
 
 ## Install
 

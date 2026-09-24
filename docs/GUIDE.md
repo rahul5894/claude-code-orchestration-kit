@@ -17,12 +17,14 @@ Your own `~/.claude/CLAUDE.md` is not touched.
 
 | Mode | What it does | How to switch |
 |---|---|---|
-| `kit-lean` (default) | Claude writes the code itself, runs the gate, then `/code-review` (and `/security-review` for risky files) | `/output-style kit-lean` |
+| `default` (after install) | Plain Claude Code: no review loop; kit hooks, rules and `/task` + `/continue` still apply | `/output-style default` |
+| `kit-lean` | Claude writes the code itself, runs the gate, then `/code-review` (and `/security-review` for risky files) | `/output-style kit-lean` |
 | `orchestrator` | Full loop: builder agent writes, refuter + verifier review, Fable/Opus split | `/output-style orchestrator` |
 
-- `kit-lean` is on in every project after install. `/kit-init` does not change it.
+- The kit sets no style, so `default` is on after install; `/kit-init` does not change it. Bench E wave G:
+  plain Opus 5.5 xhigh tied `kit-lean` on every hidden test, 7% faster, 17% cheaper.
 - `/output-style` changes the mode for THIS project only (it writes `.claude/settings.local.json`).
-- Use `orchestrator` for big or multi-day work; `kit-lean` for everything else.
+- `orchestrator` for big or multi-day work; `kit-lean` when you want the review step too.
 
 ## 3. A new project
 

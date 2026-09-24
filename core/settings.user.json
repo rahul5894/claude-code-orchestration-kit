@@ -8,7 +8,6 @@
       "effortLevel": "high"
     }
   },
-  "outputStyle": "kit-lean",
   "subagentPromptCacheTtl": "1h",
   "worktree": {
     "baseRef": "head"

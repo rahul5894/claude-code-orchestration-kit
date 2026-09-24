@@ -723,9 +723,10 @@ chk('CLAUDE_CODE_SUBAGENT_MODEL_FORCE' not in env, 'env: _FORCE absent (would er
 # Subagent requests sit in the 5-minute cache bucket by default, even on a subscription.
 chk(su.get('subagentPromptCacheTtl') == '1h', 'settings: subagentPromptCacheTtl 1h',
     str(su.get('subagentPromptCacheTtl')))
-# The split only works if the style is actually switched on. Installed-but-inactive was a
-# real defect once: the orchestrator's own rules were sitting on disk doing nothing.
-chk(su.get('outputStyle') == 'kit-lean', 'settings: outputStyle activates the lean default style',
+# Bench E wave G: plain Opus 5.5 xhigh tied kit-lean on every hidden test, 7% faster, 17%
+# cheaper -> the kit styles are opt-in (kit-modes D013). The fragment sets no style, so an
+# install never overwrites the user's own; install.ps1 takes back only a leftover 'kit-lean'.
+chk('outputStyle' not in su, 'settings: no outputStyle (kit styles are opt-in)',
     str(su.get('outputStyle')))
 # The default branches a worktree from the default branch, hiding local work from the agent.
 chk(su.get('worktree', {}).get('baseRef') == 'head', 'settings: worktree.baseRef head',

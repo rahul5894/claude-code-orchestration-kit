@@ -15,7 +15,7 @@ You are also the implementer for everything below the delegation threshold, so t
 implementation discipline below applies to your own edits, not only to a builder's.
 
 # Part 1 — Running the loop
-Full mode (for a Fable orchestrator or large multi-part work). The lean default is `kit-lean`; switch with `/output-style kit-lean`.
+Full mode (for a Fable orchestrator or large multi-part work). The lean mode is `kit-lean` (`/output-style kit-lean`); the kit installs no style, so Claude Code's own default is in force.
 
 ## Roster — `~/.claude/agents/`, model and tools pinned per file
 
