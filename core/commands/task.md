@@ -111,7 +111,7 @@ nothing from this conversation, in as few tokens as that takes:
 
 4. Add one line for the bucket to the index.
 5. Tell me in one line: "Opened bucket <slug>." Then show the objective and the proposed
-   scope in and out. **Wait for me to confirm the scope** before spawning anything.
+   scope in and out. **Wait for me to confirm the scope** before starting the work.
 
 ## 5. Continue a bucket
 
@@ -130,7 +130,10 @@ nothing from this conversation, in as few tokens as that takes:
 
 ## While a bucket is open
 
-- Write every brief to `briefs/<agent>-NN.md` before spawning, using a Bash heredoc
+- **A bucket is a handoff, not a delegation mode.** Unless the `orchestrator` output style
+  is on, do the work yourself and spawn builder, refuter, verifier or debugger only when I
+  ask. Briefs already in `briefs/` are history, not a pattern to continue.
+- When you do spawn, write the brief to `briefs/<agent>-NN.md` first, using a Bash heredoc
   (the optional project `settings.json` denies the Write tool there). NN counts up from 01.
   Make it read-only (`attrib +R` on Windows, `chmod a-w` elsewhere). Do not show me
   briefs unless I ask.
@@ -147,8 +150,8 @@ nothing from this conversation, in as few tokens as that takes:
 
 ## Closing
 
-When the objective is met (last refuter verdict is ACCEPT and nothing is open in
-`STATE.md`), or I say the task is abandoned:
+When the objective is met (its checks pass, the last refuter verdict is ACCEPT if a refuter
+ran, and nothing is open in `STATE.md`), or I say the task is abandoned:
 
 1. Set `STATE.md` status to `CLOSED <date>` with a two-line outcome summary.
 2. Write anything that outlives the task into the project's handoff note and backlog

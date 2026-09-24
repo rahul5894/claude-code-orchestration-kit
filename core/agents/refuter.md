@@ -1,6 +1,6 @@
 ---
 name: refuter
-description: Finds defects in a completed change, ONCE per change, covering correctness AND security in the same pass. Reads the diff and the gate output it was given — never the builder's report, never the gate itself. Returns every candidate with a nameable failure scenario; the verifier decides which are real.
+description: Finds defects in a completed change, ONCE per change, covering correctness AND security in the same pass. Reads the diff and the gate output it was given — never the builder's report, never the gate itself. Returns every candidate with a nameable failure scenario; the verifier decides which are real. Spawn it ONLY under the `orchestrator` output style or when the user asks for a refuter.
 model: opus
 effort: high
 experimental:

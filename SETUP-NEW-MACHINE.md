@@ -92,7 +92,8 @@ Two modes. The installer copies both output styles into `~/.claude/output-styles
 multi-part work) and `kit-lean` (an Opus main session that implements itself and reviews
 with the native `/code-review` and `/security-review`). `settings.json` gets no output style:
 Claude Code's own default stays (both kit modes are opt-in). Switch with `/output-style kit-lean` or
-`/output-style orchestrator`; hooks and agents are the same in both.
+`/output-style orchestrator`; hooks and agents are the same in both. With no style set,
+builder, refuter, verifier and debugger stay installed but are spawned only when you ask.
 
 Checks:
 

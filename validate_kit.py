@@ -959,6 +959,16 @@ chk('User said' in _kc and '/continue' in _kc,
     'kit-context asks for the User said section and points the user at /continue')
 chk('`task` skill' in _ct and '$ARGUMENTS' in _ct,
     'core/commands/continue.md resumes through the task skill, slug optional')
+# No style set = plain Opus + hooks + handoff (2026-09-24). An agent description is shown to
+# the main session in every mode, so "Use for every change" there made a styleless session
+# delegate; so did a bucket's old briefs read as a pattern by /continue.
+for _a in ('builder', 'refuter', 'verifier', 'debugger'):
+    _desc = next((ln for ln in open(f'core/agents/{_a}.md', encoding='utf-8')
+                  if ln.startswith('description:')), '')
+    chk('ONLY under the `orchestrator` output style' in _desc and 'Use for every' not in _desc,
+        f'{_a}: description limits spawning to the orchestrator style or a user request')
+chk('A bucket is a handoff, not a delegation mode' in _tk,
+    'task.md: a bucket does not make a styleless session delegate')
 _un = open('uninstall.ps1', encoding='utf-8').read() if os.path.isfile('uninstall.ps1') else ''
 chk('SupportsShouldProcess' in _un and "rules\\orchestration-kit.md" in _un
     and 'Nothing was changed' in _un,

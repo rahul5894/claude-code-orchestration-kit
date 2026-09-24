@@ -17,7 +17,7 @@ Your own `~/.claude/CLAUDE.md` is not touched.
 
 | Mode | What it does | How to switch |
 |---|---|---|
-| `default` (after install) | Plain Claude Code: no review loop; kit hooks, rules and `/task` + `/continue` still apply | `/output-style default` |
+| `default` (after install) | Plain Claude Code: Claude writes the code itself, no builder or refuter unless you ask; kit hooks, guards, rules and `/task` + `/continue` still apply | `/output-style default` |
 | `kit-lean` | Claude writes the code itself, runs the gate, then `/code-review` (and `/security-review` for risky files) | `/output-style kit-lean` |
 | `orchestrator` | Full loop: builder agent writes, refuter + verifier review, Fable/Opus split | `/output-style orchestrator` |
 

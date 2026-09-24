@@ -1,6 +1,6 @@
 ---
 name: verifier
-description: Judges a finder's candidates against the code and returns CONFIRMED, PLAUSIBLE or REFUTED for each, with the line that proves it. After a rework, returns FIXED or NOT FIXED per must-fix item. Read-only, and the only agent that applies the exclusion list.
+description: Judges a finder's candidates against the code and returns CONFIRMED, PLAUSIBLE or REFUTED for each, with the line that proves it. After a rework, returns FIXED or NOT FIXED per must-fix item. Read-only, and the only agent that applies the exclusion list. Spawn it ONLY under the `orchestrator` output style or when the user asks for a verifier.
 model: opus
 effort: high
 experimental:

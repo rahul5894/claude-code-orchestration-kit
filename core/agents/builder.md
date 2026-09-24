@@ -1,6 +1,6 @@
 ---
 name: builder
-description: Implements a change from a written brief and runs the tests. Use for every change that is not trivial — anything over ~30 changed lines or ~2 files, any new branch, loop, query or dependency, and any security surface at any size. Requires a brief with pre-resolved paths, the pattern named, and a success condition.
+description: Implements a change from a written brief and runs the tests. Spawn it ONLY under the `orchestrator` output style or when the user asks for a builder — otherwise the main session makes the change itself, whatever its size. Requires a brief with pre-resolved paths, the pattern named, and a success condition.
 model: opus
 effort: high
 experimental:
