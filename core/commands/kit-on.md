@@ -8,4 +8,5 @@ Run exactly `python ~/.claude/kit/kit_switch.py on "<root>"` and paste its outpu
 
 It removes `.claude/kit-off` and takes back only the `settings.local.json` keys the off switch
 added, restoring a style it replaced. If it exits non-zero, show its message and stop.
-Then tell the user: restart Claude Code here; run `/kit-init` if this project has no `CLAUDE.md`.
+Then tell the user: the hooks are on already and the rules load in the next new chat here; run
+`/kit-init` if this project has no `CLAUDE.md`.

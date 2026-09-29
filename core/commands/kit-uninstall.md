@@ -42,6 +42,6 @@ headless `claude -p` run): stop here and report step 1 - delete nothing.
 ## 4. Report
 
 What was deleted, where the backup is, what was kept. Then:
-- restart Claude Code in this project;
+- the rules drop in the next new chat in this project (the hooks are silent already);
 - `/kit-on` brings the kit back here;
 - to remove the kit from the whole machine: `pwsh -File uninstall.ps1` in the kit checkout.

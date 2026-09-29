@@ -71,7 +71,7 @@ Who does what: [docs/FABLE-OPUS-SPLIT.md](docs/FABLE-OPUS-SPLIT.md) is the one-p
 
 New machine? Follow [SETUP-NEW-MACHINE.md](SETUP-NEW-MACHINE.md) first: prerequisites, the md-guard hook, checks, and the gotchas already found.
 
-Just using it? [docs/GUIDE.md](docs/GUIDE.md) is the one-page version: install, the two modes, `/kit-off` per project, uninstall.
+Just using it? [docs/GUIDE.md](docs/GUIDE.md) is the one-page version: install, the two modes, `/kit-off` per project, uninstall. Every command on one page, with what it does: [COMMANDS.md](COMMANDS.md).
 
 It copies the six agents, the six commands (`/task`, `/continue`, `/kit-init`, `/kit-off`,
 `/kit-on`, `/kit-uninstall`), both output styles, the skills and the hooks (five registered),

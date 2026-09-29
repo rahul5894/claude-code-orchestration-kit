@@ -1,6 +1,7 @@
 # Kit guide — the short version
 
 Plain steps for the orchestration kit. Details live in README.md and SETUP-NEW-MACHINE.md.
+Every command on one page: [COMMANDS.md](../COMMANDS.md).
 
 ## 1. Install (once per machine, and after every kit update)
 
@@ -53,7 +54,8 @@ the project `CLAUDE.md`. Until then, a message at session start reminds you.
 - `/kit-on` - back on, exactly as before.
 - `/kit-uninstall` - removes the kit's files from this project (asks first, can zip your task
   folders), then turns the kit off here for good. `/kit-on` still brings it back.
-- Restart Claude Code in that project after any of these.
+- After any of these, the hooks switch at once; the rules switch in the next new chat in that
+  project. No need to restart VS Code.
 
 ## 7. Remove the kit from the whole machine
 

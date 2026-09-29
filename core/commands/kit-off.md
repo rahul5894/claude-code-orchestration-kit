@@ -18,4 +18,5 @@ turn the kit off in every clone. Nothing is deleted; `/kit-uninstall` is the one
 deletes.
 
 If it exits non-zero, show its message and stop: it changed nothing.
-Then tell the user: restart Claude Code in this project for the rules (and a kit style, if one was on) to drop.
+Then tell the user: the hooks are silent already; the rules (and a kit style, if one was on) drop in
+the next new chat in this project. No need to restart VS Code.

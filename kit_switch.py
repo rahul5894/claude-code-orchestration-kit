@@ -98,7 +98,7 @@ def off(root):
         raise
     print(f"kit OFF in {root}: hooks silent, kit rules excluded, "
           f"style {'default' if did['style'] else 'left as ' + str(style_in_force(root, data))}. "
-          "Restart Claude Code here.")
+          "Hooks are silent now; the rules drop in the next new chat here.")
 
 
 def on(root):
@@ -129,7 +129,7 @@ def on(root):
     if os.path.isfile(sf):
         save(sf, data)
     os.remove(marker)
-    print(f"kit ON in {root}. Restart Claude Code here.")
+    print(f"kit ON in {root}. Hooks are on now; the rules load in the next new chat here.")
 
 
 def _selftest():
