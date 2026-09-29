@@ -43,11 +43,14 @@ FAMILY = re.compile(r"claude-(opus|sonnet|haiku|fable)-(\d+)(?:-(\d{1,2}))?(?![0
 TRUTHY = ("1", "true", "yes", "on")
 REASON = ("orchestration-kit: context is at {pct}% ({used}K of {window}K). Hand off now, before "
           "any new work: rewrite the OPEN bucket's STATE.md as the handoff, by the task skill's "
-          "STATE rules (<= ~60 lines; Next action exact; under User said, every approval, "
-          "preference and open question that lives only in this chat); if no bucket is "
-          "open, open one the /task way and write it there - or, if nothing needs to carry over, skip "
-          "the bucket and just tell the user to /clear. Then tell the user in one line: "
-          "handoff saved - run /clear, then type /continue.")
+          "STATE rules (<= ~60 lines; Next action exact; under User said, the user's own words "
+          "quoted - every approval, preference, way they want results reported, worry and open "
+          "question that lives only in this chat; paths, commands and IDs copied exactly; traps "
+          "as seen, never inferred); if no bucket is open, open one the /task way and write it "
+          "there - or, if nothing needs to carry over, skip the bucket and just tell the user to "
+          "/clear. If work goes on after the handoff (a commit, a push), keep STATE.md current "
+          "before each turn ends. Then tell the user in one line: handoff saved - run /clear, "
+          "then type /continue.")
 # Not "saved": REASON lets the model skip the handoff when nothing carries over (code-review).
 NOTICE = ("Context {pct}% full - handoff written? Next: /clear, then type /continue.")
 

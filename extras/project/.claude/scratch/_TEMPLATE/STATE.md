@@ -30,11 +30,13 @@
 <the single next thing, concrete enough to act on cold>
 
 ## User said
-<!-- every approval, refusal, preference and open question that exists only in the chat,
-     in the user's terms, each with its why in one clause -->
+<!-- the user's own words, quoted: every approval, refusal, preference (also how to report
+     results), worry and open question that exists only in the chat, each with its why in one
+     clause. A worry is a requirement. -->
 
 ## Changed + verified
-<!-- files touched · commit/sha · the check that proved each -->
+<!-- files touched · commit/sha · the check that proved each; a commit made after the
+     handoff updates this before the turn ends -->
 
 ## Dead ends
 <!-- tried · failed · why, so the next session does not retry it -->

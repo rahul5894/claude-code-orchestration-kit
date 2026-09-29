@@ -68,11 +68,11 @@ branch <x> @ <sha>, tree clean|N dirty
 ## Current subtask
 ## Next action
 ## User said
-<!-- decisions, preferences, answers and constraints given only in chat: in no file otherwise -->
+<!-- the user's words, quoted: decisions, preferences (also how to report results), worries, answers, constraints given only in chat -->
 ## Changed + verified
 <!-- files touched · commit/sha · the check that proved each -->
 ## Dead ends
-<!-- tried · failed · why, so the next session does not retry it -->
+<!-- tried · failed · why, so the next session does not retry it; traps: a tool/command seen to break something here, with the evidence -->
 ## Active agents
 | agent | brief | launched | ends when | running/terminal/unknown |
 ## Open questions
@@ -81,14 +81,21 @@ branch <x> @ <sha>, tree clean|N dirty
 STATE.md is the handoff a fresh session resumes from. It must make the next session need
 nothing from this conversation, in as few tokens as that takes:
 - **Only what the next session cannot rebuild.** Never what `git status`/`git diff`, the code
-  or a file already says; point at it instead (`install.ps1:87`, `FINDINGS:23`, `D007`).
-- **What exists only in the chat goes under User said**, in the user's terms: every approval,
-  refusal, preference and pending question, each with its why in one clause. It is the one
+  or a file already says; point at it instead (`install.ps1:87`, `FINDINGS:23`, `D007`), and
+  at any doc that already holds analysis done here, so it is not redone.
+- **What exists only in the chat goes under User said, quoted in the user's own words**: every
+  approval, refusal, preference (how to work and how to report results), worry and pending
+  question, each with its why in one clause. A worry ("must not stall at 95% again") is a
+  requirement. It is the one
   thing no file can give back; a cold-read test found the whys the part most often missing.
-- **No line contradicts another.** A fact that changed is rewritten where it stands; the old
-  one is deleted, never left beside the new one to be guessed between.
-- Fragments, not sentences. `→` for cause, numbers instead of adjectives, exact commands.
-  One fact once: a finding or decision is cited by its line or ID, never restated.
+- **No line contradicts another.** Rewrite from the last STATE.md: a fact that changed is
+  rewritten where it stands; the old one is deleted, never left beside the new one.
+- Fragments, not sentences. `→` for cause, numbers instead of adjectives. Paths, commands,
+  errors, IDs and numbers are copied exactly, in backticks, never shortened or paraphrased.
+  A trap or fix is written as it was seen, never inferred. One fact once: a finding or
+  decision is cited by its line or ID, never restated.
+- **Anything done after the handoff** (a commit, a push, a test run) updates Repo and
+  Changed + verified before the turn ends.
 - Done work that no next step depends on is dropped; FINDINGS, DECISIONS and git keep it.
 - **At most ~60 lines.** Longer means history crept in: move it to FINDINGS.
 - Before `/clear`, check it answers alone: what is the goal · what is done and how was it
