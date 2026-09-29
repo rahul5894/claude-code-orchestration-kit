@@ -39,7 +39,8 @@
      handoff updates this before the turn ends -->
 
 ## Dead ends
-<!-- tried · failed · why, so the next session does not retry it -->
+<!-- tried · failed · why, so the next session does not retry it; traps: a tool/command
+     seen to break something here, with the evidence -->
 
 ## Unreviewed since <sha>
 <!-- one line per small change done without agents: `path — what — why`.

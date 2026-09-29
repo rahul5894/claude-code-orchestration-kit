@@ -1,4 +1,4 @@
-"""SubagentStart injector: a spawned agent gets the DECISIONS.md of every OPEN or BLOCKED bucket.
+"""SubagentStart injector: a spawned agent gets the DECISIONS.md of every open bucket (kit_index.py).
 
 Claude Code feeds SubagentStart hooks a JSON object on stdin (`cwd`, `agent_type`, ...) and
 adds `hookSpecificOutput.additionalContext` to the new agent's context. A decision recorded in
@@ -21,6 +21,7 @@ import sys
 # is not on sys.path, the import fails and the hook exits 1 - which fails open (refuter-02).
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from kit_off import kit_off  # noqa: E402
+from kit_index import open_rows  # noqa: E402
 
 MAX_CHARS = 6000
 LEAD = ("orchestration-kit: decisions already made for the open bucket(s) below. A change "
@@ -30,28 +31,15 @@ CUT = "\n... (truncated {} chars: read the files above for the rest)"
 SLUG_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
 
 
-# A cell boundary is a pipe not escaped as `\|`.
-CELL_RE = re.compile(r"(?<!\\)\|")
-
-
 def open_slugs(index_path):
-    """Slugs whose status cell starts with OPEN or BLOCKED (the rows kit-session-start lists).
-    The header and `|---|` rows fail the same test. `OPEN (blocked)` counts, and a slug written
-    `**bold**` or in backticks still resolves - an INDEX.md is prose, and a formatting flourish
-    must not silently disable the injector."""
-    out = []
-    with open(index_path, encoding="utf-8", errors="replace") as f:
-        for line in f:
-            cells = [c.strip() for c in CELL_RE.split(line.strip().strip("|"))]
-            if len(cells) >= 2 and cells[1].upper().startswith(("OPEN", "BLOCKED")):
-                slug = cells[0].strip("*` ")
-                if slug:
-                    out.append(slug)
-    return out
+    """Slugs of the open rows kit-session-start lists (kit_index.open_rows: table or bullets, any
+    status that is not a closed one). A slug written `**bold**` or in backticks still resolves -
+    an INDEX.md is prose, and a formatting flourish must not silently disable the injector."""
+    return [slug for slug, _, _ in open_rows(index_path)]
 
 
 def sections(scratch):
-    """(relative path, section) per OPEN or BLOCKED bucket whose DECISIONS.md has content."""
+    """(relative path, section) per open bucket whose DECISIONS.md has content."""
     out = []
     root = os.path.realpath(scratch) + os.sep
     for slug in open_slugs(os.path.join(scratch, "INDEX.md")):

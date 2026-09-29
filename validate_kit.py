@@ -230,7 +230,8 @@ for name, cap in [('refuter', 40), ('verifier', 20)]:
 for _p in agentfiles:
     _d, _ = fm(_p)
     _tl = [x.strip() for x in _d.get('tools', '').split(',')]
-    chk('Grep' not in _tl and 'Glob' not in _tl,
+    # no `tools:` key at all means EVERY tool, Grep and Glob included
+    chk('tools' in _d and 'Grep' not in _tl and 'Glob' not in _tl,
         f'{os.path.basename(_p)}: no Grep/Glob (the tool list is the only barrier)',
         str([x for x in _tl if x in ('Grep', 'Glob')]))
 
@@ -253,8 +254,8 @@ shared_txt = open('core/CLAUDE.md', encoding='utf-8').read()
 chk('If you can write' in shared_txt and 'If you cannot' in shared_txt,
     'shared: the FINDINGS.md order is scoped to agents that can actually write')
 _sh = re.sub(r'\s+', ' ', shared_txt)
-chk('not in your list, for **every** path and file type' in _sh,
-    'shared: says Grep/Glob are unavailable everywhere, not just on source')
+chk('never `Grep`/`Glob` on source; kit agents do not hold them at all' in _sh,
+    'shared: code search is qartez, and kit agents hold no Grep/Glob on any path')
 chk('`Read` is *not* guarded, so that rule is yours' in _sh,
     'shared: admits Read is unenforced, so the agent owns that rule')
 # qartez asserts "very likely not defined in this repo" on any miss. Measured: an identifier
@@ -943,7 +944,8 @@ for frag, label in [('kit-session-start.py', 'installer registers the SessionSta
 chk(os.path.isfile('core/hooks/kit_off.py') and os.path.isfile('core/hooks/kit_off_test.py'),
     'core/hooks/kit_off.py and its self-test exist')
 for _h in sorted(glob.glob('core/hooks/*.py')):
-    if _h.endswith('_test.py') or _h.endswith('kit_off.py'):
+    # kit_off.py and kit_index.py are libraries the hooks import, not hooks
+    if _h.endswith('_test.py') or os.path.basename(_h) in ('kit_off.py', 'kit_index.py'):
         continue
     _src = open(_h, encoding='utf-8').read()
     chk('from kit_off import kit_off' in _src and 'kit_off(' in _src,

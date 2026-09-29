@@ -10,6 +10,7 @@ Bash/PowerShell -> deny outright when the payload's agent_type is a read-only
 Exit 0 + JSON on stdout = decision. Any crash = allow (fail open, dev tool).
 Self-check: python md-guard_test.py
 """
+import glob
 import json
 import os
 import re
@@ -46,11 +47,14 @@ MD_PATH = re.compile(r"[^\s\"'|<>]+\.md\b", re.IGNORECASE)
 # The target allows no `;|&<>()$` or quote, so `cat > f;bash <<'EOF'`, `tee >(bash) <<'EOF'`
 # and a second `<<` on the line never match - in each something else runs the body.
 _PATH = r"[\w./\\:~-]+"
+# A write target may also start with a plain `$VAR`/`${VAR}` or be one quoted string (masked to
+# `"___"`): the body still goes to cat/tee's stdin, and the head line is judged as it was.
+_TARGET = r"(?:\$\{?\w+\}?[\w./\\:~-]*|\"_*\"|'_*'|" + _PATH + r")"
 _CD = r"\s*(?:cd\s+" + _PATH + r"\s*&&\s*)?"
 HEREDOC_WRITE_RES = (
-    re.compile(_CD + r"(?:cat\s*>>?\s*" + _PATH + r"|tee\s+(?:-a\s+)?" + _PATH + r")"
+    re.compile(_CD + r"(?:cat\s*>>?\s*" + _TARGET + r"|tee\s+(?:-a\s+)?" + _TARGET + r")"
                r"\s+<<-?\s*(['\"])(\w+)\1\s*"),
-    re.compile(_CD + r"cat\s+<<-?\s*(['\"])(\w+)\1\s*>>?\s*" + _PATH + r"\s*"),
+    re.compile(_CD + r"cat\s+<<-?\s*(['\"])(\w+)\1\s*>>?\s*" + _TARGET + r"\s*"),
 )
 
 # A read-only agent's verdict is discarded whole if the tree moved under it, so the shell
@@ -155,27 +159,123 @@ def check_read(inp):
          f"Do not Read it whole. {HOW}")
 
 
-def _resolve(raw):
+def _resolve(raw, base):
+    """The files `raw` names, as a list (a glob can name several), or None if none exist.
+    Relative paths resolve against `base`: the payload cwd, moved by any `cd` before them."""
     raw = raw.replace("~", os.path.expanduser("~"))
-    for cand in (raw, os.path.join(os.getcwd(), raw)):
-        if os.path.isfile(cand):
-            return cand
     if raw.startswith("/") and len(raw) > 3 and raw[2] == "/":  # /d/x -> D:/x
-        cand = raw[1].upper() + ":" + raw[2:]
-        if os.path.isfile(cand):
-            return cand
+        raw = raw[1].upper() + ":" + raw[2:]
+    for cand in (raw, os.path.join(base, raw)):
+        if any(c in cand for c in "*?["):
+            hits = [h for h in glob.glob(cand) if os.path.isfile(h)]
+            if hits:
+                return hits
+        elif os.path.isfile(cand):
+            return [cand]
     return None
 
 
-def _segment_reads_big_md(cmd):
-    paths = MD_PATH.findall(cmd)
+def _md_tokens(text):
+    """The .md paths named in `text`, quoted or not. Linear: MD_PATH on a long token went
+    quadratic (14 s on 100 KB), and a token over 1000 characters is no path anyway."""
+    out = []
+    for tok in re.split(r"[\s|<>;&(),`]+", text):
+        tok = tok.strip("'\"")
+        if len(tok) > 1000 or ".md" not in tok.lower():
+            continue
+        m = re.search(r"[^'\"=]*\.md(?!\w)", tok.rsplit("=", 1)[-1], re.IGNORECASE)
+        if m:
+            out.append(m.group(0))
+    return out
+
+
+def _scan(cmd, stages=False):
+    """Split outside quotes into segments (`&&`, `||`, `;`, newline) or, with stages=True,
+    pipeline stages (`|`). None when a quote never closes: then no quote scopes anything."""
+    out, cur, q, i = [], [], None, 0
+    while i < len(cmd):
+        ch = cmd[i]
+        if ch == "\\" and q != "'" and i + 1 < len(cmd):
+            cur.append(cmd[i:i + 2])
+            i += 2
+            continue
+        if q:
+            q = None if ch == q else q
+        elif ch in "'\"":
+            q = ch
+        elif stages and ch == "|":
+            out.append("".join(cur))
+            cur, i = [], i + 1
+            continue
+        elif not stages and (cmd[i:i + 2] in ("&&", "||") or ch in ";\n"):
+            out.append("".join(cur))
+            cur, i = [], i + (2 if cmd[i:i + 2] in ("&&", "||") else 1)
+            continue
+        cur.append(ch)
+        i += 1
+    out.append("".join(cur))
+    return None if q else out
+
+
+# A .md filter on a recursive search reads every .md it finds, however it is quoted.
+MD_OPTION = re.compile(r"--(?:include|glob)[= ]['\"]?[^\s'\"]*\.md|\s-g\s+['\"]?[^\s'\"]*\.md",
+                       re.IGNORECASE)
+# The one pipeline shape let through (Bash only; PowerShell pipes path objects INTO readers): a
+# first stage that names .md files without printing them, feeding stdin-only filters. Measured
+# 2026-09-29: `ls x.md | head` and `git diff --stat -- x.md | tail -1` were ~105 false denials.
+LIST_ONLY = re.compile(r"\s*(?:ls|dir|stat|du|find|git\s+(?:status|log(?![^|]*\s(?:-p|--patch)\b)"
+                       r"|(?:diff|show)(?=[^|]*\s--(?:stat|name-only|name-status|numstat|shortstat)\b)"
+                       r"))\b", re.IGNORECASE)
+STDIN_FILTER = re.compile(r"\s*(?:head|tail|wc|sort|uniq|cut|tr|grep)\b"
+                          r"(?![^|]*(?:\s-[A-Za-z]*[fr]\b|[<`]|\$\(|\.md\b))", re.IGNORECASE)
+CD_RE = re.compile(r"\s*(?:cd|pushd|set-location|sl)\s+(\"[^\"]*\"|'[^']*'|\S+)\s*", re.IGNORECASE)
+
+
+def _lists_only(seg):
+    stages = _scan(seg, stages=True)
+    return bool(stages and len(stages) > 1 and LIST_ONLY.match(stages[0])
+                and not READERS.search(stages[0]) and not re.search(r"-(?:exec|ok)", stages[0])
+                and all(STDIN_FILTER.match(s) for s in stages[1:]))
+
+
+def _segment_reads_big_md(cmd, base, tool="Bash"):
+    # A reader word ANYWHERE in the segment counts: judging only the command position let `<x.md
+    # cat`, `find -exec cat`, `eval cat`, `bash -lc` and ~25 more shapes through (refuter,
+    # 2026-09-29). Precision comes from the cases below, never from narrowing this.
+    paths = _md_tokens(cmd)
     if not paths or not READERS.search(cmd):
         return False
     if CAP_RE.search(cmd) or WRITE_RE.search(cmd):
         return False
+    if MD_OPTION.search(cmd):
+        return True
+    if tool == "Bash" and _lists_only(cmd):
+        return False
     # small files are fine to read raw; only big (or unresolvable) ones are gated
-    resolved = [_resolve(p) for p in paths]
-    return not all(r and line_count(r) <= MAX_LINES for r in resolved)
+    for p in paths:
+        files = _resolve(p, base)
+        if not files or any(line_count(f) > MAX_LINES for f in files):
+            return True
+    return False
+
+
+def _reads_big_md(cmd, base, tool="Bash"):
+    segments = _scan(cmd)
+    if segments is None:  # an unclosed quote: split as before quotes were read at all
+        segments = re.split(r"&&|\|\||;|\n", cmd)
+    for seg in segments:
+        cd = CD_RE.fullmatch(seg)
+        if cd:
+            target = cd.group(1).strip("'\"")
+            if target.startswith("/") and len(target) > 2 and target[2] == "/":
+                target = target[1].upper() + ":" + target[2:]
+            target = os.path.join(base, os.path.expanduser(target))
+            if os.path.isdir(target):
+                base = target
+            continue
+        if _segment_reads_big_md(seg, base, tool):
+            return True
+    return False
 
 
 def _mask(line):
@@ -211,19 +311,19 @@ def _strip_heredocs(cmd):
     return "\n".join(out)
 
 
-def check_bash(inp):
+def check_bash(inp, cwd=None, tool="Bash"):
     # Bodies go for this READ check only. Write detection in main() reads the raw command,
     # or `bash <<EOF` would hide any write inside its body (D007).
     cmd = _strip_heredocs(inp.get("command", ""))
-    # judge each `a && b ; c || d` segment on its own: `rm x.md && git status | head`
-    # must not trip on the `head` of an unrelated segment
-    for seg in re.split(r"&&|\|\||;|\n", cmd):
-        if _segment_reads_big_md(seg):
-            deny("md-guard: reading a .md file in a shell without a column cap "
-                 "(long paragraph-lines blow the output). To locate, add `| cut -c1-300` "
-                 "(PowerShell: `| % { $_.Substring(0,[Math]::Min(300,$_.Length)) }`); it "
-                 "truncates long lines, so read the content itself with Read, not the shell. "
-                 + HOW)
+    # judge each `a && b ; c || d` segment on its own (split outside quotes, so a `;` inside a
+    # sed script does not cut its `| cut -c` off): `rm x.md && git status | head` must not trip
+    # on the `head` of an unrelated segment
+    if _reads_big_md(cmd, cwd if cwd and os.path.isdir(cwd) else os.getcwd(), tool):
+        deny("md-guard: reading a .md file in a shell without a column cap "
+             "(long paragraph-lines blow the output). To locate, add `| cut -c1-300` "
+             "(PowerShell: `| % { $_.Substring(0,[Math]::Min(300,$_.Length)) }`); it "
+             "truncates long lines, so read the content itself with Read, not the shell. "
+             + HOW)
 
 
 def main():
@@ -261,7 +361,7 @@ def main():
                      "(a file, the tree, or a remote). Report the change you wanted "
                      "instead; the orchestrator files it.")
         if not off:
-            check_bash(inp)
+            check_bash(inp, data.get("cwd"), tool)
 
 
 if __name__ == "__main__":

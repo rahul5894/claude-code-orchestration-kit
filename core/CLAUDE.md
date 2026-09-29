@@ -2,15 +2,10 @@
 
 Every session, every project. A repo's own `CLAUDE.md` wins on conflict.
 
-**Every subagent re-pays this file on every spawn, so it holds only what a subagent can act
-on.** The orchestrator's own rules — roster, model pinning, delegation threshold, briefs,
-parallelism, measurement — live in the `orchestrator` output style, which subagents never
-load.
-
 ## Tools
 
-- **Code search is qartez.** `Grep`/`Glob` are not in your list, for
-  **every** path and file type, even with no index present. `Read` is *not* guarded, so that
+- **Code search is qartez**, never `Grep`/`Glob` on source; kit agents do not hold them at
+  all. `Read` is *not* guarded, so that
   rule is yours — briefs, markdown, JSON, config only, never source, where `qartez_read`
   returns the symbol instead of the whole file. Paths relative to the project root are
   safest; an absolute path under the root, or `./x`, is accepted too.
@@ -28,8 +23,8 @@ load.
   read). Re-read with `fresh=true`; judge nothing you do not hold.
 - **The web is Firecrawl → Exa → Context7**, never `WebFetch`/`WebSearch`.
 - **Never read a document wholesale.** Anything over ~300 lines is reached through
-  `grep -n | cut -c1-300` + a Read window, or qartez windows. An unbounded doc read is how
-  one step costs 80k tokens and returns no code. Need all of it? Read every window in order;
+  `grep -n | cut -c1-300` + a Read window, or qartez windows. Need all of it? Read every
+  window in order;
   `cut` only locates, as it truncates long lines.
 - Respect the brief's tool-call budget. Well past it means you are solving a different
   problem than the one briefed: stop and report.
@@ -58,8 +53,7 @@ A bucket is one task's folder: `.claude/scratch/<slug>/` with `STATE.md`, `FINDI
   instead — the orchestrator files it. Never reach for a shell to get around a tool you
   were not given.
 - **Your final message IS your report** (a builder writes the full one to `reports/` and
-  summarises it). **Never write `STATE.md`** — the orchestrator owns the snapshot; it is
-  replaced rather than appended, so two writers lose each other's content.
+  summarises it). **Never write `STATE.md`** — the orchestrator owns the snapshot.
 
 ## The gate
 
@@ -70,15 +64,13 @@ suite**, codegen staleness included.
   red gate was not yours, and again as its last step — and pastes both exact last lines. A
   red gate is the builder's to fix before reporting. A `none` row means `SKIPPED`, stated,
   never invented.
-- **Zero review agents run it.** Its verbatim output is in your brief. Re-running a
-  deterministic command costs minutes and tells you nothing new. Treat its findings as
+- **Zero review agents run it.** Its verbatim output is in your brief. Treat its findings as
   candidates to triage, not as pass/fail.
 
 ## Review: recall and precision are different jobs
 
 - **The finder drops nothing.** Report every candidate you can attach a concrete failure
-  scenario to, at any confidence, and mark it. "No candidates" is a valid, useful verdict. A
-  finder that half-believes something and says nothing is how real defects escape.
+  scenario to, at any confidence, and mark it. "No candidates" is a valid, useful verdict.
 - **The judge decides.** CONFIRMED / PLAUSIBLE / REFUTED, **PLAUSIBLE by default**; REFUTED
   needs the line, constant, guard or spec decision that makes the failure impossible. The
   exclusion list belongs to the judge alone, and it never excludes a correctness finding.

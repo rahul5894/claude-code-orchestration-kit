@@ -96,7 +96,7 @@ def off(root):
     except BaseException:
         os.remove(marker)
         raise
-    print(f"kit OFF in {root}: hooks silent, kit rules excluded, "
+    print(f"kit OFF in {root}: kit rules excluded, "
           f"style {'default' if did['style'] else 'left as ' + str(style_in_force(root, data))}. "
           "Hooks are silent now; the rules drop in the next new chat here.")
 

@@ -194,6 +194,41 @@ else:
 o = run("stdin", BUCKETS, project_dir=WITHOUT.replace(os.sep, "/"))
 extra.append(("live-one" in context(o),
               "CLAUDE_PROJECT_DIR without .claude/scratch, payload cwd with it -> cwd's buckets"))
+# INDEX shapes models write besides the /task table (2026-09-29: Strem-setup's bullet INDEX left
+# all 3 open buckets unseen, and `IN PROGRESS` was skipped as not OPEN/BLOCKED).
+BUL = os.path.join(tmp, "bullets")
+for slug in ("fail-over", "stall", "gone"):
+    os.makedirs(os.path.join(BUL, ".claude", "scratch", slug))
+with open(os.path.join(BUL, "CLAUDE.md"), "w", encoding="utf-8") as f:
+    f.write("# x\n| **FAST GATE — agents run this** | `make lint` | 4 s |\n")
+with open(os.path.join(BUL, ".claude", "scratch", "INDEX.md"), "w", encoding="utf-8") as f:
+    f.write("# Buckets\n- fail-over — OPEN — copy failover next\n- stall — BLOCKED — waits on the user\n"
+            "- gone — DONE — in _closed/\n- see the notes — for background\n")
+o = run("stdin", BUL)
+extra.append(("fail-over [OPEN]: copy failover next" in context(o) and "stall [BLOCKED]" in context(o)
+              and "gone" not in context(o) and "see" not in o.get("systemMessage", ""),
+              "bullet INDEX -> OPEN and BLOCKED listed, DONE and a prose bullet are not"))
+PROG = bucket_project("progress", True, [("doing", "IN PROGRESS", "next step"), ("fin", "COMPLETED", "x"),
+                                         ("OPEN", "active", "legend row")])
+os.makedirs(os.path.join(PROG, ".claude", "scratch", "doing"))
+o = run("stdin", PROG)
+extra.append(("doing [IN PROGRESS]" in context(o) and "fin" not in context(o)
+              and "legend row" not in context(o),
+              "IN PROGRESS with its folder -> open; COMPLETED and a legend row | OPEN | active | -> not"))
+# /continue resumes the newest handoff without asking; a STATE.md that says CLOSED is skipped.
+NEW = bucket_project("newest", True, [("older", "OPEN", "a"), ("newer", "OPEN", "b"), ("shut", "OPEN", "c")])
+for i, (slug, body) in enumerate((("older", "Status: OPEN\n"), ("newer", "Status: OPEN\n"),
+                                  ("shut", "Updated: x   Status: CLOSED 2026-09-29\n"))):
+    os.makedirs(os.path.join(NEW, ".claude", "scratch", slug))
+    p = os.path.join(NEW, ".claude", "scratch", slug, "STATE.md")
+    with open(p, "w", encoding="utf-8") as f:
+        f.write(body)
+    os.utime(p, (1_700_000_000 + i, 1_700_000_000 + i))
+o = run("stdin", NEW)
+extra.append(("newer [OPEN]: b (newest handoff)" in context(o) and "older [OPEN]: a\n" in context(o)
+              and "shut [OPEN]: c\n" in context(o) and "do not ask which" in context(o)
+              and o.get("systemMessage", "").endswith("resume newer."),
+              "3 open, newest STATE.md says CLOSED -> the next newest is marked, systemMessage names it"))
 for good, label in extra:
     if not good:
         fails += 1

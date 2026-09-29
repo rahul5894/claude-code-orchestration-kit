@@ -232,7 +232,7 @@ Copy-Item (Join-Path $kit 'core\hooks\*.py') (Join-Path $dest 'hooks') -Force
 # The wildcard copy is silent about a file missing from the clone, and the blocks below then
 # register a command pointing at nothing - every Read, session start and finished subagent
 # would spawn a python that dies. Fail the install instead.
-$missing = @('md-guard.py', 'kit-session-start.py', 'kit-subagent-report.py', 'kit-subagent-start.py', 'kit-context.py', 'kit_off.py') |
+$missing = @('md-guard.py', 'kit-session-start.py', 'kit-subagent-report.py', 'kit-subagent-start.py', 'kit-context.py', 'kit_off.py', 'kit_index.py') |
     Where-Object { -not (Test-Path (Join-Path $dest "hooks\$_")) }
 if ($missing) { throw "Hook script(s) missing from the kit checkout, nothing registered: $($missing -join ', ')" }
 $py = $null

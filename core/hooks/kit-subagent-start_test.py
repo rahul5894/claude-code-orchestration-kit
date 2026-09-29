@@ -61,6 +61,11 @@ BLOCKED = project("blocked", [("kappa", "OPEN (blocked)")], {"kappa": "1. use X\
 BLOCKEDBARE = project("blockedbare", [("lambda", "BLOCKED")], {"lambda": "1. use X\n"})
 BIGTWO = project("bigtwo",[("theta", "OPEN"), ("iota", "OPEN")],
                  {"theta": "1. use X " + "y" * 20000, "iota": "1. use Y\n"})
+# A bullet INDEX (`- slug — STATUS — next`) with an IN PROGRESS row is open too: Strem-setup's
+# bullets once hid every DECISIONS.md from its agents (2026-09-29).
+BULLETS = project("bullets", [], {"mu": "1. use X\n", "nu": "1. use Z\n"})
+with open(os.path.join(BULLETS, ".claude", "scratch", "INDEX.md"), "w", encoding="utf-8") as f:
+    f.write("# Buckets\n- mu — IN PROGRESS — next\n- nu — DONE — in _closed/\n")
 
 CASES = [
     # (want, how, root, substrings the injected text must contain)
@@ -85,6 +90,7 @@ CASES = [
     ("CONTEXT", "stdin", BLOCKEDBARE, ["lambda", "use X"]),
     # Launched in a parent dir, then cd into the repo: the launch root has no scratch, cwd does.
     ("CONTEXT", "fallback", ONE, ["alpha", "use X"]),
+    ("CONTEXT", "stdin", BULLETS, ["mu", "use X"]),
 ]
 
 contract_bad = []

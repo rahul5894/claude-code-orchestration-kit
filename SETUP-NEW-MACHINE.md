@@ -70,10 +70,10 @@ kit-session-start: registered in settings.json
 kit-subagent-report: registered in settings.json
 kit-subagent-start: registered in settings.json
 kit-context: registered in settings.json
-md-guard self-check: 123/123 passed
-kit-session-start self-check: 25/25 passed
+md-guard self-check: 144/144 passed
+kit-session-start self-check: 28/28 passed
 kit-subagent-report self-check: 12/12 passed
-kit-subagent-start self-check: 18/18 passed
+kit-subagent-start self-check: 19/19 passed
 kit-context self-check: 33/33 passed
 kit_off self-check: 11/11 passed
 kit-switch self-check: 12/12 passed
@@ -182,7 +182,7 @@ with a measured FAST GATE row**, and the kit now creates that itself:
    before delegating anything. It also lists the open task buckets for the model and, on
    startup and `/clear`, shows you "Open task(s): ... - type /continue to resume". After a
    compaction it re-injects the newest open bucket's `STATE.md`, capped. It writes nothing. A `SubagentStart` hook
-   (`kit-subagent-start.py`) injects the `DECISIONS.md` of every OPEN or BLOCKED bucket in
+   (`kit-subagent-start.py`) injects the `DECISIONS.md` of every open bucket (OPEN, BLOCKED, or IN PROGRESS and the like when its folder exists) in
    `.claude/scratch/INDEX.md` into each spawned agent, so a settled decision binds an agent
    that never saw the conversation.
 2. Run `/kit-init`. It detects the gate from `package.json` / `pyproject` / `Makefile` /
@@ -243,18 +243,19 @@ judged on its own, so `rm big.md; git status | head` passes.
 
 The deny message tells Claude the capped `grep -n` + `Read` window to use instead.
 
-Check: `python ~/.claude/hooks/md-guard_test.py` prints `123/123 passed`. The test
+Check: `python ~/.claude/hooks/md-guard_test.py` prints `144/144 passed`. The test
 builds its own fixtures in a temp folder, so it runs on any machine. The installer runs
 it for you.
 
 `~/.claude/hooks/kit-subagent-start.py` is the other half of the same idea: a `SubagentStart`
-hook that injects the `DECISIONS.md` of every OPEN or BLOCKED bucket in `.claude/scratch/INDEX.md` into
+hook that injects the `DECISIONS.md` of every open bucket in `.claude/scratch/INDEX.md` (table or bullet list) into
 each spawned builder, refuter, verifier, debugger and researcher, capped at 6000 characters.
-Check: `python ~/.claude/hooks/kit-subagent-start_test.py` prints `18/18 passed`.
+Check: `python ~/.claude/hooks/kit-subagent-start_test.py` prints `19/19 passed`.
 
 `~/.claude/hooks/kit-context.py` is a `Stop` hook. At 45%+ context, the first stop in each
 10-point band asks the model to write the handoff into the bucket's `STATE.md` and tell you
-"/clear, then /continue"; later stops show "Context N% full". It stays silent while a
+"/clear, then /continue"; the stop after that shows "Context N% full" once, and later stops
+in the same band say nothing. It stays silent while a
 background agent runs and never blocks a headless `claude -p` run. The window is 1M unless the
 model is a known 200K one (Haiku, Sonnet 4.x, Opus 4.6 and older, claude-3*, or a
 Bedrock/Vertex/Foundry id without `[1m]`); `CLAUDE_CODE_DISABLE_1M_CONTEXT=1` makes it 200K, and
@@ -405,10 +406,10 @@ report format. The skill is worth keeping, so the kit ships its own copy at
 
 ## 7. Final checklist
 
-- [ ] `pwsh install.ps1` printed `md-guard self-check: 123/123 passed`
-- [ ] the same run printed `kit-session-start self-check: 25/25 passed`
+- [ ] `pwsh install.ps1` printed `md-guard self-check: 144/144 passed`
+- [ ] the same run printed `kit-session-start self-check: 28/28 passed`
 - [ ] the same run printed `kit-subagent-report self-check: 12/12 passed`
-- [ ] the same run printed `kit-subagent-start self-check: 18/18 passed`
+- [ ] the same run printed `kit-subagent-start self-check: 19/19 passed`
 - [ ] the same run printed `kit-context self-check: 33/33 passed`
 - [ ] the same run printed `kit_off self-check: 11/11 passed`
 - [ ] the same run printed `kit-switch self-check: 12/12 passed`

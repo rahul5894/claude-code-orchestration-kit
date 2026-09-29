@@ -24,7 +24,7 @@ Run these in PowerShell, in the kit folder.
 
 | Command | What happens |
 |---|---|
-| `pwsh -File install.ps1` | Installs or updates the kit in `~/.claude` for every project. Safe to run again. Start a new chat after. |
+| `pwsh -File install.ps1` | Installs or updates the kit in `~/.claude` for every project. Safe to run again. Restart Claude Code after: agents and output styles load at startup. |
 | `pwsh -File uninstall.ps1 -WhatIf` | Shows what uninstall would remove. Changes nothing. |
 | `pwsh -File uninstall.ps1` | Removes the kit from `~/.claude` for every project. Your own files and settings stay, and it writes backups. Projects are not touched: a project's `.claude/kit-off` or task notes stay where they are. `install.ps1` brings the kit back. |
 

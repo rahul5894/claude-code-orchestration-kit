@@ -103,6 +103,30 @@ CASES = [
     ("DENY",  "Bash", {"command": "cat some/unknown.md"}, None),
     ("ALLOW", "Bash", {"command": f"wc -l {BIG}"}, None),
     ("ALLOW", "Bash", {"command": "git add CLAUDE.md && git commit -m x"}, None),
+    # 2026-09-29: 218 of 320 real shell denials were false. Precision without narrowing the
+    # reader test: a first stage that only LISTS .md files feeding stdin filters (Bash), a small
+    # file after `cd`, a glob of small files, a `;` inside quotes that used to cut a sed script
+    # off its own `| cut -c` cap.
+    ("ALLOW", "Bash", {"command": f"ls {BIG} | head -3"}, None),
+    ("ALLOW", "Bash", {"command": f"git diff --stat -- {BIG} | tail -1"}, None),
+    ("ALLOW", "Bash", {"command": f"cd {tmp} && cat small.md"}, None),
+    ("ALLOW", "Bash", {"command": f"cat {tmp}/sm*.md"}, None),
+    ("ALLOW", "Bash", {"command": f"sed -n '1p;2p' {BIG} | cut -c1-90"}, None),
+    # ...while every shape a command-position rewrite let through (refuter, 2026-09-29) denies
+    ("DENY",  "Bash", {"command": f"cd {tmp} && cat big.md"}, None),
+    ("DENY",  "Bash", {"command": f"cat {tmp}/b*.md"}, None),
+    ("DENY",  "Bash", {"command": f"< {BIG} cat"}, None),
+    ("DENY",  "Bash", {"command": f"find {tmp} -name big.md -exec cat {{}} \\;"}, None),
+    ("DENY",  "Bash", {"command": f"eval cat {BIG}"}, None),
+    ("DENY",  "Bash", {"command": f'bash -lc "cat {BIG}"'}, None),
+    ("DENY",  "Bash", {"command": f"ls {BIG} | xargs -I {{}} cat {{}}"}, None),
+    ("DENY",  "PowerShell", {"command": f"ls {BIG} | cat"}, None),
+    ("DENY",  "PowerShell", {"command": f"gci {BIG} | Get-Content"}, None),
+    ("DENY",  "Bash", {"command": f"grep -rn x --include='*.md' {tmp}"}, None),
+    ("DENY",  "Bash", {"command": f"rg -n x -g '*.md' {tmp}"}, None),
+    ("DENY",  "Bash", {"command": f"cat $(grep -rl x --include=*.md {tmp})"}, None),
+    ("DENY",  "Bash", {"command": f"python - <<'EOT'\nimport os; os.system('cat {BIG}')\nEOT"}, None),
+    ("DENY",  "Bash", {"command": f"git show HEAD:{BIG}"}, None),
     ("ALLOW", "Bash", {"command": f"rm -f {BIG}; git status --short | head -5"}, None),
     ("DENY",  "Bash", {"command": f"git status && cat {BIG} | head -5"}, None),
     ("DENY",  "PowerShell", {"command": f"Get-Content {BIG_WIN}"}, None),
@@ -179,6 +203,9 @@ CASES = [
     ("DENY",  "PowerShell", {"command": "python verify_live.py"}, "refuter"),
     ("ALLOW", "Bash", {"command": 'find . -name "*.py" | head'}, "refuter"),
     ("ALLOW", "Bash", {"command": "python -m pytest tests/test_x.py -q"}, "refuter"),
+    # write guard unchanged on 2026-09-29: two bypasses a loosening briefly opened stay shut
+    ("DENY",  "PowerShell", {"command": '& "./install.ps1"'}, "refuter"),
+    ("DENY",  "Bash", {"command": "git apply --check --apply x.patch"}, "refuter"),
 ]
 
 

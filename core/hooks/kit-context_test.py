@@ -104,12 +104,14 @@ try:
     # 1. under the threshold says nothing
     ok(quiet(run(transcript(asst(80_000)), session())), "40% of 200K -> no output")
 
-    # 2-4. one session: first crossing blocks, the same band again only notifies, the next
-    # band blocks again
+    # 2-4. one session: first crossing blocks, the stop after it tells the user once, the same
+    # band later says nothing (a notice on every stop reached 56 in one session), the next band
+    # blocks again
     s = session()
     ok(blocked(run(transcript(asst(100_000)), s), 50), "50% first time -> block naming 50%")
-    ok(notice(run(transcript(asst(100_000)), s), 50),
-       "50% again, same session -> systemMessage only, no second block")
+    ok(notice(run(transcript(asst(100_000)), s, stop_hook_active=True), 50)
+       and quiet(run(transcript(asst(100_000)), s)),
+       "the stop after the block -> notice once; 50% again later -> silent, no second block")
     ok(blocked(run(transcript(asst(120_000)), s), 60), "60% (next band) -> block again")
 
     # 5. a stop caused by our own block never blocks again
@@ -155,8 +157,8 @@ try:
     s = session()
     marker = os.path.join(tempfile.gettempdir(), "kit-context-" + s)
     path = transcript(asst(100_000), synthetic())
-    ok(blocked(run(path, s), 50) and notice(run(path, s), 50) and os.path.exists(marker),
-       "synthetic zero-usage line after 50% -> still 50%: block, then notice, marker kept")
+    ok(blocked(run(path, s), 50) and quiet(run(path, s)) and os.path.exists(marker),
+       "synthetic zero-usage line after 50% -> still 50%: block, then silent, marker kept")
 
     # 18-19. a background shell is not an unfinished task; a background agent is
     ok(blocked(run(transcript(asst(100_000)), session(),
@@ -208,8 +210,9 @@ try:
     s = session()
     ok(quiet(run(transcript(asst(180_000, sid="old-session")), s)),
        "every line from another sessionId -> 0 used -> no output")
-    ok(quiet(run(transcript(asst(180_000, sid="old-session"), asst(30_000, sid=s)), s)),
-       "old session at 90%, this session at 15% -> this session's 15% -> no output")
+    # the old session's line comes LAST, so without the filter the last line (90%) would win
+    ok(quiet(run(transcript(asst(30_000, sid=s), asst(180_000, sid="old-session")), s)),
+       "this session at 15%, a later old-session line at 90% -> this session's 15% -> no output")
     s = session()
     ok(blocked(run(transcript(asst(20_000, sid="old-session"), asst(100_000, sid=s)), s), 50),
        "this session's own lines still count: 100K of 200K = 50% -> block")

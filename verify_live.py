@@ -96,7 +96,9 @@ print("\n=== B. no Grep/Glob granted to any agent ===")
 for p in sorted(glob.glob('core/agents/*.md')):
     d, _ = fm(p)
     tools = [t.strip() for t in d.get('tools', '').split(',')]
-    ok('Grep' not in tools and 'Glob' not in tools, f"{os.path.basename(p)}: no dead Grep/Glob")
+    # no `tools:` key at all means EVERY tool, Grep and Glob included
+    ok('tools' in d and 'Grep' not in tools and 'Glob' not in tools,
+       f"{os.path.basename(p)}: no dead Grep/Glob")
 
 pairs = [(p, HOME / 'agents' / os.path.basename(p)) for p in glob.glob('core/agents/*.md')]
 pairs += [(p, HOME / 'commands' / os.path.basename(p)) for p in glob.glob('core/commands/*.md')]
@@ -612,8 +614,8 @@ for _st in ('kit_off self-check: 11/11 passed', 'kit-switch self-check: 12/12 pa
     ok(_st in r2.stdout, _st, [l for l in r2.stdout.splitlines() if _st.split(':')[0] in l])
 # The "fully global" pieces: the SessionStart notice and the two files /kit-init reads from
 # ~/.claude/kit. Without them a new project starts with no gate and nothing says so.
-ok('kit-session-start self-check: 25/25 passed' in r2.stdout,
-   'kit-session-start self-check 25/25',
+ok('kit-session-start self-check: 28/28 passed' in r2.stdout,
+   'kit-session-start self-check 28/28',
    [l for l in r2.stdout.splitlines() if 'kit-session-start' in l])
 for _kf in ('project-template.md', 'audit_project.py', 'scan_project.py', 'kit_switch.py'):
     ok((HOME / 'kit' / _kf).exists(), f'~/.claude/kit/{_kf} published for /kit-init')
@@ -647,13 +649,13 @@ ok(_ss_ok, 'the installed SubagentStart injector emits nothing or a well-formed 
 print("  NOTE  per-project state is checked by `python audit_project.py <repo>`, not here")
 # These counts are pinned on purpose: a suite that silently shrinks is the failure this
 # catches. Bump them WITH the test, never to make a red line green.
-ok('md-guard self-check: 123/123 passed' in r2.stdout, 'md-guard self-check 123/123',
+ok('md-guard self-check: 144/144 passed' in r2.stdout, 'md-guard self-check 144/144',
    [l for l in r2.stdout.splitlines() if 'md-guard' in l])
 ok('kit-subagent-report self-check: 12/12 passed' in r2.stdout,
    'kit-subagent-report self-check 12/12',
    [l for l in r2.stdout.splitlines() if 'kit-subagent-report' in l])
-ok('kit-subagent-start self-check: 18/18 passed' in r2.stdout,
-   'kit-subagent-start self-check 18/18',
+ok('kit-subagent-start self-check: 19/19 passed' in r2.stdout,
+   'kit-subagent-start self-check 19/19',
    [l for l in r2.stdout.splitlines() if 'kit-subagent-start' in l])
 ok('kit-context self-check: 33/33 passed' in r2.stdout,
    'kit-context self-check 33/33',

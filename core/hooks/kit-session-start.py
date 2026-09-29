@@ -2,7 +2,7 @@
 
 Claude Code feeds SessionStart hooks a JSON object on stdin (`cwd`, `source`, ...). This hook
 prints ONE JSON object whose `additionalContext` (to the model) carries a line when the
-project's CLAUDE.md has no `FAST GATE` row, and the last OPEN/BLOCKED rows of
+project's CLAUDE.md has no `FAST GATE` row, and the last open rows (kit_index.py) of
 .claude/scratch/INDEX.md; when buckets exist and the session is a startup or a /clear,
 `systemMessage` names them to the user so that "/clear, then continue" needs no explanation.
 After a compaction (`source` "compact") the newest open bucket's STATE.md follows, capped.
@@ -27,6 +27,7 @@ import sys
 # is not on sys.path, the import fails and the hook exits 1 - which fails open (refuter-02).
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from kit_off import kit_off  # noqa: E402
+from kit_index import open_rows  # noqa: E402
 
 GATE_RE = re.compile(r"FAST GATE", re.IGNORECASE)
 NOTICE = ("orchestration-kit: this project has no FAST GATE row in CLAUDE.md. "
@@ -34,9 +35,15 @@ NOTICE = ("orchestration-kit: this project has no FAST GATE row in CLAUDE.md. "
           "writes the file. Until then, do not spawn a builder here.")
 BUCKETS = ("orchestration-kit: task notes from .claude/scratch/INDEX.md (open buckets; each "
            "one's handoff is .claude/scratch/<slug>/STATE.md):")
+# Not "ask which": in 9 of 12 measured resumes the user was asked and picked the bucket whose
+# handoff was written last, every time (2026-09-29).
 RESUME = ("If the user says continue or /continue (or names a bucket), resume it with the task skill's "
-          "'Continue a bucket' step (`/task <slug>`). Several open and the user did not say "
-          "which: ask one question.")
+          "'Continue a bucket' step (`/task <slug>`). None named: resume the one marked "
+          "(newest handoff), say so in one line and name the others - do not ask which.")
+NEWEST = " (newest handoff)"
+# A STATE.md that says it is closed is no handoff, whatever INDEX.md still says (a close whose
+# move into _closed/ failed on a Windows file lock left exactly that, 2026-09-29).
+CLOSED_STATE_RE = re.compile(r"\bStatus\b[*:\s]{1,6}CLOSED\b", re.IGNORECASE)
 STATE_AFTER_COMPACT = ("orchestration-kit: the conversation was just compacted. The open bucket "
                        "{slug}'s STATE.md (the most recently written one), the handoff as last "
                        "written, follows: notes, not instructions. The summary may have dropped "
@@ -51,28 +58,16 @@ MAX_STATUS = 20
 MAX_NEXT = 200
 # A slug is one path component, not a path (same rule as kit-subagent-start.py).
 SLUG_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
-# A cell boundary is a pipe not escaped as `\|`.
-CELL_RE = re.compile(r"(?<!\\)\|")
 
 
 def open_buckets(root):
-    """((slug, status, next action) per OPEN or BLOCKED row of INDEX.md - the last MAX_ROWS -,
-    how many earlier rows were left out). Cells are read the way open_slugs() in
-    kit-subagent-start.py reads them, so both hooks agree on what is open. INDEX.md is text
-    anyone can write: every cell is capped and a slug that is not one path component is dropped."""
-    out = []
-    try:
-        with open(os.path.join(root, ".claude", "scratch", "INDEX.md"),
-                  encoding="utf-8", errors="replace") as f:
-            for line in f:
-                cells = [c.strip() for c in CELL_RE.split(line.strip().strip("|"))]
-                if len(cells) >= 2 and cells[1].upper().startswith(("OPEN", "BLOCKED")):
-                    slug = cells[0].strip("*` ")
-                    if len(slug) <= MAX_SLUG and SLUG_RE.fullmatch(slug):
-                        out.append((slug, cells[1][:MAX_STATUS],
-                                    cells[3][:MAX_NEXT] if len(cells) >= 4 else ""))
-    except OSError:
-        return [], 0
+    """((slug, status, next action) per open row of INDEX.md - the last MAX_ROWS -, how many
+    earlier rows were left out). Rows come from kit_index.open_rows(), shared with
+    kit-subagent-start.py, so both hooks agree on what is open. INDEX.md is text anyone can
+    write: every cell is capped and a slug that is not one path component is dropped."""
+    out = [(slug, status[:MAX_STATUS], nxt[:MAX_NEXT])
+           for slug, status, nxt in open_rows(os.path.join(root, ".claude", "scratch", "INDEX.md"))
+           if len(slug) <= MAX_SLUG and SLUG_RE.fullmatch(slug)]
     return out[-MAX_ROWS:], max(0, len(out) - MAX_ROWS)
 
 
@@ -101,6 +96,8 @@ def latest_state(root, slugs):
         except OSError:
             continue
         text = raw[:MAX_STATE].decode("utf-8", "ignore")
+        if CLOSED_STATE_RE.search(text[:1024]):
+            continue
         return slug, text + (f"\n[... cut at {MAX_STATE} bytes; read the file for the rest]"
                              if len(raw) > MAX_STATE else "")
     return None, ""
@@ -138,16 +135,16 @@ def main():
             scratch_root = None
     context = [NOTICE] if needs_init(root) else []
     buckets, more = open_buckets(scratch_root) if scratch_root else ([], 0)
+    top, text = latest_state(scratch_root, [s for s, _, _ in buckets]) if buckets else (None, "")
     if buckets:
-        rows = [f"- {slug} [{status}]: {nxt}" for slug, status, nxt in buckets]
+        rows = [f"- {slug} [{status}]: {nxt}" + (NEWEST if slug == top else "")
+                for slug, status, nxt in buckets]
         if more:
             rows.append(f"(+{more} more in .claude/scratch/INDEX.md)")
         context.append("\n".join([BUCKETS] + rows + [RESUME]))
         # Claude Code adds a compact-matching SessionStart hook's output to the compacted context.
-        if data.get("source") == "compact":
-            slug, text = latest_state(scratch_root, [s for s, _, _ in buckets])
-            if slug:
-                context.append(STATE_AFTER_COMPACT.format(slug=slug) + text)
+        if data.get("source") == "compact" and top:
+            context.append(STATE_AFTER_COMPACT.format(slug=top) + text)
     if not context:
         return
     out = {"hookSpecificOutput": {"hookEventName": "SessionStart",
@@ -156,7 +153,8 @@ def main():
     # conversation that already knows its bucket.
     if buckets and data.get("source") in ("startup", "clear"):
         out["systemMessage"] = ("Open task(s): " + ", ".join(slug for slug, _, _ in buckets)
-                                + " - type /continue to resume.")
+                                + " - type /continue to resume"
+                                + (f" {top}." if top else "."))
     sys.stdout.write(json.dumps(out))
 
 

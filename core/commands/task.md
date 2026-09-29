@@ -123,7 +123,8 @@ nothing from this conversation, in as few tokens as that takes:
 ## 5. Continue a bucket
 
 1. Read `STATE.md` and `DECISIONS.md` whole. In `FINDINGS.md` skip only the `[fact]` and
-   `[measure]` lines STATE does not cite (`grep -vn "\[fact\]\|\[measure\]" FINDINGS.md | cut -c1-300` shows the rest);
+   `[measure]` lines STATE does not cite (`grep -vn "\[fact\]\|\[measure\]" FINDINGS.md | cut -c1-2000` shows the rest;
+   the wide cap keeps an entry's evidence, which `cut -c1-300` would drop);
    `[gotcha]`, `[dead-end]` and untagged older lines are always read. It is append-only, so
    a cited line number never moves.
 2. **Verify before trusting.** Check the recorded branch and HEAD against

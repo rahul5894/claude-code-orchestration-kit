@@ -13,8 +13,9 @@ A stop while a background task other than a shell runs is not a finished task an
 nothing. A headless session (CLAUDE_CODE_SESSION_ATTENDED == "0") says nothing either: no
 user reads the notice and a block would only spend a turn. The first stop in
 each 10-point band from 45% (45, 55, 65...) returns `decision: block` with REASON, which goes
-to the model: write the handoff into the open bucket's STATE.md, then tell the user. Every
-later qualifying stop only shows NOTICE to the user. The band reached is kept per session in
+to the model: write the handoff into the open bucket's STATE.md, then tell the user. The stop
+that follows the block shows NOTICE to the user once; later stops in the same band say
+nothing. The band reached is kept per session in
 the temp dir and removed once usage falls under 45% (after a compaction), so the next
 crossing blocks again. Transcripts reach tens of MB: only lines containing `"usage"` or
 `"modelId"` are parsed.
@@ -164,14 +165,18 @@ def main():
             stored = int(f.read().strip())
     except (OSError, ValueError):
         stored = -1
-    # stop_hook_active = this stop follows our own block; blocking again would loop.
-    if not data.get("stop_hook_active") and band > stored:
+    # stop_hook_active = this stop follows our own block: the handoff was just written, so the
+    # user is told once. Blocking again would loop.
+    if data.get("stop_hook_active"):
+        out = {"systemMessage": NOTICE.format(pct=pct)}
+    elif band > stored:
         with open(marker, "w", encoding="utf-8") as f:
             f.write(str(band))
         out = {"decision": "block",
                "reason": REASON.format(pct=pct, used=used // 1000, window=size // 1000)}
     else:
-        out = {"systemMessage": NOTICE.format(pct=pct)}
+        # Same band again: already said. A notice on every stop reached 56 in one session.
+        return
     sys.stdout.write(json.dumps(out))
 
 
