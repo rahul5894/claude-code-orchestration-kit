@@ -33,9 +33,10 @@ def project(off):
         f.write("line\n" * 400)
     usage = {"input_tokens": 2, "cache_creation_input_tokens": 1000,
              "cache_read_input_tokens": 150_000, "output_tokens": 50}
+    # Haiku: a 200K model, so 151K is 75% and kit-context speaks (on a 1M Opus it is 15%).
     with open(os.path.join(root, "t.jsonl"), "w", encoding="utf-8") as f:
         f.write(json.dumps({"type": "assistant", "isSidechain": False,
-                            "message": {"model": "claude-opus-5-5", "usage": usage}}) + "\n")
+                            "message": {"model": "claude-haiku-4-5-20251001", "usage": usage}}) + "\n")
     if off:
         with open(os.path.join(root, ".claude", "kit-off"), "w", encoding="utf-8") as f:
             f.write("")

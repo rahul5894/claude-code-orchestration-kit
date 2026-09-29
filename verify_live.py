@@ -655,8 +655,8 @@ ok('kit-subagent-report self-check: 12/12 passed' in r2.stdout,
 ok('kit-subagent-start self-check: 18/18 passed' in r2.stdout,
    'kit-subagent-start self-check 18/18',
    [l for l in r2.stdout.splitlines() if 'kit-subagent-start' in l])
-ok('kit-context self-check: 21/21 passed' in r2.stdout,
-   'kit-context self-check 21/21',
+ok('kit-context self-check: 33/33 passed' in r2.stdout,
+   'kit-context self-check 33/33',
    [l for l in r2.stdout.splitlines() if 'kit-context' in l])
 ok('scan-project self-check: 38/38 passed' in r2.stdout,
    'scan-project self-check 38/38',

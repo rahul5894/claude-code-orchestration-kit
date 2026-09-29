@@ -1,11 +1,13 @@
 """Stop hook: at 45% context, the finished turn hands off and the user is told to /clear.
 
 The user never watches the context meter, and past about half of it the model's grip on a
-long task degrades. No hook payload carries context usage (probed on Claude Code 2.1.280), so
-it is read from the transcript: input + cache_creation + cache_read tokens of the LAST
-main-chain assistant line (a "<synthetic>" line or one whose counts sum to 0 is skipped), over
-the window named by the last `model` attachment ("[1m]" in the id or a claude-fable id =
-1,000,000, else 200,000; more than 200K used = 1,000,000 whatever the attachment says).
+long task degrades. No hook payload carries context usage or the window (probed on Claude Code
+2.1.284; only the statusline gets them), so it is read from the transcript: input +
+cache_creation + cache_read tokens of the LAST main-chain assistant line (a "<synthetic>" line
+or one whose counts sum to 0 is skipped), over the window of the session's model - see
+window(). Only lines of THIS session count: a line whose sessionId is not the payload's
+session_id (a stale transcript_path, the copied history of a resumed session) is skipped, so
+a new session starts from 0 whatever file the payload names.
 
 A stop while a background task other than a shell runs is not a finished task and says
 nothing. A headless session (CLAUDE_CODE_SESSION_ATTENDED == "0") says nothing either: no
@@ -36,6 +38,9 @@ BAND = 10
 WINDOW = 200_000
 WINDOW_1M = 1_000_000
 UNSAFE = re.compile(r"[^A-Za-z0-9._-]")
+# family, major, minor of a Claude model id; a date (-20250514) or a -v1:0 suffix is no minor.
+FAMILY = re.compile(r"claude-(opus|sonnet|haiku|fable)-(\d+)(?:-(\d{1,2}))?(?![0-9])")
+TRUTHY = ("1", "true", "yes", "on")
 REASON = ("orchestration-kit: context is at {pct}% ({used}K of {window}K). Hand off now, before "
           "any new work: rewrite the OPEN bucket's STATE.md as the handoff, by the task skill's "
           "STATE rules (<= ~60 lines; Next action exact; under User said, every approval, "
@@ -47,9 +52,50 @@ REASON = ("orchestration-kit: context is at {pct}% ({used}K of {window}K). Hand 
 NOTICE = ("Context {pct}% full - handoff written? Next: /clear, then type /continue.")
 
 
-def usage(transcript_path):
-    """(used tokens, window) from the transcript; unreadable or missing = (0, WINDOW)."""
-    used, window = 0, WINDOW
+def flag(name):
+    return os.environ.get(name, "").strip().lower() in TRUTHY
+
+
+def window(model):
+    """The context window Claude Code gives `model`, from its id and the env it runs in.
+
+    1M unless the model is one known to run 200K. The "[1m]" marker never reaches the
+    transcript (the `model` attachment and message.model both drop it - measured 2.1.284 on a
+    claude-opus-5-5[1m] session), so a 200K default read every new 1M model as 5x fuller than
+    it was: Fable 5.1 on 2026-09-23, then Opus 5.5 on 2026-09-29 (32 false "45-99%" alarms at
+    90-199K in 5 sessions). The rules are code.claude.com/docs/en/model-config: on the
+    Anthropic API Fable, Sonnet 5+ and Opus 4.7+ run 1M with no [1m]; Haiku, Sonnet 4.x and
+    Opus <= 4.6 run 200K unless [1m]; Bedrock / Vertex / Foundry run 200K unless [1m].
+    """
+    try:
+        cap = int(os.environ.get("CLAUDE_CODE_MAX_CONTEXT_TOKENS") or 0)
+    except ValueError:
+        cap = 0
+    # Honoured for a claude- id only together with DISABLE_COMPACT, as Claude Code does.
+    if cap > 0 and (flag("DISABLE_COMPACT") or "claude" not in model):
+        return cap
+    if flag("CLAUDE_CODE_DISABLE_1M_CONTEXT"):
+        return WINDOW
+    if "[1m]" in model:
+        return WINDOW_1M
+    if any(flag(v) for v in ("CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX",
+                             "CLAUDE_CODE_USE_FOUNDRY")):
+        return WINDOW
+    m = FAMILY.search(model)
+    if "claude-3" in model or (m and (
+            m.group(1) == "haiku"
+            or (m.group(1) == "sonnet" and int(m.group(2)) < 5)
+            or (m.group(1) == "opus" and (int(m.group(2)), int(m.group(3) or 0)) <= (4, 6)))):
+        return WINDOW
+    return WINDOW_1M
+
+
+def usage(transcript_path, session_id=""):
+    """(used tokens, window) from the transcript; unreadable or missing = (0, WINDOW).
+
+    With a session_id, a line carrying another sessionId is not this session's and is skipped.
+    """
+    used, named, replied = 0, "", ""
     try:
         with open(transcript_path, encoding="utf-8", errors="replace") as f:
             for line in f:
@@ -61,6 +107,8 @@ def usage(transcript_path):
                     continue
                 if not isinstance(obj, dict):
                     continue
+                if session_id and obj.get("sessionId") not in (None, session_id):
+                    continue
                 if obj.get("type") == "assistant" and obj.get("isSidechain") is False:
                     msg = obj.get("message") or {}
                     u = msg.get("usage")
@@ -68,18 +116,17 @@ def usage(transcript_path):
                         n = sum(int(u.get(k) or 0) for k in (
                             "input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"))
                         used = n or used
+                        replied = str(msg.get("model") or replied)
                 elif obj.get("type") == "attachment":
                     att = obj.get("attachment") or {}
                     if att.get("type") == "model":
-                        model = str((att.get("identity") or {}).get("modelId") or "")
-                        # Fable 5.1 is 1M with no marker in its id (sessions measured to 919K).
-                        window = (WINDOW_1M if "[1m]" in model or model.startswith("claude-fable")
-                                  else WINDOW)
+                        named = str((att.get("identity") or {}).get("modelId") or named)
     except OSError:
         return 0, WINDOW
-    # Before ~2.1.268 no `model` attachment was written; a session already past 200K can only
-    # be a 1M one (measured: such transcripts peaked at 909K).
-    return used, (WINDOW_1M if used > WINDOW else window)
+    # The last `model` attachment names the model; before ~2.1.268 none was written and the
+    # replies' model is all there is. A session already past 200K can only be a 1M one.
+    w = window(named or replied)
+    return used, (WINDOW_1M if w == WINDOW and used > WINDOW else w)
 
 
 def main():
@@ -98,10 +145,10 @@ def main():
     if any(not isinstance(t, dict) or t.get("type") != "shell"
            for t in data.get("background_tasks") or []):
         return
-    used, window = usage(data.get("transcript_path") or "")
-    pct = used * 100 // window
-    marker = os.path.join(tempfile.gettempdir(),
-                          "kit-context-" + UNSAFE.sub("_", str(data.get("session_id") or "unknown")))
+    sid = str(data.get("session_id") or "")
+    used, size = usage(data.get("transcript_path") or "", sid)
+    pct = used * 100 // size
+    marker = os.path.join(tempfile.gettempdir(), "kit-context-" + UNSAFE.sub("_", sid or "unknown"))
     if pct < THRESHOLD:
         try:
             os.remove(marker)
@@ -119,7 +166,7 @@ def main():
         with open(marker, "w", encoding="utf-8") as f:
             f.write(str(band))
         out = {"decision": "block",
-               "reason": REASON.format(pct=pct, used=used // 1000, window=window // 1000)}
+               "reason": REASON.format(pct=pct, used=used // 1000, window=size // 1000)}
     else:
         out = {"systemMessage": NOTICE.format(pct=pct)}
     sys.stdout.write(json.dumps(out))

@@ -14,9 +14,14 @@ HOOK = os.path.join(os.path.dirname(os.path.abspath(__file__)), "kit-context.py"
 tmp = tempfile.mkdtemp(prefix="kit-context-test-")
 # A caller running inside Claude Code has CLAUDE_PROJECT_DIR and CLAUDE_CODE_SESSION_ATTENDED
 # set; every run gets the same env whether or not it is, and a case adds what it tests.
+# The window env vars are stripped too: the caller's provider or 1M switch must not move a case.
 ENV = {k: v for k, v in os.environ.items()
-       if k not in ("CLAUDE_PROJECT_DIR", "CLAUDE_CODE_SESSION_ATTENDED")}
+       if k not in ("CLAUDE_PROJECT_DIR", "CLAUDE_CODE_SESSION_ATTENDED",
+                    "CLAUDE_CODE_DISABLE_1M_CONTEXT", "CLAUDE_CODE_MAX_CONTEXT_TOKENS",
+                    "DISABLE_COMPACT", "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX",
+                    "CLAUDE_CODE_USE_FOUNDRY")}
 sessions = []
+SMALL = "claude-haiku-4-5-20251001"   # a 200K model: the band arithmetic below is of 200K
 
 
 def synthetic():
@@ -25,11 +30,14 @@ def synthetic():
         "output_tokens": 0}}}
 
 
-def asst(used, sidechain=False):
-    return {"type": "assistant", "isSidechain": sidechain,
-            "message": {"model": "claude-opus-5-5", "usage": {
+def asst(used, sidechain=False, model_id=SMALL, sid=None):
+    line = {"type": "assistant", "isSidechain": sidechain,
+            "message": {"model": model_id, "usage": {
                 "input_tokens": 2, "cache_creation_input_tokens": 1000,
                 "cache_read_input_tokens": used - 1002, "output_tokens": 50}}}
+    if sid:
+        line["sessionId"] = sid
+    return line
 
 
 def model(model_id):
@@ -118,7 +126,7 @@ try:
     ok(quiet(run(transcript(asst(300_000)), session())),
        "no attachment but 300K used -> must be the 1M window, 30% -> no output")
     ok(blocked(run(transcript(asst(150_000)), session()), 75),
-       "no attachment: 150K of 200K = 75% -> block")
+       "no attachment, Haiku replies: 150K of 200K = 75% -> block")
 
     # 9. a subagent's usage in the main transcript is not the main context
     ok(blocked(run(transcript(asst(100_000), asst(20_000, sidechain=True)), session()), 50),
@@ -163,6 +171,48 @@ try:
     ok(quiet(run(transcript(asst(120_000)), s, env={"CLAUDE_CODE_SESSION_ATTENDED": "0"}))
        and not os.path.exists(os.path.join(tempfile.gettempdir(), "kit-context-" + s)),
        "CLAUDE_CODE_SESSION_ATTENDED=0 at 60% -> no output, no marker")
+
+    # 22-30. the window is 1M unless the model is a known 200K one ([1m] never reaches the
+    # transcript). Regression of 2026-09-29: Opus 5.5 at 130K read "65%", at 160K "80%".
+    O55 = "claude-opus-5-5"
+    ok(quiet(run(transcript(model(O55), asst(130_000, model_id=O55)), session())),
+       "Opus 5.5 attachment: 130K of 1M = 13% -> no output")
+    ok(quiet(run(transcript(asst(160_000, model_id=O55)), session())),
+       "no attachment, Opus 5.5 replies: 160K of 1M = 16% -> no output")
+    ok(blocked(run(transcript(model(O55), asst(500_000, model_id=O55)), session()), 50),
+       "Opus 5.5: 500K of 1M = 50% -> block")
+    ok(quiet(run(transcript(model("claude-sonnet-6"), asst(150_000)), session())),
+       "an unknown future model is taken as 1M: 150K = 15% -> no output")
+    ok(blocked(run(transcript(model("claude-opus-4-6"), asst(100_000)), session()), 50)
+       and quiet(run(transcript(model("claude-opus-4-7"), asst(100_000)), session())),
+       "Opus 4.6 is 200K (50% -> block), Opus 4.7 is 1M (10% -> no output)")
+    ok(blocked(run(transcript(model("claude-sonnet-4-5-20250929"), asst(100_000)), session()), 50)
+       and blocked(run(transcript(model("claude-opus-4-20250514"), asst(100_000)), session()), 50),
+       "dated ids: Sonnet 4.5 and Opus 4 are 200K -> 50% -> block")
+    ok(blocked(run(transcript(model(O55), asst(100_000, model_id=O55)), session(),
+                   env={"CLAUDE_CODE_DISABLE_1M_CONTEXT": "1"}), 50),
+       "CLAUDE_CODE_DISABLE_1M_CONTEXT=1 holds Opus 5.5 to 200K: 100K = 50% -> block")
+    ok(blocked(run(transcript(model(O55), asst(100_000, model_id=O55)), session(),
+                   env={"CLAUDE_CODE_USE_BEDROCK": "1"}), 50)
+       and quiet(run(transcript(model(O55 + "[1m]"), asst(100_000, model_id=O55)), session(),
+                     env={"CLAUDE_CODE_USE_BEDROCK": "1"})),
+       "Bedrock: Opus 5.5 without [1m] is 200K (block), with [1m] is 1M (no output)")
+    ok(blocked(run(transcript(model(O55), asst(200_000, model_id=O55)), session(),
+                   env={"CLAUDE_CODE_MAX_CONTEXT_TOKENS": "400000", "DISABLE_COMPACT": "1"}), 50)
+       and quiet(run(transcript(model(O55), asst(200_000, model_id=O55)), session(),
+                     env={"CLAUDE_CODE_MAX_CONTEXT_TOKENS": "400000"})),
+       "MAX_CONTEXT_TOKENS=400K counts for a claude- id only with DISABLE_COMPACT")
+
+    # 31-33. only this session's lines count: a stale transcript_path or a resumed session's
+    # copied history must not carry the old session's usage into a new one
+    s = session()
+    ok(quiet(run(transcript(asst(180_000, sid="old-session")), s)),
+       "every line from another sessionId -> 0 used -> no output")
+    ok(quiet(run(transcript(asst(180_000, sid="old-session"), asst(30_000, sid=s)), s)),
+       "old session at 90%, this session at 15% -> this session's 15% -> no output")
+    s = session()
+    ok(blocked(run(transcript(asst(20_000, sid="old-session"), asst(100_000, sid=s)), s), 50),
+       "this session's own lines still count: 100K of 200K = 50% -> block")
 
     # 12-13. fail open
     ok(quiet(run(os.path.join(tmp, "nope.jsonl"), session())), "missing transcript -> no output, exit 0")

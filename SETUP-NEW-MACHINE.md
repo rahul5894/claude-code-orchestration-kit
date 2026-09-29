@@ -72,7 +72,7 @@ md-guard self-check: 121/121 passed
 kit-session-start self-check: 25/25 passed
 kit-subagent-report self-check: 12/12 passed
 kit-subagent-start self-check: 18/18 passed
-kit-context self-check: 21/21 passed
+kit-context self-check: 33/33 passed
 kit_off self-check: 11/11 passed
 kit-switch self-check: 12/12 passed
 scan-project self-check: 38/38 passed
@@ -251,8 +251,11 @@ Check: `python ~/.claude/hooks/kit-subagent-start_test.py` prints `18/18 passed`
 `~/.claude/hooks/kit-context.py` is a `Stop` hook. At 45%+ context, the first stop in each
 10-point band asks the model to write the handoff into the bucket's `STATE.md` and tell you
 "/clear, then /continue"; later stops show "Context N% full". It stays silent while a
-background agent runs and never blocks a headless `claude -p` run.
-Check: `python ~/.claude/hooks/kit-context_test.py` prints `21/21 passed`.
+background agent runs and never blocks a headless `claude -p` run. The window is 1M unless the
+model is a known 200K one (Haiku, Sonnet 4.x, Opus 4.6 and older, or a Bedrock/Vertex/Foundry id
+without `[1m]`); `CLAUDE_CODE_DISABLE_1M_CONTEXT=1` makes it 200K. Only lines of the current
+session count, so a new session starts from 0.
+Check: `python ~/.claude/hooks/kit-context_test.py` prints `33/33 passed`.
 
 Known gaps, on purpose:
 
@@ -397,7 +400,7 @@ report format. The skill is worth keeping, so the kit ships its own copy at
 - [ ] the same run printed `kit-session-start self-check: 25/25 passed`
 - [ ] the same run printed `kit-subagent-report self-check: 12/12 passed`
 - [ ] the same run printed `kit-subagent-start self-check: 18/18 passed`
-- [ ] the same run printed `kit-context self-check: 21/21 passed`
+- [ ] the same run printed `kit-context self-check: 33/33 passed`
 - [ ] the same run printed `scan-project self-check: 38/38 passed`
 - [ ] `verify_live.py` C6 lists no unreviewed plugin
 - [ ] In a new Claude Code session, asking Claude to read a 300+ line `.md` whole is
