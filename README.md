@@ -1,5 +1,10 @@
 # Claude Code orchestration kit
 
+> **Default since 2026-09-24: the kit sets no output style.** The main session makes every
+> change itself, inside the kit's hooks, guards, rules and session handoff, and spawns a
+> builder, refuter, verifier or debugger only when you ask. Everything else in this box is the
+> opt-in `/output-style orchestrator` loop.
+>
 > **This fork (2026-09-14, loop revised 2026-09-18): Fable thinks, Opus executes; a finder
 > and a judge instead of one reviewer; delegation above a threshold, not by default.**
 > Upstream pins haiku/sonnet/opus and bans `fable` on subagents. This fork runs on a Max
@@ -20,8 +25,8 @@
 > list. **No review agent runs the gate** — its output is pasted into the brief — which is
 > what four refuters died doing in the measured session that prompted this rework.
 >
-> A builder runs for every non-trivial change — over ~30 changed lines or ~2 files, any new
-> logic, any security surface. Only trivial edits stay in the main session, queued for one
+> Under `orchestrator`, a builder runs for every non-trivial change — over ~30 changed lines
+> or ~2 files, any new logic, any security surface. Only trivial edits stay in the main session, queued for one
 > batched review. Search is
 > qartez, never `Grep`/`Glob`; the web is Firecrawl → Exa → Context7, never
 > `WebFetch`/`WebSearch`. Install is a **merge** into `~/.claude/`, never a replace.
@@ -34,10 +39,11 @@ By default, every subagent runs on the same model as your main session, inherits
 effort level, and can spawn subagents of its own. Fable spawning Fable to run a grep is
 how a week of quota disappears in a day.
 
-This kit fixes that. The main session is the orchestrator: it plans, writes briefs,
-reviews, and verifies. It never edits code. Five subagents do the work. Each one has a
-pinned model, a pinned effort level, and a fixed tool list, and none of them can spawn
-another subagent.
+This kit fixes that with six subagents. Each one has a pinned model, a pinned effort level,
+and a fixed tool list, and none of them can spawn another subagent. With no output style
+(the default) the main session makes changes itself and spawns one only when you ask. Under
+the opt-in `orchestrator` style the main session plans, writes briefs, reviews and verifies,
+and never edits code.
 
 A **brief** is the written task each subagent receives: what to do, what not to do, and
 the exact condition that means it is done.
@@ -63,27 +69,30 @@ pwsh ./install.ps1      # idempotent: run after every kit edit and on every new 
 
 Who does what: [docs/FABLE-OPUS-SPLIT.md](docs/FABLE-OPUS-SPLIT.md) is the one-page split between the Fable seat (judgment) and the Opus seats (execution), and how a task moves between them.
 
-New machine? Follow [SETUP-NEW-MACHINE.md](SETUP-NEW-MACHINE.md) first: prerequisites, qmd, the md-guard hook, checks, and the gotchas already found.
+New machine? Follow [SETUP-NEW-MACHINE.md](SETUP-NEW-MACHINE.md) first: prerequisites, the md-guard hook, checks, and the gotchas already found.
 
 Just using it? [docs/GUIDE.md](docs/GUIDE.md) is the one-page version: install, the two modes, `/kit-off` per project, uninstall.
 
-It copies the agents and `/task`, writes the shared rules to
+It copies the six agents, the six commands (`/task`, `/continue`, `/kit-init`, `/kit-off`,
+`/kit-on`, `/kit-uninstall`), both output styles, the skills and the hooks (five registered),
+publishes the `/kit-init` template and scripts to `~/.claude/kit/`, writes the shared rules to
 `~/.claude/rules/orchestration-kit.md` (your own `~/.claude/CLAUDE.md` is left alone, and an
 old kit block in it is removed), and deep-merges
 `core/settings.user.json` into `~/.claude/settings.json` (backup written when it changes).
-Needs Claude Code **2.1.267+** (frontmatter `effort` under a model's default-effort hold;
-`/model` switches keep the prompt cache). Then: new session → `/status` shows the settings
+Needs Claude Code **2.1.280+** (older builds reject `claude-opus-5-5` and map `opus` to
+Opus 5; last verified on 2.1.284). Then: new session → `/status` shows the settings
 file loaded → `/tasks` while a subagent runs shows its model.
 
 | File | What it is |
 |---|---|
-| `core/CLAUDE.md` | The rules. This is the only place that defines the brief format (six sections), the bucket, and the rule that every agent has a pinned model. |
+| `core/CLAUDE.md` | The shared rules every session and every subagent loads, installed as `~/.claude/rules/orchestration-kit.md`: tools, working from a brief, buckets, the gate, review, honesty. The brief format, the roster and model pinning live in `core/output-styles/orchestrator.md`, which subagents never load. |
 | `core/agents/` | The six agents, one file each: Explore `haiku`, researcher `opus`, builder `opus`, refuter `opus`, verifier `opus`, debugger `inherit`. Each file pins the model, the **effort**, and the tools. |
-| `core/commands/task.md` | `/task` shows every open task. `/task <sentence>` continues one or starts a new one. |
-| `core/settings.user.json` | The user-settings fragment the installer merges: per-model `modelSettings` effort (fable `high`, opus `high`), `env` (`CLAUDE_CODE_SUBAGENT_MODEL=opus` for off-roster agents, `CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH=1`), brief-folder deny rules, push/reset ask rules. |
-
-The **Response contract** section at the top of `core/CLAUDE.md` is one person's reply
-preferences. Edit it to match yours.
+| `core/commands/` | `/task` shows every open task; `/task <sentence>` continues one or starts a new one. `/continue` resumes the open task after `/clear`. `/kit-init` sets up a project; `/kit-off`, `/kit-on` and `/kit-uninstall` switch the kit per project. |
+| `core/output-styles/` | `orchestrator` and `kit-lean`, both opt-in. |
+| `core/hooks/` | The five registered hooks (md-guard, kit-session-start, kit-subagent-start, kit-subagent-report, kit-context), the shared `kit_off.py`, and a self-test for each. |
+| `core/skills/` | `review-precision` (preloaded on the verifier only) and `simple-english` (slash-only). |
+| `core/plugins.json` | Plugins whose hooks fire in every session: `disable` is applied by the installer, `allow` is checked by `verify_live.py`. |
+| `core/settings.user.json` | The user-settings fragment the installer merges: per-model `modelSettings` effort (fable `high`, opus `high`), `env` (`CLAUDE_CODE_SUBAGENT_MODEL=opus` for off-roster agents, `CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH=1`, `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=0`), `subagentPromptCacheTtl: 1h`, `worktree.baseRef: head`, ask rules for push / reset --hard / clean and the read-only flag, and a deny on spawning any agent on Fable. It sets no `outputStyle`. |
 
 **Verified against the official docs on 2026-09-14** (`code.claude.com/docs/en/sub-agents`,
 `model-config`, `settings`): model order = per-invocation → frontmatter →
@@ -105,14 +114,17 @@ never set either.
 | verifier | opus, `effort: high`, `maxTurns: 20` | **The judge.** Returns CONFIRMED / PLAUSIBLE / REFUTED per candidate, and FIXED / NOT FIXED per must-fix after a rework. The only agent that carries the exclusion list. | Read-only, no Bash, no shell of any kind. REFUTED needs the quoted line that makes the failure impossible; otherwise PLAUSIBLE. |
 | debugger | inherit (the orchestrator's model), `effort: high` | Finds the real cause of a hard bug and proves it, with runtime tools (delve, Flutter DTD, Postgres). | Has no Edit or Write tool. It explains, it does not fix. |
 
-The normal loop is: **gate → builder → gate → refuter finds → verifier judges → you
-decide.** CONFIRMED and PLAUSIBLE items become a second builder brief, then the verifier
+Under `orchestrator`, the loop is: **gate → builder → gate → refuter finds → verifier
+judges → you decide.** CONFIRMED and PLAUSIBLE items become a second builder brief, then the verifier
 answers FIXED or NOT FIXED per item. A second round of must-fixes, or any NOT FIXED, stops
 the loop and comes back to you. Three agents on the happy path, five at most.
 
-**Trivial edits never enter that loop.** Under ~30 changed lines or ~2 files with no new
-logic, the main session edits and queues the diff for one batched review. Everything else is
-a builder on Opus: measured 2026-09-22, every main-session turn on Fable re-read ~422K cached
+With no style set, none of this runs: the main session makes every change itself and spawns
+these agents only when you ask.
+
+Under `orchestrator`, **trivial edits never enter that loop.** Under ~30 changed lines or ~2
+files with no new logic, the main session edits and queues the diff for one batched review.
+Everything else is a builder on Opus: measured 2026-09-22, every main-session turn on Fable re-read ~422K cached
 tokens, so ten inline turns cost more than one builder.
 
 **None of the six can spawn a subagent.** The `Agent` tool is not in any of their
@@ -139,13 +151,13 @@ keeps the bookkeeping.
 
 1. In your repo, type `/task fix the broken menu on the settings page`. Claude opens a
    bucket for it, names it `broken-settings-menu`, shows the scope, and waits for your go.
-2. Claude writes a brief for the builder and spawns it. You do not see the brief unless you
-   ask. The builder makes the change, runs the tests, and writes a report.
-3. Claude spawns the refuter with the same brief. The refuter reads the code change, runs
-   the named tests, and answers ACCEPT or REWORK with a list of must-fix items.
-4. On REWORK, Claude writes a new brief with the must-fix list, the builder fixes it, and
-   the verifier confirms each item. On ACCEPT, Claude closes the bucket and tells you in
-   one line. A second REWORK is not looped; Claude brings it to you.
+2. With no style set (the default), Claude makes the change itself, runs the gate and the
+   tests, and keeps the bucket's `STATE.md` current as the handoff.
+3. Under `/output-style orchestrator`, Claude instead writes a brief and spawns the builder.
+   The refuter then lists every candidate defect, the verifier marks each CONFIRMED /
+   PLAUSIBLE / REFUTED, a second brief fixes what is left, and the verifier answers FIXED or
+   NOT FIXED per item. A second round is not looped; Claude brings it to you.
+4. When the work is done and verified, Claude closes the bucket and tells you in one line.
 5. Say the next thing: "now the time display is wrong". Claude sees it is a different
    task, opens a new bucket, and starts again. Ten tasks in a day means ten buckets. You
    named none of them.
@@ -162,10 +174,12 @@ about a project go in that project's repo.**
 
 | File | Why here |
 |---|---|
-| `CLAUDE.md` | Loaded automatically in every session and into every subagent. Your rules follow you to every repo. |
+| `rules/orchestration-kit.md` | The kit's shared rules. Loads like `CLAUDE.md` in every session and into every subagent. Your own `~/.claude/CLAUDE.md` is left alone. |
 | `agents/*.md` | The six agents from the table above. One file each, so each one's tool list is enforced. |
-| `commands/task.md` | Defines `/task`. The dashboard for every bucket. |
-| `hooks/kit-context.py` | A `Stop` hook. At 45%+ context it asks for the handoff in the bucket's `STATE.md`, then "/clear, then continue". |
+| `commands/*.md` | `/task` (the dashboard for every bucket), `/continue`, `/kit-init`, `/kit-off`, `/kit-on`, `/kit-uninstall`. |
+| `output-styles/`, `skills/` | The two opt-in styles; `review-precision` and `simple-english`. |
+| `kit/` | What `/kit-init` and the per-project switch run: the project template, `audit_project.py`, `scan_project.py`, `kit_switch.py`. |
+| `hooks/*.py` | Five registered hooks. md-guard (PreToolUse) keeps big markdown reads windowed and stops read-only agents' shell writes; kit-session-start (SessionStart) names the missing gate and the open buckets, and re-injects `STATE.md` after a compaction; kit-subagent-start and kit-subagent-report hand `DECISIONS.md` to agents and file their reports; kit-context (Stop) asks for the handoff at 45%+ context, then tells you: /clear, then type /continue. |
 
 These files describe how *you* like to work. They say nothing about any codebase, so they
 do not belong in a repo.
@@ -228,21 +242,22 @@ Three reasons:
 
 Every subagent loads all of CLAUDE.md, so **every line costs money every time one
 starts.** About 60% of this kit's first `CLAUDE.md` was instructions only the main chat
-could use. A subagent paid for those lines and could do nothing with them. You cannot move
-them somewhere else, because CLAUDE.md is the only file that loads automatically.
+could use. A subagent paid for those lines and could do nothing with them. They now live in
+the `orchestrator` output style, which subagents never load; `~/.claude/rules/*.md` loads like
+CLAUDE.md and costs the same.
 
 So the split is: **CLAUDE.md holds the rules, this README holds the reasons.** Reasons do
 not change what Claude does, and nothing loads this README while Claude runs. So reasons
 are free here and cost money there. This kit's `CLAUDE.md` went from 2,258 to 1,324
-tokens, a 41% cut, and kept all 16 rules that matter. That is about 23k tokens saved over
-25 spawns.
+tokens at the time (2026-09-14), a 41% cut, and kept all 16 rules that matter. It is now
+~7.4 KB, and `validate_kit.py` section 5 pins its byte budget.
 
 If you add something to `CLAUDE.md`, add the rule, not the reason.
 
 ## The bucket
 
 Each task gets one bucket inside the repo you are working in. Claude opens it when a new
-task starts and closes it when the refuter accepts. A file called `INDEX.md` next to the
+task starts and closes it when the task is done and verified. A file called `INDEX.md` next to the
 buckets lists all of them with status and next action. Agents share information through
 these files instead of through your chat:
 
@@ -284,9 +299,9 @@ detection, and a section where the scan found nothing says so and refreshes on t
 | | |
 |---|---|
 | `project/CLAUDE.md` | A template for a repo's own CLAUDE.md: commands table, layout, danger list, list of past defects. |
-| `project/.claude/settings.json` | Blocks Edit/Write on `briefs/**`. Asks before `push`, `reset --hard`, and removing the read-only flag. Stops subagents spawning subagents. |
+| `project/.claude/settings.json` | Asks before `push`, `reset --hard`, `clean`, and removing the read-only flag. Allows read-only git commands and bucket reads. Stops subagents spawning subagents. |
 | `project/.claude/scratch/_TEMPLATE/` | Longer versions of the bucket files, with STOP/LOG/DEFER classes for findings. |
-| `project/.gitignore-snippet` | The two lines that keep buckets out of git. |
+| `project/.gitignore-snippet` | The line that keeps buckets out of git. |
 
 ## Facts from the official docs
 
@@ -323,11 +338,11 @@ The docs list 17 settings for an agent file, not just the usual 5 (`name`, `desc
 | Setting | Why |
 |---|---|
 | `effort` | `low` to `max`. **If you leave it out, the agent inherits your session's level**, so a cheap model can still be told to think hard. Set on every agent here except `Explore`, because haiku has no effort parameter at all. |
-| `disallowedTools` | A block list, for when "only these tools" is too strict. Every read-only agent here carries `Edit, Write, NotebookEdit`. It blocks the edit tools only: an agent that also holds `Bash` can still write through a shell, so its own file forbids that too. |
+| `disallowedTools` | A block list, for when "only these tools" is too strict. Explore, refuter and verifier carry `Edit, Write, NotebookEdit`; debugger and researcher get no edit tool because their `tools:` list omits it. It blocks the edit tools only: an agent that also holds `Bash` can still write through a shell, so its own file forbids that too. |
 | `skills` | Preloads a skill onto one agent. `verifier` gets `review-precision` — the exclusion list belongs to the judge and must never reach the finder. The file does sit in `~/.claude/skills/`, because `skills:` resolves installed skills by name and the installer puts it there; what keeps it off every other agent is that **no agent holds the `Skill` tool**, so only this frontmatter preload can reach it. Its description costs ~46 tokens in the session listing. Do not add more global skills casually: listings are budgeted at 1% of the context window and on overflow Claude Code drops the least-invoked descriptions. |
 | `omitClaudeMd` | Launches the agent without the CLAUDE.md hierarchy. Set on `Explore`. Pair it with the tool rules in `initialPrompt`, which survives the flag — an agent that loses "code search is qartez" burns more than the file saved. |
 | `maxTurns` | Set on `refuter` (40) and `verifier` (20). **Measured not to bind**: a 40-turn refuter made 45 tool calls. Treat it as a budget hint, read the agent's coverage line for the truth. |
-| `isolation: worktree` | Gives the agent its own git worktree. It starts from your default branch unless `worktree.baseRef: "head"`, and holds tracked files only — no `node_modules`, no `.venv`, no `.env`. Use it when two agents must write at the same time; keep read-only agents out, because a different working directory forfeits the cached prefix. |
+| `isolation: worktree` | Gives the agent its own git worktree. The kit sets `worktree.baseRef: "head"`, so it starts from your current HEAD (Claude Code's own default is your default branch), and holds tracked files only — no `node_modules`, no `.venv`, no `.env`. Use it when two agents must write at the same time; keep read-only agents out, because a different working directory forfeits the cached prefix. |
 | `permissionMode` | Permission behavior for that agent only. **Ignored** when the main session runs in `acceptEdits` or `auto`. |
 | `hooks`, `memory` | Exist, not used here. |
 

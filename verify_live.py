@@ -89,10 +89,10 @@ for p in sorted(glob.glob('core/agents/*.md')):
              if not any(w in txt[max(0, m.start() - 120):m.start() + 80].lower() for w in DISCLAIMS)]
     ok(not probs, f"{os.path.basename(p)}: no order it cannot carry out", str(probs[:2]))
 
-print("\n=== B. no tool granted that the guard always denies ===")
-# qartez-guard denies Grep and Glob on every path and file type, index or no index
-# (verified directly against .md, .json, .ps1 and an unindexed directory). Granting them
-# costs a wasted turn per call and teaches the agent its search failed.
+print("\n=== B. no Grep/Glob granted to any agent ===")
+# Code search is qartez, and the tool list is the only barrier: qartez-guard once denied Grep
+# and Glob everywhere, but since 2026-09-29 it is registered for Edit|Write|MultiEdit only and
+# allows a direct Grep/Glob payload. A granted Grep teaches the agent its search is legal.
 for p in sorted(glob.glob('core/agents/*.md')):
     d, _ = fm(p)
     tools = [t.strip() for t in d.get('tools', '').split(',')]

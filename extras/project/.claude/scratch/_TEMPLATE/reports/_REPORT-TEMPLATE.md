@@ -1,6 +1,6 @@
-# REPORT <agent>-NN — <slug>   <!-- NN = the brief's number -->
+# REPORT <NN>-<agent> — <slug>   <!-- NN = the brief's number; filed as reports/<NN>-<agent>.md -->
 
-**Brief:** `briefs/<agent>-NN.md`
+**Brief:** `briefs/<NN>-<task>.md`
 **Agent / model:** <name> / <model>
 **Outcome:** SUCCESS | REWORK | BLOCKED | FAILED
 

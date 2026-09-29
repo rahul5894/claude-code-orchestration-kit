@@ -18,7 +18,8 @@ Paste them under a heading in PrideConnect's `CLAUDE.md`, not in `~/.claude/CLAU
   the current best way. If you are not certain it is current, you do not know yet: research
   with Firecrawl, Exa and Context7, never `WebSearch`/`WebFetch`, and cite what you found
   for the INSTALLED version.
-- **Is it DRY against what already exists?** Grep before writing. If the same logic lives
+- **Is it DRY against what already exists?** Search with qartez (`qartez_grep` /
+  `qartez_find`) before writing. If the same logic lives
   elsewhere, even written differently, reuse or extract ONE source. 3+ similar sites =
   extract; one site = do not abstract.
 - **Instant-load, never network-blocking.** Any user-facing surface renders from local or

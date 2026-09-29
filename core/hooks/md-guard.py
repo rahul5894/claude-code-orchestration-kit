@@ -55,8 +55,8 @@ HEREDOC_WRITE_RES = (
 
 # A read-only agent's verdict is discarded whole if the tree moved under it, so the shell
 # writes it can name are denied here rather than found afterwards in a git diff.
-# ponytail: denylist of named write shapes; the prose prohibition and the git-status diff
-# catch the rest
+# A denylist of named write shapes; the prose prohibition and the git-status diff catch
+# the rest
 READ_ONLY_AGENTS = {"refuter", "debugger"}
 # A discard target: writing there changes nothing.
 _DISCARD = r"(?:/dev/null|\$null|nul)(?![\w./\\-])"

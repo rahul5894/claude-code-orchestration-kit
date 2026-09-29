@@ -180,8 +180,8 @@ chk('effort' not in d, 'Explore: no effort key (haiku ignores it)', str(d.get('e
 # Grep is for non-code files. qartez indexes source only, so the non-code route must be
 # explicit or the agent stops at the wrong index and reports absence that is not real.
 _ex = re.sub(r'\s+', ' ', open('core/agents/Explore.md', encoding='utf-8').read())
-chk('denies `Grep` and `Glob` on every path' in _ex,
-    'Explore: told the guard denies Grep/Glob on every path and file type')
+chk('no `Grep`, no `Glob`, no `Read`, no shell — for every path and file type' in _ex,
+    'Explore: told it holds no Grep/Glob on any path or file type')
 chk('OUT OF INDEX' in _ex,
     'Explore: has a verdict for a lookup its tools cannot reach')
 chk('search_bodies=true' in _ex and 'will read as NO MATCHES when it is right there' in _ex,
@@ -221,29 +221,30 @@ for name, cap in [('refuter', 40), ('verifier', 20)]:
     d, _ = fmx(f'core/agents/{name}.md')
     chk(str(d.get('maxTurns')) == str(cap), f'{name}: maxTurns == {cap}', str(d.get('maxTurns')))
 
-# Grep and Glob are denied by the qartez guard on EVERY path and file type - verified by
-# running qartez-guard.exe directly against a source dir, *.md, a .json, a .ps1, and a
-# directory with no qartez index at all. Granting a tool that can never run costs the agent a
-# turn to discover the denial and re-plan, and it made two different models report a false
-# NO MATCHES rather than admit the lookup was out of reach.
+# Grep and Glob are in no agent's tool list, for EVERY path and file type. The qartez guard
+# once denied both unconditionally (verified then against a source dir, *.md, .json, .ps1 and
+# an unindexed directory); on 2026-09-29 it was registered for Edit|Write|MultiEdit only and a
+# direct Grep/Glob payload came back allowed, so the tool list is now the only barrier. A
+# denied tool cost the agent a turn to discover and re-plan, and it made two different models
+# report a false NO MATCHES rather than admit the lookup was out of reach.
 for _p in agentfiles:
     _d, _ = fm(_p)
     _tl = [x.strip() for x in _d.get('tools', '').split(',')]
     chk('Grep' not in _tl and 'Glob' not in _tl,
-        f'{os.path.basename(_p)}: no Grep/Glob (the guard denies both unconditionally)',
+        f'{os.path.basename(_p)}: no Grep/Glob (the tool list is the only barrier)',
         str([x for x in _tl if x in ('Grep', 'Glob')]))
 
 print()
 print('=== 2b. EVERY MANDATE HAS THE TOOL IT NEEDS ===')
-# The rule says "code search is qartez, never Grep on source", and the guard denies Grep on
-# source. An agent expected to search source therefore needs qartez_grep, or it has no legal
+# The rule says "code search is qartez, never Grep on source", and no agent holds Grep.
+# An agent expected to search source therefore needs qartez_grep, or it has no legal
 # way to do it at all. Measured consequence when this was missing: a refuter fell through to
 # `Bash grep` (three agents had nothing whatsoever).
 for name in ['refuter', 'researcher', 'builder', 'debugger', 'verifier', 'Explore']:
     d, _ = fmx(f'core/agents/{name}.md')
     t = [x.strip() for x in d.get('tools', '').split(',')]
     chk(QZ + 'grep' in t,
-        f'{name}: has qartez_grep (Grep is denied on source, so this is its only legal search)',
+        f'{name}: has qartez_grep (no agent holds Grep, so this is its only legal search)',
         str([x for x in t if 'qartez' in x]))
 
 # An order an agent cannot carry out is worse than no order: it either gets silently skipped
@@ -252,8 +253,8 @@ shared_txt = open('core/CLAUDE.md', encoding='utf-8').read()
 chk('If you can write' in shared_txt and 'If you cannot' in shared_txt,
     'shared: the FINDINGS.md order is scoped to agents that can actually write')
 _sh = re.sub(r'\s+', ' ', shared_txt)
-chk('denies them on **every** path and file type' in _sh,
-    'shared: says the guard denies Grep/Glob everywhere, not just on source')
+chk('not in your list, for **every** path and file type' in _sh,
+    'shared: says Grep/Glob are unavailable everywhere, not just on source')
 chk('`Read` is *not* guarded, so that rule is yours' in _sh,
     'shared: admits Read is unenforced, so the agent owns that rule')
 # qartez asserts "very likely not defined in this repo" on any miss. Measured: an identifier

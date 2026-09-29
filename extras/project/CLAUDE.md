@@ -1,8 +1,8 @@
 # <PROJECT NAME> — working rules
 
 Repo-specific rules only. The orchestration loop, model routing, agent roster, brief format
-and reporting rules live in `~/.claude/rules/orchestration-kit.md` and the kit's output styles, and
-apply here too.
+and reporting rules live in `~/.claude/rules/orchestration-kit.md` (and, when you opt into one,
+the kit's output styles), and apply here too.
 
 Keep this file about **this codebase**: how to check it, how to build it, what is dangerous
 in it, and what it has already got wrong. Every line is re-paid by every subagent on every
@@ -32,8 +32,8 @@ Measured: one builder ran the full `pytest` suite **twice at 159 s each** — 5.
 ### Agents never run these
 
 - **The full test suite.** Mine to run, once, at the end, when I ask. A builder runs only the
-  test files its brief names; a review agent runs no checks at all — the gate's output is
-  pasted into its brief.
+  test files its brief names; a review agent never runs the gate — its output is pasted
+  into its brief — and a refuter runs only the test files its brief names.
 - `<any DB advisor, migration, seed, deploy, or long-running audit command>` — name them here.
   Anything over ~60 s belongs on this list.
 - If a command needs credentials or network an agent does not have, say so and name what the
@@ -52,14 +52,15 @@ batched.
 
 Source is read and searched with **qartez**, never `Grep`/`Glob`/`Read` on code.
 
-`qartez-guard` denies `Grep`, `Glob`, `Edit` and `Write` on source, **but it does not cover
-`Read` or `Bash`** (verified: a `Read` on a `.py` file returns nothing from the guard). So an
-agent blocked on `Grep` can still fall through to `Read` or `Bash grep` — and one measured
+`qartez-guard` checks only `Edit`/`Write` (an edit to a file with 5+ importers is blocked until
+`qartez_impact` has run); **it does not cover `Grep`, `Glob`, `Read` or `Bash`**. Agents lack
+`Grep`/`Glob` only because their tool lists omit them, and an agent can still fall through to
+`Read` or `Bash grep` — and one measured
 refuter did exactly that, pulling a 680-line file into its context in two chunks instead of
 one `qartez_read` of the symbol. On those two tools the rule is the only thing stopping it.
 
-**`Grep` and `Glob` are denied on every path and file type**, not only on source, so they are
-not in any agent's tool list — for a non-code file the fallback is `Read` (with `offset` and
+**`Grep` and `Glob` are in no agent's tool list**, for every path and file type, not only on
+source — for a non-code file the fallback is `Read` (with `offset` and
 `limit`), or `Bash grep ... | cut -c1-300` for the agents that hold a shell. Markdown over
 ~300 lines goes through a window, never a whole-file read: a hook denies that too.
 
@@ -92,10 +93,11 @@ agent that believes it needs one of these **stops and reports**.
 
 ## Handoff
 
-`docs/HANDOFF.md` is the current session state — **read it at session start and verify it
-before relying on it.** Check its recorded branch, HEAD and dirty-tree state against the repo.
+The session handoff is the open bucket's `.claude/scratch/<slug>/STATE.md` (`/task`,
+`/continue`) — **verify it before relying on it.** Check its recorded branch, HEAD and
+dirty-tree state against the repo.
 Where the handoff and the repo disagree, **the repo is right**: correct the handoff and say
-plainly that you corrected it. Replace stale state; never append a session log. Under ~100
+plainly that you corrected it. Replace stale state; never append a session log. At most ~60
 lines.
 
 Record: timestamp, branch, exact HEAD, dirty-tree state, current objective, material changes,

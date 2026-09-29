@@ -11,7 +11,7 @@ Coding, Simplicity First, Surgical Changes, Goal-Driven Execution — plus a fif
 that was added locally.
 
 That fifth section is repo-specific (Flutter + Go, a named threat model, an instant-load
-contract) and was moved to `extras/prideconnect-section.md`. The first four sections are
+contract) and is also kept on its own in `extras/prideconnect-section.md`. The first four sections are
 not installed, for the reasons under "Karpathy guidelines" below.
 
 ## Karpathy guidelines (`multica-ai/andrej-karpathy-skills`)
@@ -35,7 +35,7 @@ rules actively fight this kit:
   of the root-cause fix, because a guard in the shared function touches code the ticket
   never named.
 
-Worth harvesting, if not already present in ponytail's wording: "match existing style even
+Worth harvesting (ponytail, named here, was dropped in 48329ee): "match existing style even
 if you'd do it differently", and "unrelated dead code: mention it, don't delete it". Its
 `EXAMPLES.md` (14.8 KB of before/after diffs) is the only dense content in the repo, does
 not ship with the plugin, and would be useful only as review fixtures.
@@ -51,4 +51,4 @@ not ship with the plugin, and would be useful only as review fixtures.
 | a forked reviewer to skip the cold diff read | a fork inherits the main session's model and destroys the independence the review exists for |
 | per-agent MCP **tool** allowlists as a token play | tool definitions are already deferred; only server instructions prose is not |
 | agent teams | experimental, off by default, ~7x tokens, and a named subagent silently becomes a teammate |
-| BMAD / spec-kit / claude-flow / SuperClaude | same feature: BMAD Full 6 days and $200 against 1.2 days and $75 for the light flows |
+| BMAD / spec-kit / claude-flow / SuperClaude | same feature: BMAD Full 6 days and $200 against ~1.1-1.7 days and $75-$95 for the three light flows |

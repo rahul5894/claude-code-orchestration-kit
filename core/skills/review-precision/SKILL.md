@@ -19,7 +19,8 @@ wording is ours.
 - A candidate is **CONFIRMED** only when you can point at the line and the described
   failure follows from the code as written.
 - **REFUTED** requires the quote that makes the failure impossible: the contradicting line,
-  the type or constant that forbids the input, or a guard present in this diff.
+  the type or constant that forbids the input, a guard you can read in the code, or an explicit
+  decision in the brief's spec.
 - Everything else is **PLAUSIBLE**. That is the default. "Looks fine", "the caller probably
   checks", "unlikely in practice" are not refutations.
 - Report your confidence for CONFIRMED items. Below roughly 80% confidence a finding is

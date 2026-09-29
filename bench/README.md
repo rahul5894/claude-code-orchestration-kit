@@ -15,7 +15,7 @@ score the result.
 | `hidden/<t>/test_robust*.py` | robustness classes the ticket implies (bad input, never crash) |
 | `hidden/<t>/test_security*.py` | who may do what, hostile input (optional group) |
 | `hidden/<t>/test_bugs*.py` | defects seeded in the fixture's own code that the ticket asks the arm to find (optional group) |
-| `ref/<t>/`, `naive/<t>/` | files copied over the fixture's `shop/` to prove the tests: ref passes all, naive fails some |
+| `ref/<t>/`, `naive/<t>/` | files copied over the fixture's package (`shop/`, or `billing/` for `fixture-billing`) to prove the tests: ref passes all, naive fails some |
 | `score.py <repo> --ticket <t>` | one JSON line: spec, bugs, robust, security P/T, LOC added/removed, files changed under the package, and `quality` |
 | `variants/` | alternative project `CLAUDE.md` files for `run_arm.py --claude-md` (e.g. a gate with linters) |
 | `run_arm.py` | one arm, one ticket: clone, run `claude -p`, score, save `results/` |
@@ -37,7 +37,7 @@ python bench/run_arm.py --arm full  --ticket refunds --tag a --timeout 3600
 
 `--style-file PATH` tries an unreleased output style: it is copied into the clone's
 `.claude/output-styles/` and its frontmatter `name` becomes the arm's `outputStyle`.
-Another model: `--model claude-fable-5-5` (the same flag for every arm).
+Another model: `--model claude-fable-5-1` (the same flag for every arm).
 
 ## Quality metrics
 
@@ -70,7 +70,7 @@ issue at most 25 (a query per order is 1000).
 ## Adding a ticket
 
 1. `tickets/<t>.txt` — the prompt.
-2. `hidden/<t>/test_spec.py` — import `shop` from the path in env `BENCH_REPO`; catch the
+2. `hidden/<t>/test_spec.py` — import the fixture's package (`shop`, or `billing`) from the path in env `BENCH_REPO`; catch the
    import error so the untouched fixture scores `0/T` instead of crashing (copy the top of
    `hidden/refunds/test_spec.py`).
 3. `hidden/<t>/test_robust.py` (optional) — robustness classes, written from the ticket only.

@@ -14,12 +14,12 @@ repo unusual.
 
 | Purpose | Command | Measured |
 |---|---|---|
-| **FAST GATE — agents run this** | `python validate_kit.py` | **0.4 s** |
-| Live-state check (**I run this**) | `python verify_live.py` | **37 s** — installs twice, runs every self-test |
-| Install into `~/.claude` | `pwsh -File install.ps1` | 5.6 s — runs five self-tests |
+| **FAST GATE — agents run this** | `python validate_kit.py` | **0.6 s** |
+| Live-state check (**I run this**) | `python verify_live.py` | **161 s** (once, 2026-09-29) — installs twice, runs every self-test |
+| Install into `~/.claude` | `pwsh -File install.ps1` | ~11 s — runs eight self-tests |
 | Scoreboard from transcripts | `python agent_stats.py --since <YYYY-MM-DD>` | ~1 s |
 
-`validate_kit.py` reads this repository only and is the diff-scoped gate: ~450 checks, no test
+`validate_kit.py` reads this repository only and is the diff-scoped gate: ~600 checks, no test
 suite, no network. `verify_live.py` also reads `~/.claude`, runs `install.ps1` twice and
 shells out to `claude plugin validate` and `qartez doctor` — which is why it is not the gate.
 
@@ -36,10 +36,10 @@ shells out to `claude plugin validate` and `qartez doctor` — which is why it i
 
 There is no server and no database, so the general list mostly does not apply. What does:
 
-- `install.ps1` — writes into `~/.claude`, merges `settings.json`, registers a hook. A defect
-  here corrupts the user's own config. Every change gets the four-state probe in
-  `verify_live.py` section C3 (nothing installed / empty CLAUDE.md / empty settings / corrupt
-  settings).
+- `install.ps1` — writes into `~/.claude`, merges `settings.json`, registers five hooks. A defect
+  here corrupts the user's own config. Every change gets the state probe in `verify_live.py`
+  section C3 (nothing installed / empty CLAUDE.md / empty settings / corrupt settings / a
+  settings.json that enables a disabled plugin).
 - `core/settings.user.json` — `env` keys here silently defeat every model and tool pin.
 - `core/agents/*.md` frontmatter — `tools` and `disallowedTools` ARE the security boundary for
   read-only agents; nothing else stops a write.
@@ -48,8 +48,9 @@ There is no server and no database, so the general list mostly does not apply. W
 
 ## Code navigation
 
-qartez indexes **only the Python files** here — `validate_kit.py`, `verify_live.py`,
-`agent_stats.py`, `core/hooks/*.py`. Everything this repo is actually made of — the agent
+qartez indexes **only the Python files** here — the scripts at the root (`validate_kit.py`,
+`verify_live.py`, `agent_stats.py`, `audit_project.py`, `scan_project.py`, `kit_switch.py`),
+`core/hooks/*.py` and `bench/**/*.py`. Everything this repo is actually made of — the agent
 markdown, `install.ps1`, the docs — is **not in the index**. So `OUT OF INDEX` is the normal
 answer in this repo, not a surprise, and `Bash grep ... | cut -c1-300` is the working tool for
 anything that is not a Python symbol.

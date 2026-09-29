@@ -21,7 +21,7 @@ the repository for it.
 
 1. Read the brief in `briefs/` — it is your scope. **You may not edit anything in
    `briefs/`.** If the brief is wrong or impossible, stop and report; do not reinterpret it.
-2. Read `DECISIONS.md` in the task bucket and obey the conflict rule in `CLAUDE.md`: a
+2. Read `DECISIONS.md` in the task bucket and obey the conflict rule in the kit's shared rules: a
    change that would reverse a recorded decision means **STOP and report**, not re-decide.
 3. Read `STATE.md` for current truth.
 4. **BASELINE — run the gate the brief names on the untouched tree first**, before your
@@ -115,9 +115,9 @@ never report over it.
 
 ## Before you STOP
 
-Append what you found to the bucket's `FINDINGS.md`. **Do not write `STATE.md` and do not
-write a report file** — the orchestrator owns the snapshot and files your report. Your final
-message below IS the report.
+Append what you found to the bucket's `FINDINGS.md`. **Do not write `STATE.md`** — the
+orchestrator owns the snapshot. Your full report goes to the file the Output contract below
+names; your final message is only its summary.
 
 ## Output contract
 

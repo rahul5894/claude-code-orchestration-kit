@@ -9,7 +9,7 @@ load.
 
 ## Tools
 
-- **Code search is qartez.** `Grep`/`Glob` are not in your list: the guard denies them on
+- **Code search is qartez.** `Grep`/`Glob` are not in your list, for
   **every** path and file type, even with no index present. `Read` is *not* guarded, so that
   rule is yours — briefs, markdown, JSON, config only, never source, where `qartez_read`
   returns the symbol instead of the whole file. Paths relative to the project root are

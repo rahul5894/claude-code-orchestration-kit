@@ -1,11 +1,11 @@
-# New machine setup: orchestration kit, qmd, md-guard
+# New machine setup: orchestration kit and md-guard
 
 This page is for you, on a fresh Windows machine. Follow it top to bottom.
 It takes about 20 minutes. Every step has a check. Do not skip a check.
 
 Which model runs which agent, and why, is not repeated here: see `docs/FABLE-OPUS-SPLIT.md`.
 
-Last verified: 2026-09-23 on Windows 11, Claude Code 2.1.280 (2.1.280+ required: older builds reject `claude-opus-5-5` and map `opus` to Opus 5), qmd 2.8.3, Python 3.12.10.
+Last verified: 2026-09-29 on Windows 11, Claude Code 2.1.284 (2.1.280+ required: older builds reject `claude-opus-5-5` and map `opus` to Opus 5), Python 3.12.10.
 
 **`claude --version` is not the version your session is running.** Measured 2026-09-18: the
 CLI binary at `~/.local/bin/claude.exe` reported **2.1.270** while the running VS Code
@@ -60,9 +60,11 @@ Expected output, in this order:
 
 ```
 agents:        builder, debugger, Explore, refuter, researcher, verifier
-commands: task
+commands:      continue, kit-init, kit-off, kit-on, kit-uninstall, task
+skills:        review-precision, simple-english
+output-styles: kit-lean, orchestrator
 rules/orchestration-kit.md: written  (or "unchanged" on a re-run)
-settings.json: merged (backup written)
+settings.json: merged (backup written)  ("created" if none existed, "unchanged" on a re-run)
 md-guard: registered in settings.json
 kit-session-start: registered in settings.json
 kit-subagent-report: registered in settings.json
@@ -84,7 +86,9 @@ What the installer does. It copies `core/agents/*.md` and `core/commands/*.md` i
 their own so `/kit-off` can drop them from one project, and leaves `~/.claude/CLAUDE.md` to you
 (an old kit block between marker comments there is removed, with a backup). It deep-merges `core/settings.user.json` into
 `~/.claude/settings.json` and writes a backup first. It copies `core/hooks/*.py` into
-`~/.claude/hooks/` and registers the md-guard hook once. It is safe to run again after
+`~/.claude/hooks/` and registers five hooks once each (md-guard, kit-session-start,
+kit-subagent-report, kit-subagent-start, kit-context). It also copies the commands, both output
+styles and the skills, and publishes the `/kit-init` template and scripts to `~/.claude/kit/`. It is safe to run again after
 every kit change. A second run prints `unchanged` and `already registered`.
 
 Two modes. The installer copies both output styles into `~/.claude/output-styles/`:
@@ -101,7 +105,7 @@ Checks:
    not just the repo, so it is the check that catches a stale install: every installed
    file byte-identical to the repo, every effort pin and `env` key live in
    `settings.json`, the roster table in the output style matching the agent files, and no
-   agent holding a tool the qartez guard denies or carrying an order it has no tool for.
+   agent holding `Grep`/`Glob` or carrying an order it has no tool for.
    Every one of its sections is break-tested. Run it after every kit change, not only on
    a new machine. `python validate_kit.py` is the faster repo-only half and runs inside it.
 2. `python agent_stats.py` after you have run some agents. It reads the transcripts Claude
@@ -112,7 +116,7 @@ Checks:
 3. `~/.claude/settings.json` has no `CLAUDE_CODE_EFFORT_LEVEL` and no
    `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` under `env`. Either one silently overrides every
    agent file. The installer warns if it finds them.
-3. Start a new Claude Code session. `/status` shows the settings file loaded.
+4. Start a new Claude Code session. `/status` shows the settings file loaded.
 
 ## 2b. MCP servers
 
@@ -176,8 +180,8 @@ with a measured FAST GATE row**, and the kit now creates that itself:
 1. Open the repo in Claude Code. A global `SessionStart` hook (`kit-session-start.py`) sees
    there is no FAST GATE row and injects one line telling the orchestrator to run `/kit-init`
    before delegating anything. It also lists the open task buckets for the model and, on
-   startup and `/clear`, shows you "Open task(s): ... - type /continue to resume". It writes
-   nothing. A `SubagentStart` hook
+   startup and `/clear`, shows you "Open task(s): ... - type /continue to resume". After a
+   compaction it re-injects the newest open bucket's `STATE.md`, capped. It writes nothing. A `SubagentStart` hook
    (`kit-subagent-start.py`) injects the `DECISIONS.md` of every OPEN or BLOCKED bucket in
    `.claude/scratch/INDEX.md` into each spawned agent, so a settled decision binds an agent
    that never saw the conversation.
@@ -252,8 +256,10 @@ Check: `python ~/.claude/hooks/kit-subagent-start_test.py` prints `18/18 passed`
 10-point band asks the model to write the handoff into the bucket's `STATE.md` and tell you
 "/clear, then /continue"; later stops show "Context N% full". It stays silent while a
 background agent runs and never blocks a headless `claude -p` run. The window is 1M unless the
-model is a known 200K one (Haiku, Sonnet 4.x, Opus 4.6 and older, or a Bedrock/Vertex/Foundry id
-without `[1m]`); `CLAUDE_CODE_DISABLE_1M_CONTEXT=1` makes it 200K. Only lines of the current
+model is a known 200K one (Haiku, Sonnet 4.x, Opus 4.6 and older, claude-3*, or a
+Bedrock/Vertex/Foundry id without `[1m]`); `CLAUDE_CODE_DISABLE_1M_CONTEXT=1` makes it 200K, and
+`CLAUDE_CODE_MAX_CONTEXT_TOKENS` counts together with `DISABLE_COMPACT`. The `[1m]` marker never
+reaches the transcript, so the model id alone cannot say 1M. Only lines of the current
 session count, so a new session starts from 0.
 Check: `python ~/.claude/hooks/kit-context_test.py` prints `33/33 passed`.
 
@@ -299,7 +305,8 @@ report format. The skill is worth keeping, so the kit ships its own copy at
   cannot hit us, but it is the reason "the skill looks stale" reports existed.
 - `qmd query` and `qmd vsearch` hang with no output when no embeddings exist. They try
   to pull GGUF models. `qmd embed` would download about 2.5 GB of models. BM25
-  `qmd search` is enough at our corpus size, so all three stay banned.
+  `qmd search` is enough at our corpus size, so all three stay banned. (Historical: qmd
+  itself was dropped on 2026-09-23, see section 3.)
 - qmd 2.5.2 fixed global npm installs failing on Windows (qmd issues #668, #452). Do
   not install anything older than 2.5.2 on Windows.
 - Some of our planning docs have paragraph-long lines. A `grep -n "^## " file | head -80`
@@ -309,9 +316,9 @@ report format. The skill is worth keeping, so the kit ships its own copy at
   work: heredoc writes, `cat >>` appends, `sed -i` edits, and a `head` in an unrelated
   command segment. It also missed `bash -c` and the PowerShell tool. All six are now
   test cases.
-- Effort decision: builder, researcher, refuter and verifier run at `high`. The brief
-  already names the pattern, so the builder does not need extra thinking. Reviewing
-  does. Fable (main session) decides, Opus executes. Opus tokens are not the
+- Effort decision: builder, refuter and verifier run at `high`, researcher at `medium`. The
+  brief already names the pattern, so the builder does not need extra thinking. Reviewing
+  does. Under `/output-style orchestrator`, Fable (main session) decides and Opus executes. Opus tokens are not the
   constraint. Fable context size and wall-clock are.
 - Review loop, revised 2026-09-18 after measuring one 310-minute session (63 agents,
   1,493 model turns). Two things changed. **The refuter no longer runs the gate**: the v1
@@ -324,9 +331,10 @@ report format. The skill is worth keeping, so the kit ships its own copy at
   bug died at the refuter with no record.
 - Delegation threshold: raised to 400/8 on 2026-09-18 for wall-clock, then lowered on
   2026-09-22 — a builder runs for everything over ~30 changed lines or ~2 files, any new
-  logic, or a security surface at any size. The old threshold was 2 files and 40
-  lines, roughly 10x too strict against the 200-400 LOC window where peer review finds
-  70-90% of defects. Below the threshold the main session does the work and notes it under
+  logic, or a security surface at any size (orchestrator style only). The 09-18 raise had
+  called 2 files / 40 lines roughly 10x too strict against the 200-400 LOC window where
+  peer review finds 70-90% of defects; the 09-22 measurement (every Fable main-session turn
+  re-read ~422K cached tokens) reversed it. Below the threshold the main session does the work and notes it under
   `## Unreviewed since <sha>` in the bucket's `STATE.md`; one batched refuter pass reviews
   the accumulated diff at commit, at the threshold, or with the next builder change. A
   security-surface change is never batched. Revised 2026-09-22: the inline threshold is ~30
@@ -352,7 +360,8 @@ report format. The skill is worth keeping, so the kit ships its own copy at
 - One folder per task: `.claude/scratch/<slug>/` holds briefs, research, reports. The
   kit used to deny writes under `briefs/`, which forced a second folder per task under
   `.planning/quick/`; that deny rule was removed 2026-09-16 (a brief is still never
-  edited after spawn — a rule, not a permission). `_closed/` stays denied.
+  edited after spawn — a rule, not a permission). The `_closed/` deny went too (109a82f): a
+  closed bucket is moved into `_closed/`.
 - Permission deny rules must use `Edit(path)`, never `Write(path)`. Claude Code only
   matches file checks against `Edit` rules, and `Edit` rules cover every file-editing
   tool. The kit shipped `Write(...)` entries that did nothing and printed a warning on
@@ -401,9 +410,12 @@ report format. The skill is worth keeping, so the kit ships its own copy at
 - [ ] the same run printed `kit-subagent-report self-check: 12/12 passed`
 - [ ] the same run printed `kit-subagent-start self-check: 18/18 passed`
 - [ ] the same run printed `kit-context self-check: 33/33 passed`
+- [ ] the same run printed `kit_off self-check: 11/11 passed`
+- [ ] the same run printed `kit-switch self-check: 12/12 passed`
 - [ ] the same run printed `scan-project self-check: 38/38 passed`
 - [ ] `verify_live.py` C6 lists no unreviewed plugin
 - [ ] In a new Claude Code session, asking Claude to read a 300+ line `.md` whole is
       denied and the message names the capped `grep -n` + `Read` window
-- [ ] `/next-item` (or any task) shows builder then ONE refuter on Opus in the Agent map;
-      a rework shows builder then verifier, never a second refuter pair
+- [ ] Under `/output-style orchestrator`, a non-trivial `/task` shows builder then ONE refuter
+      on Opus in the Agent map, and a rework shows builder then verifier, never a second
+      refuter pair. With no style set, no agent spawns unless you ask for one

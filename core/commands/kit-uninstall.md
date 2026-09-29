@@ -36,7 +36,7 @@ headless `claude -p` run): stop here and report step 1 - delete nothing.
   and paste the path it prints. Only when the zip exists, delete `.claude/scratch/`.
 - CLAUDE.md: edit out exactly the sections picked, nothing else.
 - Always, last: `python ~/.claude/kit/kit_switch.py off "<root>"`, which writes `.claude/kit-off`, so
-  the kit's hooks, rules and style never run here again. If it exits non-zero, show its message
+  the kit's hooks and rules (and a kit style, if one was on) never run here again. If it exits non-zero, show its message
   and stop.
 
 ## 4. Report

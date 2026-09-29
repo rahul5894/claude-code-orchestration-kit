@@ -6,6 +6,11 @@
 >
 > Every entry cites `file:line` and names what tested it. "Nothing tested this" is a
 > valid and required answer when it is true.
+>
+> `/task` seeds the one-line form, `- <date> [gotcha|dead-end|fact|measure] what · file:line ·
+> evidence · what tested it`; `/continue` skips the `[fact]` and `[measure]` lines STATE does
+> not cite. This long form is for a finding that needs a class and a sweep; its lines carry
+> no tag, so `/continue` always reads it.
 
 ---
 
@@ -15,7 +20,7 @@
 - **What:** <1–2 sentences. The defect or fact, not the story of finding it.>
 - **Evidence:** <exact command and exact output, or the quoted line>
 - **Checked by:** <what tested this — a run, a test, a doc, or `nothing tested this`>
-- **Class:** STOP | LOG | DEFER
+- **Class:** STOP | LOG | DEFER | UNKNOWN
   - `STOP` — can cause a wrong or unsafe result, a false success, silent loss, or an
     unrecorded failure. Blocks release. Must be fixed **and** verified.
   - `LOG` — a real defect that cannot produce a wrong or unrecorded result. Record and

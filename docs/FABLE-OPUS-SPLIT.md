@@ -5,6 +5,10 @@ which work", so that a new machine, a new project, or a new plugin lands on the 
 The rules themselves live in `core/output-styles/orchestrator.md` and `core/CLAUDE.md`;
 this page only explains the shape.
 
+> **This split is the opt-in `/output-style orchestrator` loop.** Since 2026-09-24 the kit sets
+> no output style: with none (the default) or with kit-lean, the main session makes changes
+> itself on whichever model `/model` names, and spawns builder or refuter only when asked.
+
 ## The one sentence
 
 Fable 5.1 sits in the main session and does every act of judgment. Opus 5.5 sits in the
@@ -43,7 +47,7 @@ while you are on Fable, and on Opus once Fable quota is gone. Nothing else inher
 | `researcher` | Reads source, library docs (Context7) and the web (Firecrawl, Exa) and reports facts with citations, UNVERIFIED where it could not. | Decides anything. Edits anything. |
 | `Explore` (haiku) | Returns locations only, through qartez. | Reads file contents. |
 
-## How a task is defined when Fable is selected
+## How a task is defined under the orchestrator style (Fable seat)
 
 1. You say what you want. Fable reads the spec and the code, not a summary of either.
 2. Fable opens one bucket per objective under `.claude/scratch/<slug>/`, writes
@@ -76,7 +80,7 @@ while you are on Fable, and on Opus once Fable quota is gone. Nothing else inher
   instead, so it runs only when you call it.
 - Ponytail is gone (2026-09-24): in bench E its rules halved the tests an arm wrote and
   dropped its DB hardening; `core/plugins.json` disables it if it is ever reinstalled.
-- qartez is the code search for every agent; `Grep`/`Glob` are denied everywhere. `OUT OF
+- qartez is the code search for every agent; no agent holds `Grep`/`Glob`. `OUT OF
   INDEX` means "grep the tree", never a reason.
 - md-guard keeps big markdown to windowed reads, and keeps `refuter` and `debugger` from writing.
 - The gate is per project (`FAST GATE` row, written once by `/kit-init`); reviewers never

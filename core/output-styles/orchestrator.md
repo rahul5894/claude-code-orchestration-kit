@@ -146,9 +146,9 @@ is not `none`. Read-only agents have no Write tool, so their report stays in the
 - **Never tell an agent a file is short without counting it.** A hook denies `Read` on any
   markdown over 300 lines, and `verifier` and `researcher` have no shell to fall back on.
   Measured: a brief of mine said "all well under 300 lines" of three files that were 323, 334
-  and 341, and the verifier burned three turns on three denials. `python validate_kit.py`
-  prints the current census under section 9b — read it before you write the CONTEXT block,
-  and hand over a line range rather than a filename.
+  and 341, and the verifier burned three turns on three denials. Count with
+  `wc -l <file>` before you write the CONTEXT block (in the kit repo, `python validate_kit.py`
+  prints the census under section 9b), and hand over a line range rather than a filename.
 - **Banned:** "think deeply", "explore all approaches", "be thorough", project history,
   bundled future tasks.
 - **Write the brief to `briefs/` before spawning; never edit it after.** A scope change is a
@@ -161,7 +161,8 @@ the templates. **One folder per task, nothing elsewhere** — and one bucket per
 even when the files overlap. Unsure = ask one question. I open buckets myself, show the slug
 and scope, wait for confirmation before spawning, keep `INDEX.md` current, and on completion
 set `STATE.md` CLOSED, move the folder to `_closed/` and mark it DONE. Never delete a bucket.
-I file every agent's report under `reports/` from its final message, **and I append its
+I file every read-only agent's report under `reports/` from its final message (the builder
+writes its own), **and I append its
 findings to `FINDINGS.md` myself** — every read-only agent is told I will, and a promised
 home that nobody fills means the next builder never sees the note. I am the only writer of
 `STATE.md`. **A closed bucket ends the session: `/clear` — and a bucket closes only after its

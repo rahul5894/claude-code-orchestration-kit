@@ -2,7 +2,9 @@
 
 > **REPLACED, never appended.** This file says what is true NOW. History lives in
 > FINDINGS.md, DECISIONS.md and git. If this file and the repo disagree, the repo is
-> right — correct this file and say so.
+> right — correct this file and say so. At most ~60 lines: longer means history crept in,
+> so move it to FINDINGS.md. Same headings as the file `/task` seeds, plus the long-form
+> extras below.
 
 **Updated:** <YYYY-MM-DD HH:MM>
 **Status:** OPEN | BLOCKED | CLOSED <date>
@@ -27,10 +29,21 @@
 ## Next action
 <the single next thing, concrete enough to act on cold>
 
+## User said
+<!-- every approval, refusal, preference and open question that exists only in the chat,
+     in the user's terms, each with its why in one clause -->
+
+## Changed + verified
+<!-- files touched · commit/sha · the check that proved each -->
+
+## Dead ends
+<!-- tried · failed · why, so the next session does not retry it -->
+
 ## Unreviewed since <sha>
 <!-- one line per small change done without agents: `path — what — why`.
-     Reviewed in ONE refuter pass at commit, at 3 changes / 5 files, with the next builder
-     change, or at once if a security surface is touched. Clear + advance the sha after. -->
+     Orchestrator style: reviewed in ONE refuter pass when the first of these fires —
+     commit time, 400 changed lines or 8 files accumulated, or the next builder change. A
+     security surface is a builder + refuter at any size. Clear + advance the sha after. -->
 
 ## Active agents
 

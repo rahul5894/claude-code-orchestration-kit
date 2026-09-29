@@ -47,7 +47,8 @@ the project `CLAUDE.md`. Until then, a message at session start reminds you.
 
 ## 6. Kit off in ONE project
 
-- `/kit-off` - the kit goes quiet here: kit hooks silent, kit rules not loaded, default style.
+- `/kit-off` - the kit goes quiet here: kit hooks silent, kit rules not loaded, and a kit output
+  style in force here (kit-lean or orchestrator) goes back to default.
   Files stay. (md-guard still stops the read-only reviewer agents from writing.)
 - `/kit-on` - back on, exactly as before.
 - `/kit-uninstall` - removes the kit's files from this project (asks first, can zip your task

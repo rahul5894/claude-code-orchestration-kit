@@ -1,13 +1,13 @@
 ---
 description: Task dashboard. With no words, lists every bucket and its next action. With a sentence, continues the matching bucket or opens a new one.
 argument-hint: [what you want to do, in one sentence]
-allowed-tools: Bash, Read, Write, Glob
+allowed-tools: Bash, Read, Write
 ---
 
 Task request: **$ARGUMENTS**
 
 A bucket is the folder `.claude/scratch/<slug>/` for one task. The index file
-`.claude/scratch/INDEX.md` lists every bucket. Rules for buckets are in `CLAUDE.md`.
+`.claude/scratch/INDEX.md` lists every bucket. Rules for buckets are in the kit's shared rules (`~/.claude/rules/orchestration-kit.md`).
 
 ## 1. Read the index
 
@@ -133,25 +133,24 @@ nothing from this conversation, in as few tokens as that takes:
 - **A bucket is a handoff, not a delegation mode.** Unless the `orchestrator` output style
   is on, do the work yourself and spawn builder, refuter, verifier or debugger only when I
   ask. Briefs already in `briefs/` are history, not a pattern to continue.
-- When you do spawn, write the brief to `briefs/<agent>-NN.md` first, using a Bash heredoc
-  (the optional project `settings.json` denies the Write tool there). NN counts up from 01.
+- When you do spawn, write the brief to `briefs/<NN>-<task>.md` first. NN counts up from 01.
   Make it read-only (`attrib +R` on Windows, `chmod a-w` elsewhere). Do not show me
   briefs unless I ask.
 - Every brief must name the bucket and require the agent to read `DECISIONS.md` before
   changing anything, append to `FINDINGS.md`, and never edit anything under `briefs/`.
-  **Agents do not write `STATE.md` and do not write report files** — the harness may block
-  a subagent from writing a report at all, and two writers to a replaced-not-appended
-  `STATE.md` lose each other's content.
+  **Agents do not write `STATE.md`** — two writers to a replaced-not-appended `STATE.md` lose
+  each other's content. A builder writes its own `reports/<NN>-builder.md`.
 - Record the launch in `STATE.md` under Active agents. When the agent returns, mark it
-  terminal and **write `reports/<agent>-NN.md` yourself from its final message.**
+  terminal; for every agent but the builder, **write `reports/<NN>-<agent>.md` yourself from
+  its final message** (the SubagentStop hook also files it under `.claude/scratch/_inbox/`).
 - Update the bucket's line in the index whenever its status or next action changes.
 - If two rounds start swapping between the same two fixes, **stop the loop**, read
   `DECISIONS.md` yourself, and sort it out with me. Do not let it run.
 
 ## Closing
 
-When the objective is met (its checks pass, the last refuter verdict is ACCEPT if a refuter
-ran, and nothing is open in `STATE.md`), or I say the task is abandoned:
+When the objective is met (its checks pass; if a review ran, the refuter returned no
+candidates or the verifier marked every forwarded item FIXED; and nothing is open in `STATE.md`), or I say the task is abandoned:
 
 1. Set `STATE.md` status to `CLOSED <date>` with a two-line outcome summary.
 2. Write anything that outlives the task into the project's handoff note and backlog

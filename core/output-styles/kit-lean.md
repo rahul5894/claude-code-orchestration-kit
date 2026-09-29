@@ -28,8 +28,8 @@ context, the user switches to `/output-style orchestrator`.
 7. Report, as your own last message, after every review has returned. A review's output is
    never the report: fold its findings in. The report carries everything the request asked
    to be told (e.g. "list the bugs you fixed"). The turn never ends on a review's output or a
-   tool result. Bench E: a review's output ended the turn in 3 of 3 runs, and in 1 of 6 after
-   this rule, and the requested bug list was lost.
+   tool result. Bench E: a review's output ended the turn in 3 of 3 runs and the requested bug
+   list was lost; after this rule, it ended the turn in 1 of 6.
 
 Trivial changes that touch no security surface skip the review, and the report says so.
 

@@ -92,8 +92,7 @@ the user may add lines later. Do not add lines of your own.
 
 Run `python ~/.claude/kit/audit_project.py .` and paste its last line. It checks that the
 gate row is present and either timed or `none`, that nothing in this project duplicates a
-global rule, and that no local setting overrides the global output style or re-defines a
-user-scope MCP server.
+global rule, and that the project re-defines no user-scope MCP server.
 
 Report, in prose: the gate you chose and why, its measured time, whether the baseline was
 green, what the audit said, and the four sections the scan filled, with how many lines each.
