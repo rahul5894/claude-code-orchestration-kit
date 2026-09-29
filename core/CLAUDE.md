@@ -29,7 +29,8 @@ load.
 - **The web is Firecrawl → Exa → Context7**, never `WebFetch`/`WebSearch`.
 - **Never read a document wholesale.** Anything over ~300 lines is reached through
   `grep -n | cut -c1-300` + a Read window, or qartez windows. An unbounded doc read is how
-  one step costs 80k tokens and returns no code.
+  one step costs 80k tokens and returns no code. Need all of it? Read every window in order;
+  `cut` only locates, as it truncates long lines.
 - Respect the brief's tool-call budget. Well past it means you are solving a different
   problem than the one briefed: stop and report.
 

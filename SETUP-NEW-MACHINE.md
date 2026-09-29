@@ -70,7 +70,7 @@ kit-session-start: registered in settings.json
 kit-subagent-report: registered in settings.json
 kit-subagent-start: registered in settings.json
 kit-context: registered in settings.json
-md-guard self-check: 121/121 passed
+md-guard self-check: 123/123 passed
 kit-session-start self-check: 25/25 passed
 kit-subagent-report self-check: 12/12 passed
 kit-subagent-start self-check: 18/18 passed
@@ -243,7 +243,7 @@ judged on its own, so `rm big.md; git status | head` passes.
 
 The deny message tells Claude the capped `grep -n` + `Read` window to use instead.
 
-Check: `python ~/.claude/hooks/md-guard_test.py` prints `121/121 passed`. The test
+Check: `python ~/.claude/hooks/md-guard_test.py` prints `123/123 passed`. The test
 builds its own fixtures in a temp folder, so it runs on any machine. The installer runs
 it for you.
 
@@ -405,7 +405,7 @@ report format. The skill is worth keeping, so the kit ships its own copy at
 
 ## 7. Final checklist
 
-- [ ] `pwsh install.ps1` printed `md-guard self-check: 121/121 passed`
+- [ ] `pwsh install.ps1` printed `md-guard self-check: 123/123 passed`
 - [ ] the same run printed `kit-session-start self-check: 25/25 passed`
 - [ ] the same run printed `kit-subagent-report self-check: 12/12 passed`
 - [ ] the same run printed `kit-subagent-start self-check: 18/18 passed`

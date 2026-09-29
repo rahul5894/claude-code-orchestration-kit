@@ -109,8 +109,12 @@ PS_WRITE_RE = re.compile(
 
 # qmd was the suggested route until 2026-09-23 and dropped: in 14 days it was called 10 times
 # against ~250 denials here - the model went to grep + Read windows anyway.
-HOW = ("Find the spot with `grep -n \"<anchor>\" <file> | cut -c1-300`, then Read with "
-       "offset+limit.")
+# The whole-file line is there because a window is a way to read, not a licence to skim: of 7
+# measured Read denials, 3 went on to read part of the file only (2026-09-29) - right for a
+# lookup, a silent loss when the task needed the whole document.
+HOW = ("Find the spot with `grep -n \"<anchor>\" <file> | cut -c1-300`, then Read that range "
+       "with offset+limit. If the task needs the whole file, Read every window in order "
+       "(offset 1, 301, 601, ...) to the end; never work from part of it.")
 
 
 def deny(reason):
@@ -216,8 +220,10 @@ def check_bash(inp):
     for seg in re.split(r"&&|\|\||;|\n", cmd):
         if _segment_reads_big_md(seg):
             deny("md-guard: reading a .md file in a shell without a column cap "
-                 "(long paragraph-lines blow the output). Add `| cut -c1-300` "
-                 "(PowerShell: `| % { $_.Substring(0,[Math]::Min(300,$_.Length)) }`). " + HOW)
+                 "(long paragraph-lines blow the output). To locate, add `| cut -c1-300` "
+                 "(PowerShell: `| % { $_.Substring(0,[Math]::Min(300,$_.Length)) }`); it "
+                 "truncates long lines, so read the content itself with Read, not the shell. "
+                 + HOW)
 
 
 def main():

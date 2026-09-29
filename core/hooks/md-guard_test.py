@@ -201,5 +201,30 @@ for want, tool, inp, agent_type in CASES:
         fails += 1
     label = inp.get("command") or inp.get("file_path")
     print(f"{'ok ' if got == want else 'BAD'} want={want:5} got={got:5} {tool:10} {label[:60]!r}")
-print(f"\n{len(CASES) - fails}/{len(CASES)} passed")
+
+# A denial must say how to get ALL of the file, not only how to find a spot in it: a model
+# told "grep, then Read a window" can stop at one window and work from part of the document.
+def reason(tool, inp):
+    raw = json.dumps({"tool_name": tool, "tool_input": inp}, ensure_ascii=False).encode("utf-8")
+    p = subprocess.run([sys.executable, HOOK], input=raw, capture_output=True)
+    try:
+        return json.loads(p.stdout)["hookSpecificOutput"]["permissionDecisionReason"]
+    except (ValueError, KeyError, TypeError):
+        return ""
+
+
+MESSAGES = [
+    ("Read deny names the whole-file route",
+     reason("Read", {"file_path": BIG}), ["Read every window in order", "offset 1, 301, 601"]),
+    ("shell deny says cut truncates, read content with Read",
+     reason("Bash", {"command": f"cat {BIG}"}), ["truncates long lines", "Read every window in order"]),
+]
+for label, text, needles in MESSAGES:
+    good = all(n in text for n in needles)
+    if not good:
+        fails += 1
+    print(f"{'ok ' if good else 'BAD'} message: {label}")
+
+total = len(CASES) + len(MESSAGES)
+print(f"\n{total - fails}/{total} passed")
 sys.exit(1 if fails else 0)
