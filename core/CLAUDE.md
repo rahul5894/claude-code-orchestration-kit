@@ -24,8 +24,9 @@ Every session, every project. A repo's own `CLAUDE.md` wins on conflict.
 - **The web is Firecrawl → Exa → Context7**, never `WebFetch`/`WebSearch`.
 - **Never read a document wholesale** - except your brief, CLAUDE.md and handoff files, which
   you read whole. Anything else over ~300 lines is reached through `grep -n | cut -c1-300` + a
-  Read window, or qartez windows (a no-limit Read returns lines 1-300 plus the outline). Need
-  all of it? Read every window in order; `cut` only locates, as it truncates long lines.
+  Read window, or qartez windows. Read pages a doc over 25K tokens (its PARTIAL-view note names
+  the next offset) and refuses one over 256 KB: need all of it? Read every page in order; `cut`
+  only locates, as it truncates long lines.
 - Respect the brief's tool-call budget. Well past it means you are solving a different
   problem than the one briefed: stop and report.
 

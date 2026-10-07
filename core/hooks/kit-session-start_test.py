@@ -229,25 +229,6 @@ extra.append(("newer [OPEN]: b (newest handoff)" in context(o) and "older [OPEN]
               and "shut [OPEN]: c\n" in context(o) and "do not ask which" in context(o)
               and o.get("systemMessage", "").endswith("resume newer."),
               "3 open, newest STATE.md says CLOSED -> the next newest is marked, systemMessage names it"))
-# The newest handoff digest is named at startup/clear (so /continue finds it even when STATE.md
-# forgot its Digest: line); a week-old one is not, and a compaction does not repeat it.
-import time  # noqa: E402
-DIG = bucket_project("digest", True, [("task", "OPEN", "go")])
-sess = os.path.join(DIG, ".claude", "scratch", "_sessions")
-os.makedirs(sess)
-for name, age in (("old-sess.md", 3600 * 30), ("new-sess.md", 600)):
-    with open(os.path.join(sess, name), "w", encoding="utf-8") as f:
-        f.write("# SESSION digest\n")
-    os.utime(os.path.join(sess, name), (time.time() - age, time.time() - age))
-o = run("stdin", DIG)
-extra.append(("_sessions/new-sess.md" in context(o) and "old-sess" not in context(o)
-              and "reads it whole" in context(o),
-              "startup -> the newest digest is named with its age"))
-extra.append(("new-sess" not in context(run("stdin", DIG, source="compact")),
-              "compact -> no digest line (the conversation goes on)"))
-os.utime(os.path.join(sess, "new-sess.md"), (time.time() - 8 * 24 * 3600,) * 2)
-os.utime(os.path.join(sess, "old-sess.md"), (time.time() - 9 * 24 * 3600,) * 2)
-extra.append(("_sessions/" not in context(run("stdin", DIG)), "a digest over a week old -> not named"))
 for good, label in extra:
     if not good:
         fails += 1

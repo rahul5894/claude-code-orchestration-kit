@@ -115,8 +115,10 @@ try:
     ok(blocked(run(transcript(asst(120_000)), s), 60), "60% (next band) -> block again")
 
     # 5. a stop caused by our own block never blocks again
-    ok(notice(run(transcript(asst(100_000)), session(), stop_hook_active=True), 50),
-       "stop_hook_active true -> systemMessage only")
+    s = session()
+    run(transcript(asst(100_000)), s)
+    ok(notice(run(transcript(asst(100_000)), s, stop_hook_active=True), 50),
+       "stop_hook_active true after our block -> systemMessage only")
 
     # 6. agents still running = the task is not finished
     ok(quiet(run(transcript(asst(100_000)), session(), background=[{"id": "a1"}])),
@@ -217,41 +219,88 @@ try:
     ok(blocked(run(transcript(asst(20_000, sid="old-session"), asst(100_000, sid=s)), s), 50),
        "this session's own lines still count: 100K of 200K = 50% -> block")
 
-    # 34-38. the session digest (2026-10-07): written before the block and named in it, the
-    # STATE.md budget sized by the band, refreshed by a later stop once the transcript moved on
-    def digest(sid):
-        return os.path.join(tmp, ".claude", "scratch", "_sessions", sid + ".md")
+    # 34-45. the session digest (2026-10-07, after review): the block writes nothing and names
+    # no path; once THIS session has written a bucket's STATE.md (its own transcript says so),
+    # every later stop keeps <bucket>/digests/<session>.md current; STATE.md budget by band
+    def digest(slug, sid):
+        return os.path.join(tmp, ".claude", "scratch", slug, "digests", sid + ".md")
+
+    def state(slug, path=None):
+        """Write <slug>/STATE.md; with a transcript `path`, also record that this session wrote it."""
+        p = os.path.join(tmp, ".claude", "scratch", slug, "STATE.md")
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        with open(p, "w", encoding="utf-8") as f:
+            f.write("# STATE\n")
+        if path:
+            with open(path, "a", encoding="utf-8") as f:
+                f.write(json.dumps({"type": "assistant", "isSidechain": False, "message": {"content": [
+                    {"type": "tool_use", "id": uuid.uuid4().hex, "name": "Write",
+                     "input": {"file_path": p, "content": "# STATE"}}]}}) + "\n")
 
     s = session()
     path = transcript({"type": "user", "message": {"content": "keep the report in Hinglish"}},
                       asst(100_000))
     res = run(path, s)
-    reason = res[1].get("reason", "") if isinstance(res[1], dict) else ""
-    d = digest(s)
-    ok(blocked(res, 50) and os.path.isfile(d) and "keep the report in Hinglish" in open(d, encoding="utf-8").read()
-       and "Digest:" in reason and "_sessions/" + s + ".md" in reason and "~60 lines" in reason,
-       "50% block writes the digest (user words verbatim) and names it, STATE at ~60 lines")
-    ok(os.path.isfile(os.path.join(tmp, ".claude", "scratch", "_sessions", ".gitignore"))
-       and open(os.path.join(tmp, ".claude", "scratch", "_sessions", ".gitignore")).read().strip().endswith("*"),
-       "the digest folder ignores itself in git (`*`)")
-    before = os.path.getmtime(d)
-    ok(quiet(run(path, s)) and os.path.getmtime(d) == before,
+    ok(blocked(res, 50) and "~60 lines" in res[1].get("reason", "") and "digests/" in res[1].get("reason", "")
+       and not os.path.exists(os.path.join(tmp, ".claude")),
+       "50% block: STATE at ~60 lines, digest promised, nothing written into the project")
+    state("other")  # another session's STATE.md: only on disk, never in this transcript
+    ok(notice(run(path, s, stop_hook_active=True), 50) and not os.path.exists(digest("other", s)),
+       "the stop after the block: only another session's STATE.md exists -> no digest")
+    state("task-a", path)
+    ok(notice(run(path, s, stop_hook_active=True), 50) and os.path.isfile(digest("task-a", s))
+       and "keep the report in Hinglish" in open(digest("task-a", s), encoding="utf-8").read(),
+       "this session wrote task-a's STATE.md -> the digest lands there, user words verbatim")
+    gi = os.path.join(tmp, ".claude", "scratch", "task-a", "digests", ".gitignore")
+    ok(os.path.isfile(gi) and open(gi).read().strip().endswith("*"), "the digests folder ignores itself in git")
+    before = os.path.getmtime(digest("task-a", s))
+    ok(quiet(run(path, s)) and os.path.getmtime(digest("task-a", s)) == before,
        "same band, transcript unchanged -> silent, digest not rewritten")
+    state("other")
     with open(path, "a", encoding="utf-8") as f:
         f.write(json.dumps({"type": "user", "message": {"content": "then commit and push"}}) + "\n")
         f.write(json.dumps(asst(101_000)) + "\n")
     os.utime(path, (before + 5, before + 5))
-    ok(quiet(run(path, s)) and "then commit and push" in open(d, encoding="utf-8").read(),
-       "a later stop in the same band refreshes the digest to the last turn")
+    ok(quiet(run(path, s)) and "then commit and push" in open(digest("task-a", s), encoding="utf-8").read()
+       and not os.path.exists(digest("other", s)),
+       "a later stop refreshes the digest; a newer STATE.md of another session does not move it")
+    state("task-b", path)
+    ok(quiet(run(path, s)) and os.path.isfile(digest("task-b", s)),
+       "this session hands off into task-b later -> the digest follows its newest handoff")
+    # a symlinked or junctioned digests/ is never written through (it would leave the bucket)
+    s3 = session()
+    p3 = transcript(asst(100_000))
+    run(p3, s3)
+    state("linked", p3)
+    outside = os.path.join(tmp, "outside")
+    os.makedirs(outside)
+    linked = False
+    try:
+        os.symlink(outside, os.path.join(tmp, ".claude", "scratch", "linked", "digests"), target_is_directory=True)
+        linked = True
+    except (OSError, NotImplementedError):
+        linked = subprocess.run(["cmd", "/c", "mklink", "/J", os.path.join(tmp, ".claude", "scratch", "linked", "digests"),
+                                 outside], capture_output=True).returncode == 0 if os.name == "nt" else False
+    run(p3, s3, stop_hook_active=True)
+    ok(linked and os.listdir(outside) == [], "a symlinked/junctioned digests/ is never written through")
+    ok(quiet(run(transcript(asst(100_000)), session(), stop_hook_active=True)),
+       "stop_hook_active from another hook's block, none of ours -> no notice")
+    s2 = session()
+    p2 = transcript(asst(100_000))
+    run(p2, s2)
+    state("task-c", p2)
+    with open(os.path.join(tmp, ".claude", "kit-off"), "w") as f:
+        f.write("")
+    ok(notice(run(p2, s2, stop_hook_active=True, env={"CLAUDE_PROJECT_DIR": os.path.join(tmp, "elsewhere")}), 50)
+       and not os.path.exists(digest("task-c", s2)),
+       "the payload cwd's project is switched off -> no digest written into it")
+    os.remove(os.path.join(tmp, ".claude", "kit-off"))
     s = session()
     r70 = run(transcript(asst(140_000)), s)
     r80 = run(transcript(asst(160_000)), s)
     ok(blocked(r70, 70) and "~100 lines" in r70[1].get("reason", "")
        and blocked(r80, 80) and "~120 lines" in r80[1].get("reason", ""),
        "STATE budget grows with the band: 70% -> ~100 lines, 80% -> ~120 lines")
-    s = session()
-    ok(quiet(run(transcript(asst(80_000)), s)) and not os.path.exists(digest(s)),
-       "under the threshold -> no digest written")
 
     # 12-13. fail open
     ok(quiet(run(os.path.join(tmp, "nope.jsonl"), session())), "missing transcript -> no output, exit 0")

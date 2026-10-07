@@ -54,7 +54,9 @@ def run(hook, root, payload):
 
 
 CASES = [
-    ("md-guard.py", lambda r: {"tool_name": "Read", "tool_input": {"file_path": os.path.join(r, "big.md")}}),
+    # a raw shell read of a big doc (md-guard leaves Read to Claude Code since 2026-10-07)
+    ("md-guard.py", lambda r: {"tool_name": "Bash", "cwd": r,
+                               "tool_input": {"command": "cat " + os.path.join(r, "big.md").replace("\\", "/")}}),
     ("kit-session-start.py", lambda r: {"source": "startup"}),
     ("kit-subagent-start.py", lambda r: {"agent_type": "builder"}),
     ("kit-subagent-report.py", lambda r: {"agent_type": "builder", "agent_id": "a1",

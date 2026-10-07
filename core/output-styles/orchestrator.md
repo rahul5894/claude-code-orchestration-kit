@@ -143,8 +143,9 @@ is not `none`. Read-only agents have no Write tool, so their report stays in the
   target is a builder whose first edit lands by turn 10.
 - **One brief stays under ~400 changed lines or ~8 files.** Bigger work is two briefs in
   sequence, each reviewed — one Opus batch past that size does worse than two.
-- **Never tell an agent a file is short without counting it.** A hook denies `Read` on any
-  markdown over 300 lines, and `verifier` and `researcher` have no shell to fall back on.
+- **Never tell an agent a file is short without counting it.** Read pages anything over 25K
+  tokens and refuses a file over 256 KB, and `verifier` and `researcher` have no shell to fall
+  back on.
   Measured: a brief of mine said "all well under 300 lines" of three files that were 323, 334
   and 341, and the verifier burned three turns on three denials. Count with
   `wc -l <file>` before you write the CONTEXT block (in the kit repo, `python validate_kit.py`

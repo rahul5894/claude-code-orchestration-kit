@@ -28,13 +28,20 @@ with open(SMALL, "w") as f:
     f.write("".join(f"line {i}\n" for i in range(10)))
 with open(BIG_ACCENT, "w", encoding="utf-8") as f:
     f.write("".join(f"line {i} " + "x" * 200 + "\n" for i in range(400)))
-# A big doc with headings (the outline handed over with a window), and big docs an agent must
-# hold whole: they pass untouched (2026-10-07, "adhoori information se agent shuru ho gaya").
+# A big doc with headings (its outline goes with a shell denial), and a big bucket file.
 DOC = os.path.join(tmp, "guide.md").replace("\\", "/")
 with open(DOC, "w", encoding="utf-8") as f:
     f.write("".join((f"## Part {i // 50}\n" if i % 50 == 0 else f"text {i}\n") for i in range(700)))
+# A big doc under a folder with a space, the $env: variable the PowerShell case reads, and the
+# temp dir as Git Bash spells it (/c/Users/... on Windows).
+SPACED = os.path.join(tmp, "sub dir", "big.md").replace("\\", "/")
+os.makedirs(os.path.dirname(SPACED), exist_ok=True)
+with open(SPACED, "w") as f:
+    f.write("".join(f"line {i}\n" for i in range(400)))
+os.environ["KIT_MDG_DIR"] = tmp
+GITBASH_TMP = ("/" + tmp[0].lower() + tmp[2:].replace("\\", "/")) if os.name == "nt" and tmp[1] == ":" else tmp
 MUST = []
-for rel in (".claude/scratch/b1/STATE.md", "CLAUDE.md", "briefs/01-task.md", "docs/SKILL.md"):
+for rel in (".claude/scratch/b1/STATE.md",):
     p_ = os.path.join(tmp, rel).replace("\\", "/")
     os.makedirs(os.path.dirname(p_), exist_ok=True)
     with open(p_, "w", encoding="utf-8") as f:
@@ -129,6 +136,37 @@ CASES = [
     # a doc the agent must have whole reads raw in a shell too when small; big, it still goes
     # through Read (which passes it whole, below)
     ("DENY",  "Bash", {"command": f"cat {MUST[0]}"}, None),
+    # review 2026-10-07: every spelling a shell expands is expanded before the verdict - a
+    # quoted path with a space, $(pwd) / `pwd` / $PWD, $env:X, {a,b}, a bare "$f" from a loop
+    # or an assignment, and find on a Git Bash /c/ path - all of which read the big doc whole
+    ("DENY",  "Bash", {"command": f'cat "{SPACED}"'}, None),
+    ("DENY",  "Bash", {"command": f'cd {tmp} && cat "$(pwd)/big.md"'}, None),
+    ("DENY",  "Bash", {"command": f"cd {tmp} && cat `pwd`/big.md"}, None),
+    ("DENY",  "PowerShell", {"command": "Get-Content $env:KIT_MDG_DIR/big.md"}, None),
+    ("DENY",  "Bash", {"command": f"cat {tmp}/{{big,small}}.md"}, None),
+    ("DENY",  "Bash", {"command": f'for f in {tmp}/b*.md; do cat "$f"; done'}, None),
+    ("DENY",  "Bash", {"command": f'F={BIG}; cat "$F"'}, None),
+    ("DENY",  "Bash", {"command": f"find {GITBASH_TMP} -name big.md -exec cat {{}} \\;"}, None),
+    ("ALLOW", "Bash", {"command": f'for f in {tmp}/sm*.md; do cat "$f"; done'}, None),
+    ("ALLOW", "Bash", {"command": f"cat {tmp}/{{small,nothere}}.md"}, None),
+    # a search string naming a .md under a named folder is no read of that file (only `find`
+    # joins a bare name onto a folder): `grep -rn "big.md" <dir>` was denied (review)
+    ("ALLOW", "Bash", {"command": f'grep -rn "big.md" {tmp} | head -5'}, None),
+    # refuter 2026-10-07: glued quoting, a subshell cd, bash -c, Join-Path and `git -C dir` read
+    # the big doc whole; a grep pattern naming a file in the cwd is text; a URL is no path
+    ("DENY",  "Bash", {"command": f'cd {tmp} && cat "$(pwd)"/big.md'}, None),
+    ("DENY",  "Bash", {"command": f'cat {tmp}/"big".md'}, None),
+    ("DENY",  "Bash", {"command": f"(cd {tmp} && cat big.md)"}, None),
+    ("DENY",  "Bash", {"command": f'bash -c "cd {tmp} && cat big.md"'}, None),
+    ("DENY",  "Bash", {"command": f"git -C {tmp} show HEAD:big.md | head -1000"}, None),
+    ("DENY",  "PowerShell", {"command": f"Get-Content (Join-Path {tmp} big.md)"}, None),
+    ("ALLOW", "Bash", {"command": f'cd {tmp} && grep -rn "big.md" .'}, None),
+    ("ALLOW", "Bash", {"command": "curl -s https://example.net/big.md | head -50"}, None),
+    # verifier N2/N3: grep's -a/-b take no value and -f reads patterns from a file, so the file
+    # after them is still a read; a subshell's cd ends with the subshell
+    ("DENY",  "Bash", {"command": f"grep -a . {BIG}"}, None),
+    ("DENY",  "Bash", {"command": f"grep -v -f /dev/null {BIG}"}, None),
+    ("DENY",  "Bash", {"command": f"cd {tmp} && (cd .claude && ls); cat big.md"}, None),
     ("ALLOW", "Bash", {"command": f"wc -l {BIG}"}, None),
     ("ALLOW", "Bash", {"command": "git add CLAUDE.md && git commit -m x"}, None),
     # 2026-09-29: 218 of 320 real shell denials were false. Precision without narrowing the
@@ -159,21 +197,14 @@ CASES = [
     ("DENY",  "Bash", {"command": f"git status && cat {BIG} | head -5"}, None),
     ("DENY",  "PowerShell", {"command": f"Get-Content {BIG_WIN}"}, None),
     ("ALLOW", "PowerShell", {"command": f"Get-Content {BIG_WIN} -TotalCount 40 | % {{ $_.Substring(0, [Math]::Min(300, $_.Length)) }}"}, None),
-    # A whole-file Read of a big doc is REWRITTEN to a 300-line window with the map (2026-10-07):
-    # after a deny the agent read the doc whole 0 of 14 times (F4), and a deny costs a turn.
-    ("WINDOW", "Read", {"file_path": BIG_ACCENT}, None),
-    ("WINDOW", "Read", {"file_path": BIG}, None),
-    ("WINDOW", "Read", {"file_path": BIG, "offset": 200}, None),
-    ("WINDOW", "Read", {"file_path": BIG, "offset": 1, "limit": 1000}, None),
-    ("WINDOW", "Read", {"file_path": DOC}, None),
-    ("ALLOW", "Read", {"file_path": BIG, "offset": 20, "limit": 100}, None),
-    ("ALLOW", "Read", {"file_path": BIG, "offset": 900}, None),
+    # Read is Claude Code's own (D005, 2026-10-07): whole up to 25K tokens, then pages with a
+    # PARTIAL-view note, refuses >256 KB. The hook says nothing about any Read, big or small.
+    ("ALLOW", "Read", {"file_path": BIG_ACCENT}, None),
+    ("ALLOW", "Read", {"file_path": BIG}, None),
+    ("ALLOW", "Read", {"file_path": DOC}, None),
+    ("ALLOW", "Read", {"file_path": BIG, "limit": 0}, None),
     ("ALLOW", "Read", {"file_path": MUST[0]}, None),
-    ("ALLOW", "Read", {"file_path": MUST[1]}, None),
-    ("ALLOW", "Read", {"file_path": MUST[2]}, None),
-    ("ALLOW", "Read", {"file_path": MUST[3]}, None),
     ("ALLOW", "Read", {"file_path": SMALL}, None),
-    ("ALLOW", "Read", {"file_path": HOOK}, None),
     ("ALLOW", "Edit", {"file_path": BIG}, None),
     # A read-only agent's shell writes are denied on the agent_type in the payload. The same
     # command from a builder, or with no agent_type at all, stays allowed: this is a rule
@@ -281,22 +312,19 @@ def reason(tool, inp, field="permissionDecisionReason"):
 
 
 MESSAGES = [
-    ("Read window names the unread offsets and the read-it-all rule",
-     reason("Read", {"file_path": DOC}, "additionalContext"),
-     ["has 700 lines", "lines 1-300", "Unread windows: offset 301, 601",
-      "Read every unread window before you act", "L1 ## Part 0", "L651 ## Part 13"]),
-    ("Read window keeps the call's own offset and caps the limit",
-     reason("Read", {"file_path": BIG, "offset": 200}, "updatedInput"),
-     ['"offset": 200', '"limit": 300', '"file_path"']),
-    ("Read window sets no permissionDecision (normal permission checks still run)",
-     "permissionDecision" not in subprocess.run(
-         [sys.executable, HOOK], input=json.dumps({"tool_name": "Read", "tool_input": {"file_path": BIG}}).encode(),
-         capture_output=True).stdout.decode() and "ok", ["ok"]),
     ("shell deny says cut truncates, read content with Read",
      reason("Bash", {"command": f"cat {BIG}"}), ["truncates long lines", "Read every window in order"]),
     ("shell deny carries the line count and the outline",
-     reason("Bash", {"command": f"cat {DOC}"}), ["guide.md (700 lines)", "Outline:", "L351 ## Part 7"]),
+     reason("Bash", {"command": f"cat {DOC}"}), ["guide.md (700 lines)", "Outline (", "L351 ## Part 7"]),
 ]
+# The hook runs on every shell call with a 5 s budget: a URL (a UNC spelling took 17 s) and a
+# brace explosion (six 20-way braces took 0.78 s) must each stay far inside it.
+import time  # noqa: E402
+for cmd in ("curl -s https://example.net/README.md | head -50",
+            "cat " + "{a,b,c,d,e,f,g,h,i,j,k,l,m,n,o,p,q,r,s,t}" * 6 + ".md"):
+    t0 = time.perf_counter()
+    run("Bash", {"command": cmd})
+    MESSAGES.append((f"under 2 s: {cmd[:30]}", "ok" if time.perf_counter() - t0 < 2 else "slow", ["ok"]))
 for label, text, needles in MESSAGES:
     good = all(n in text for n in needles)
     if not good:

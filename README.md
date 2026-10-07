@@ -179,7 +179,7 @@ about a project go in that project's repo.**
 | `commands/*.md` | `/task` (the dashboard for every bucket), `/continue`, `/kit-init`, `/kit-off`, `/kit-on`, `/kit-uninstall`. |
 | `output-styles/`, `skills/` | The two opt-in styles; `review-precision` and `simple-english`. |
 | `kit/` | What `/kit-init` and the per-project switch run: the project template, `audit_project.py`, `scan_project.py`, `kit_switch.py`. |
-| `hooks/*.py` | Five registered hooks. md-guard (PreToolUse) turns a whole-file Read of a big markdown doc into a 300-line window plus its outline (briefs, handoffs and CLAUDE.md pass whole) and stops read-only agents' shell writes; kit-session-start (SessionStart) names the missing gate, the open buckets and the newest session digest, and re-injects `STATE.md` after a compaction; kit-subagent-start and kit-subagent-report hand `DECISIONS.md` to agents and file their reports; kit-context (Stop) writes the verbatim session digest and asks for the handoff at 45%+ context, then tells you: /clear, then type /continue. |
+| `hooks/*.py` | Five registered hooks. md-guard (PreToolUse, Bash/PowerShell) keeps a big markdown doc from being dumped raw into a shell (Read pages big files by itself) and stops read-only agents' shell writes; kit-session-start (SessionStart) names the missing gate and the open buckets, and re-injects `STATE.md` after a compaction; kit-subagent-start and kit-subagent-report hand `DECISIONS.md` to agents and file their reports; kit-context (Stop) asks for the handoff at 45%+ context, then keeps a verbatim session digest in that bucket's `digests/`, and tells you: /clear, then type /continue. |
 
 These files describe how *you* like to work. They say nothing about any codebase, so they
 do not belong in a repo.

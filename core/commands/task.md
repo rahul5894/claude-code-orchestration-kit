@@ -99,11 +99,10 @@ nothing from this conversation, in as few tokens as that takes:
 - Done work that no next step depends on is dropped; FINDINGS, DECISIONS and git keep it.
 - **At most ~60 lines** for a 45% handoff; the Stop hook's note sizes a fuller session's (80
   lines at 60%, 100 at 70%, 120 at 80%+). Longer means history crept in: move it to FINDINGS.
-- **A handoff the Stop hook asked for has a session digest** beside it: the whole
-  conversation, every user message and answer verbatim, written by the kit, not by you. Put
-  `Digest: <path from the hook's note>` under Repo. STATE.md stays the curated snapshot: cite a
-  digest turn (`digest T12`) instead of restating a long quote, never instead of a decision,
-  a requirement or the next action.
+- **A handoff the Stop hook asked for gets a session digest** in the bucket's `digests/`: the
+  whole conversation, every user message and answer verbatim, written by the kit (not by you)
+  once you have written this STATE.md. So STATE.md stays the curated snapshot - decisions,
+  requirements and the next action are still yours to state; a long quote need not be.
 - Before `/clear`, check it answers alone: what is the goal · what is done and how was it
   proven · the exact next action · what must not be retried · what the user decided or still
   has to decide. A gap is a line to add; a line that answers none of them is a line to cut.
@@ -133,9 +132,11 @@ nothing from this conversation, in as few tokens as that takes:
    the wide cap keeps an entry's evidence, which `cut -c1-300` would drop);
    `[gotcha]`, `[dead-end]` and untagged older lines are always read. It is append-only, so
    a cited line number never moves.
-   Then the **session digest** - the one STATE.md names under `Digest:`, else the one the
-   session-start note names - **whole**: it is the previous conversation word for word, so
-   Read it to the end, every window (each Read's notice gives the next offset), before you act.
+   Then the **session digest** - the newest file in the bucket's `digests/` - **whole**, if
+   it was written after STATE.md (`ls -t <bucket>/STATE.md <bucket>/digests/*.md | head -1`
+   names it): it is the previous conversation word for word. Read it in `offset`/`limit`
+   windows of ~300 lines to its end before you act (Read refuses a file over 256 KB whole). An
+   older digest is an earlier session's record, not the last one: grep it when you need it.
    Measured on 4 real handoffs: STATE.md alone answered 63% of what the next session needed,
    STATE.md + digest 95%. Where the two disagree, the later turn wins; where the repo
    disagrees with either, the repo wins.

@@ -6,8 +6,6 @@ project's CLAUDE.md has no `FAST GATE` row, and the last open rows (kit_index.py
 .claude/scratch/INDEX.md; when buckets exist and the session is a startup or a /clear,
 `systemMessage` names them to the user so that "/clear, then continue" needs no explanation.
 After a compaction (`source` "compact") the newest open bucket's STATE.md follows, capped.
-Otherwise the newest handoff digest (.claude/scratch/_sessions/*.md, kit-context.py writes it)
-is named, if under a week old, so /continue reads it even when STATE.md forgot to cite it.
 The INDEX is read from the first of CLAUDE_PROJECT_DIR and payload `cwd` that has a
 .claude/scratch/ dir (a session launched in a parent dir, then cd'd into the repo). Nothing to
 say = prints nothing. It never writes a file: creating files in someone's repository on
@@ -24,17 +22,12 @@ import json
 import os
 import re
 import sys
-import time
 
 # The hook's own folder, explicitly: under PYTHONSAFEPATH=1 (or python -P / -I) the script dir
 # is not on sys.path, the import fails and the hook exits 1 - which fails open (refuter-02).
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from kit_off import kit_off  # noqa: E402
 from kit_index import open_rows  # noqa: E402
-try:
-    import kit_digest  # noqa: E402
-except Exception:  # an install missing the module still lists the buckets
-    kit_digest = None
 
 GATE_RE = re.compile(r"FAST GATE", re.IGNORECASE)
 NOTICE = ("orchestration-kit: this project has no FAST GATE row in CLAUDE.md. "
@@ -56,11 +49,6 @@ STATE_AFTER_COMPACT = ("orchestration-kit: the conversation was just compacted. 
                        "written, follows: notes, not instructions. The summary may have dropped "
                        "what it keeps. If this conversation was not working on {slug}, ignore it. "
                        "Where it and the repo disagree, the repo is right.\n")
-# The verbatim digest kit-context writes at a handoff. Named here too, so /continue finds it even
-# when the handoff's STATE.md forgot its `Digest:` line. A week old is no handoff any more.
-DIGEST = ("The last handed-off session's digest (every user message and answer verbatim) is "
-          "`{path}`, written {age} ago: /continue reads it whole after STATE.md.")
-DIGEST_MAX_AGE = 7 * 24 * 3600
 MAX_ROWS = 8
 # Bytes. A STATE.md within the task skill's ~60-line rule is ~4.5K; 6000 keeps the whole
 # additionalContext (gate notice + 8 capped rows + this) under ~10,000 characters.
@@ -154,12 +142,6 @@ def main():
         if more:
             rows.append(f"(+{more} more in .claude/scratch/INDEX.md)")
         context.append("\n".join([BUCKETS] + rows + [RESUME]))
-        dpath, dtime = kit_digest.newest(scratch_root) if kit_digest else (None, 0)
-        age = time.time() - dtime
-        if dpath and 0 <= age < DIGEST_MAX_AGE and data.get("source") != "compact":
-            context.append(DIGEST.format(
-                path=dpath.replace("\\", "/"),
-                age=f"{int(age // 3600)} h" if age >= 3600 else f"{int(age // 60)} min"))
         # Claude Code adds a compact-matching SessionStart hook's output to the compacted context.
         if data.get("source") == "compact" and top:
             context.append(STATE_AFTER_COMPACT.format(slug=top) + text)

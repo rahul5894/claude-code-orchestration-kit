@@ -1,6 +1,6 @@
 """md-guard A/B, live: does an agent end up with the WHOLE answer, and at what cost?
 
-Three guards (none / old = git HEAD / new = working tree) x three tasks x N runs, each a
+Three guards (none / old = d5da6a2 / new = working tree) x three tasks x N runs, each a
 headless `claude -p` on the bundled binary with ONLY that guard registered (--setting-sources
 project, so the installed user hooks stay out). Scores: correct, turns, input tokens, cost.
 
@@ -22,6 +22,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.abspath(os.path.join(HERE, "..", ".."))
 EXE = os.environ.get("CLAUDE_CODE_EXECPATH") or "claude"
 OUT = os.path.join(REPO, "bench", "results", "guard-probe")
+# The guard before the 2026-10-07 rewrite, pinned: HEAD is the new guard since 54b27b3.
+OLD_REV = "d5da6a2"
 
 
 def fixtures(d):
@@ -71,7 +73,7 @@ def guard_file(variant, d):
     if variant == "new":
         shutil.copy(os.path.join(REPO, "core", "hooks", "md-guard.py"), g)
     else:
-        src = subprocess.run(["git", "-C", REPO, "show", "HEAD:core/hooks/md-guard.py"],
+        src = subprocess.run(["git", "-C", REPO, "show", OLD_REV + ":core/hooks/md-guard.py"],
                              capture_output=True).stdout
         with open(os.path.join(g, "md-guard.py"), "wb") as f:
             f.write(src)

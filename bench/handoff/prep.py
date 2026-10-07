@@ -142,7 +142,7 @@ def main(name, a_path, b_path):
     files = {
         "kit_now.md": kit_now(b_path),
         "digest_full.md": kd.render(turns, meta, 0),
-        "digest_lean.md": kd.render(turns, meta, 0, lean=True),
+        "digest_lean.md": kd.render([dict(t, outs={}) for t in turns], meta, 0),
         "b_excerpt.md": b_excerpt(b_path),
     }
     files["kit_new.md"] = files["kit_now.md"] + "\n\n---\n\n" + files["digest_full.md"]

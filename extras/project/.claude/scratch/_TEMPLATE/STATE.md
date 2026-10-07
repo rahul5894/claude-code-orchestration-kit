@@ -16,7 +16,6 @@
 - Branch: `<branch>`
 - HEAD: `<short sha>`
 - Tree: `clean` | `<N> dirty` — <files>
-- Digest: `<.claude/scratch/_sessions/<session>.md, from the Stop hook's note>`
 
 ## Scope — in
 - <exact files / areas this task may touch>

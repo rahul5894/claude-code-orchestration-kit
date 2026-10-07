@@ -62,8 +62,9 @@ one `qartez_read` of the symbol. On those two tools the rule is the only thing s
 **`Grep` and `Glob` are in no agent's tool list**, for every path and file type, not only on
 source — for a non-code file the fallback is `Read` (with `offset` and
 `limit`), or `Bash grep ... | cut -c1-300` for the agents that hold a shell. Markdown over
-~300 lines goes through a window: a hook cuts a whole-file Read to lines 1-300 and hands over
-the outline and the unread offsets. A brief, CLAUDE.md and the handoff files pass whole.
+~300 lines goes through a window: Read pages a long doc itself (its PARTIAL-view note names the
+next offset), and a hook denies dumping a big one raw into a shell. A brief, CLAUDE.md and the
+handoff files are read whole, every page.
 
 ## Layout
 
@@ -100,7 +101,7 @@ dirty-tree state against the repo.
 Where the handoff and the repo disagree, **the repo is right**: correct the handoff and say
 plainly that you corrected it. Replace stale state; never append a session log. At most ~60
 lines at a 45% handoff (the Stop hook sizes a fuller session's larger and writes a verbatim
-session digest beside it, which `/continue` reads whole).
+session digest into the bucket's `digests/`, which `/continue` reads whole).
 
 Record: timestamp, branch, exact HEAD, dirty-tree state, current objective, material changes,
 verification that actually ran with its real numbers, checks that did not run or failed,

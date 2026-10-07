@@ -1,21 +1,21 @@
 """Session digest: what was SAID in a session, word for word, without what the repo holds.
 
-kit-context.py writes it at a handoff into .claude/scratch/_sessions/<session-id>.md and names
-it in the Stop block, so STATE.md can point at it and /continue reads it. STATE.md is the
-curated snapshot the model writes; this is the deterministic record beside it: every user
-message verbatim, every answer the model gave, the tool trail without tool outputs (files and
-commands are on disk and in git), errors and refusals as seen, subagent reports. No LLM call.
+kit-context.py writes it into the handoff's own bucket - <bucket>/digests/<session>.md, the
+bucket whose STATE.md this session wrote last - on every stop after its Stop block, so it is
+current to the last turn before /clear; /continue reads it whole when it is newer than STATE.md. STATE.md is the curated snapshot the model
+writes; this is the deterministic record beside it: every user message verbatim, every answer
+the model gave, the tool trail, output excerpts, errors and refusals as seen, subagent reports.
+No model call.
 
-Why verbatim and not a summary (FINDINGS F8, 2026-10-07): in four independent studies text
-copied word for word beat LLM-rewritten summaries, and the losses that hurt a resumed session
-are exact words - the user's instructions, numbers, paths. Tool outputs are ~84% of a coding
-transcript and re-readable, so dropping them is most of the compression.
+Why verbatim (bucket kit-2.1.292-optimize, F8 and F13): in four studies text copied word for
+word beat LLM-written summaries, and on 4 real handoffs STATE.md alone let a cold reader answer
+63.4% of what the next session needed, STATE.md + this digest 94.7%. Tool output is ~84% of a
+transcript and re-readable (files are on disk), so leaving most of it out is the compression.
 
-Size: `cap_tokens(pct, window)` is the user's table (2026-10-07) - a session handed off at
-60-70% may keep up to 18% of the window, 70-80% 25%, 80%+ 30%, less below 60%. It is a
-ceiling, never a target: nothing is padded. Over the cap, the oldest turns lose detail first
-(narration, then the tool trail, then long answers are cut with a pointer to the transcript
-line); user messages and the last TAIL turns are never cut.
+Size: BANDS is the user's table (2026-10-07) - by how full the session was, the digest may take
+10-30% of the window and STATE.md 60-120 lines. The share is a ceiling, never a target. Over
+it, the oldest turns lose detail first (tool output, then narration, a folded tool trail and cut
+answers); user messages and the newest TAIL turns are never cut.
 
     python kit_digest.py <transcript.jsonl> [--upto-line N] [--pct P --window W] [--out f.md]
 """
@@ -24,20 +24,24 @@ import os
 import re
 import sys
 import time
+from collections import Counter
 
 TAIL = 6                 # newest turns kept whole, whatever the cap
 CHARS_PER_TOKEN = 4      # estimate; the reader only needs an order of magnitude
-AGENT_REPORT_CHARS = 6000
+KEEP = 5                 # digests kept per bucket: the newest is read, older ones are grepped
+AGENT_CHARS = 6000       # a subagent report
+CUT_CHARS = 700          # an old answer or report, once the cap bites
 ERROR_CHARS = 400
 CMD_CHARS = 200
-CUT_ANSWER_CHARS = 700
-# Tool output is ~84% of a transcript and mostly re-readable (files are on disk), but a measured
-# number often lives only in a command's output: shells keep their last lines, searches and web
-# tools their first. Read/Edit/Write keep nothing - the file is there to read again.
-OUT_TAIL = {"Bash": 600, "PowerShell": 600}
-OUT_HEAD_DEFAULT = 500
-NO_OUTPUT = {"Read", "Edit", "Write", "NotebookEdit", "MultiEdit", "TodoWrite", "Agent", "Task",
-             "Skill", "ToolSearch", "TaskStop", "ScheduleWakeup"}
+OUT_CHARS = 600          # a tool output excerpt: a shell's tail, a search's or web tool's head
+SHELLS = ("Bash", "PowerShell")
+FILE_TOOLS = ("Read", "Edit", "Write", "NotebookEdit", "MultiEdit")
+AGENTS = ("Agent", "Task")
+# Tools whose output is the file itself (on disk), a report kept apart, or bookkeeping.
+NO_OUTPUT = set(FILE_TOOLS) | set(AGENTS) | {"TodoWrite", "Skill", "ToolSearch", "TaskStop",
+                                             "ScheduleWakeup"}
+# (context % below which the band applies, STATE.md lines, digest share of the window)
+BANDS = ((50, 60, 0.10), (60, 60, 0.12), (70, 80, 0.18), (80, 100, 0.25), (10 ** 9, 120, 0.30))
 
 NOISE = re.compile(r"<system-reminder>.*?</system-reminder>|<ide_opened_file>.*?</ide_opened_file>"
                    r"|<command-message>.*?</command-message>|<local-command-caveat>.*?"
@@ -46,24 +50,38 @@ CMD_NAME = re.compile(r"<command-name>\s*(.*?)\s*</command-name>", re.DOTALL)
 CMD_ARGS = re.compile(r"<command-args>(.*?)</command-args>", re.DOTALL)
 STDOUT = re.compile(r"<local-command-stdout>(.*?)</local-command-stdout>", re.DOTALL)
 SELECTION = re.compile(r"<ide_selection>(.*?)</ide_selection>", re.DOTALL)
-# Secrets a user may paste into chat. The digest sits in an ignored folder, and these are
-# cut anyway: a key in a handoff is a key on disk in one more place.
+# Secrets a user may paste into chat or a command may print: a key in a handoff is a key on disk
+# in one more place. The NAME=value form matches from the key word on (EXA_API_KEY keeps `EXA_`):
+# a leading `[\w-]*` retried at every character and cost 633 ms on 2.3M chars (review).
 SECRET = re.compile(r"\b(?:sk-(?:ant-)?[A-Za-z0-9_-]{16,}|fc-[A-Za-z0-9]{16,}|gh[pousr]_[A-Za-z0-9]{20,}"
                     r"|github_pat_[A-Za-z0-9_]{20,}|AKIA[0-9A-Z]{16}|xox[baprs]-[A-Za-z0-9-]{10,}"
                     r"|AIza[0-9A-Za-z_-]{30,}|eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,})")
-KEYVAL = re.compile(r"(?i)\b((?:api[_-]?key|secret|token|password|passwd)\s*[=:]\s*)['\"]?[^\s'\"]{8,}")
+# A *token* value with no letter is a count, not a secret: `max_tokens=200000` and
+# "cache_read_input_tokens": 123456 are this kit's measurements (refuter 7). A password, secret or
+# API key is redacted whatever it holds, digits only included (verifier N1). `pwd` is a path.
+KEYVAL = re.compile(r"(?i)((?:api[_-]?key|secret|password|passwd)[A-Za-z0-9_-]*"
+                    r"[\"']?\s*[=:]\s*[\"']?)[^\s'\",}]{4,}"
+                    r"|(token[A-Za-z0-9_-]*[\"']?\s*[=:]\s*[\"']?)(?=[^\s'\",}]*[A-Za-z])[^\s'\",}]{4,}"
+                    r"|(\b(?:Bearer|Basic)\s+)[A-Za-z0-9._~+/=-]{12,}")
+URL_CREDS = re.compile(r"(\b[a-z][a-z0-9+.-]*://[^\s:/@]+:)[^\s@/]+(?=@)", re.IGNORECASE)
+PRIVATE_KEY = re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----",
+                         re.DOTALL)
+
+
+def budget(pct):
+    """(STATE.md lines, digest share of the window) for a handoff at `pct`% context."""
+    return next((lines, share) for top, lines, share in BANDS if pct < top)
 
 
 def cap_tokens(pct, window):
-    """The user's table: share of the window the digest may take, by how full the session was."""
-    share = (0.10 if pct < 50 else 0.12 if pct < 60 else 0.18 if pct < 70
-             else 0.25 if pct < 80 else 0.30)
-    return int(share * window)
+    return int(budget(pct)[1] * window)
 
 
 def redact(text):
+    text = PRIVATE_KEY.sub("[redacted private key]", text)
     text = SECRET.sub("[redacted]", text)
-    return KEYVAL.sub(lambda m: m.group(1) + "[redacted]", text)
+    text = URL_CREDS.sub(lambda m: m.group(1) + "[redacted]", text)
+    return KEYVAL.sub(lambda m: (m.group(1) or m.group(2) or m.group(3)) + "[redacted]", text)
 
 
 def _blocks_text(content, keep_images=True):
@@ -98,17 +116,18 @@ def _one_line(s, n):
 
 
 def tool_line(name, inp):
-    """One line naming what a tool call did: its target, never its output."""
-    inp = inp if isinstance(inp, dict) else {}
-    if name in ("Read", "Edit", "Write", "NotebookEdit", "MultiEdit"):
+    """One line naming what a tool call did: its target, never its output. Redacted before
+    the cut: a key cut below its pattern's length would keep its first characters (refuter 9)."""
+    inp = {k: redact(v) if isinstance(v, str) else v for k, v in (inp if isinstance(inp, dict) else {}).items()}
+    if name in FILE_TOOLS:
         p = inp.get("file_path") or inp.get("notebook_path") or ""
         rng = (f" [{inp.get('offset', 1)}+{inp['limit']}]" if inp.get("limit") else "")
         return f"{name} {p}{rng}"
-    if name in ("Bash", "PowerShell"):
+    if name in SHELLS:
         return f"{name}: {_one_line(inp.get('command', ''), CMD_CHARS)}"
     if name in ("Grep", "Glob"):
         return f"{name} {_one_line(inp.get('pattern', ''), 80)} {inp.get('path', '')}".rstrip()
-    if name in ("Agent", "Task"):
+    if name in AGENTS:
         return f"Agent {inp.get('subagent_type', '')}: {_one_line(inp.get('description', ''), 100)}"
     if name == "Skill":
         return f"Skill {inp.get('skill', '')} {_one_line(inp.get('args', ''), 100)}".rstrip()
@@ -118,17 +137,36 @@ def tool_line(name, inp):
     return name
 
 
+def _excerpt(name, text):
+    """What of a tool's output is kept: a shell's last lines (results print last), anything
+    else's first; redacted before the cut, so a key whose prefix falls outside is still caught."""
+    body = " ".join(redact(text).split())
+    if len(body) <= OUT_CHARS:
+        return body
+    return "..." + body[-OUT_CHARS:] if name in SHELLS else body[:OUT_CHARS] + "..."
+
+
 def extract(path, upto_line=None):
-    """Turns of the main conversation, oldest first: each {'at', 'user', 'items', 'line'}.
-    An item is (kind, text, line) with kind in user/text/tool/error/agent/refused/compact."""
+    """Turns of the main conversation, oldest first: each {'at', 'line', 'items', 'outs'}. An
+    item is (kind, text, line), kind in user/text/tool/error/refused/agent/compact; `outs` maps a
+    tool item's index to its output excerpt. Every text is redacted here, once."""
     turns, cur = [], None
-    pending = {}  # tool_use_id -> (name, index in cur['items'])
+    pending = {}  # tool_use_id -> (name, index of its tool item in cur["items"])
     seen_user, seen_text = set(), set()
 
-    def new_turn(at, line_no):
+    def turn(at, n):
         nonlocal cur
-        cur = {"at": at, "items": [], "line": line_no}
+        cur = {"at": at, "line": n, "items": [], "outs": {}}
         turns.append(cur)
+
+    def add_user(text, at, n, new):
+        key = " ".join(text.split())
+        if key in seen_user and len(key) > 20:
+            return  # the same long message pasted again adds nothing
+        seen_user.add(key)
+        if new or cur is None:
+            turn(at, n)
+        cur["items"].append(("user", redact(text), n))
 
     try:
         f = open(path, encoding="utf-8", errors="replace")
@@ -153,18 +191,15 @@ def extract(path, upto_line=None):
                 a = o.get("attachment") or {}
                 if a.get("type") == "queued_command":
                     t = clean_user(_blocks_text(a.get("prompt")))
-                    if t and " ".join(t.split()) not in seen_user:
-                        seen_user.add(" ".join(t.split()))
-                        if cur is None:
-                            new_turn(at, n)
-                        cur["items"].append(("user", t, n))
+                    if t:
+                        add_user(t, at, n, new=False)  # typed while a turn ran: part of it
                 continue
             if kind == "user":
                 content = msg.get("content")
                 if o.get("isCompactSummary"):
                     if cur is None:
-                        new_turn(at, n)
-                    cur["items"].append(("compact", _blocks_text(content), n))
+                        turn(at, n)
+                    cur["items"].append(("compact", redact(_blocks_text(content)), n))
                     continue
                 if isinstance(content, list) and any(
                         isinstance(b, dict) and b.get("type") == "tool_result" for b in content):
@@ -173,32 +208,26 @@ def extract(path, upto_line=None):
                             continue
                         name, idx = pending.pop(b.get("tool_use_id"), ("", -1))
                         text = _blocks_text(b.get("content"), keep_images=False)
-                        if b.get("is_error"):
-                            k = "refused" if "doesn't want to proceed" in text or \
-                                "rejected" in text[:200] else "error"
-                            cur["items"].append((k, f"{name}: {_one_line(text, ERROR_CHARS)}", n))
-                        elif name in ("Agent", "Task") and text.strip():
-                            cur["items"].append(("agent", text.strip(), n))
+                        if b.get("is_error") and "doesn't want to proceed" in text:
+                            # A refusal is the user's: what they said with it is a user
+                            # message, kept whole ("[rejected]" from git is no refusal).
+                            said = text.split("the user said:", 1)[1].strip() if \
+                                "the user said:" in text else ""
+                            cur["items"].append(("refused", name + ("" if said else " (no words given)"), n))
+                            if said:
+                                cur["items"].append(("user", redact(said), n))
+                        elif b.get("is_error"):
+                            cur["items"].append(("error", f"{name}: {_one_line(redact(text), ERROR_CHARS)}", n))
+                        elif name in AGENTS and text.strip():
+                            cur["items"].append(("agent", redact(text.strip()), n))
                         elif name and name not in NO_OUTPUT and text.strip() and idx >= 0:
-                            # Kept beside its own call: parallel calls answer out of order.
-                            body = text.strip()
-                            lim = OUT_TAIL.get(name)
-                            body = (("..." + body[-lim:]) if lim and len(body) > lim else
-                                    body if lim else body[:OUT_HEAD_DEFAULT] +
-                                    ("..." if len(body) > OUT_HEAD_DEFAULT else ""))
-                            cur.setdefault("outs", {})[idx] = body
+                            cur["outs"][idx] = _excerpt(name, text)  # beside its own call
                     continue
                 if o.get("isMeta"):
                     continue
                 t = clean_user(_blocks_text(content))
-                if not t:
-                    continue
-                key = " ".join(t.split())
-                if key in seen_user and len(key) > 20:
-                    continue  # the same long message pasted again adds nothing
-                seen_user.add(key)
-                new_turn(at, n)
-                cur["items"].append(("user", t, n))
+                if t:
+                    add_user(t, at, n, new=True)
                 continue
             if kind == "assistant" and cur is not None:
                 for b in msg.get("content") or []:
@@ -206,85 +235,78 @@ def extract(path, upto_line=None):
                         continue
                     if b.get("type") == "text" and (b.get("text") or "").strip():
                         t = b["text"].strip()
-                        if t in seen_text:
+                        # Only a long text said twice is a repeat; a short "Done." ends many
+                        # turns and each one says whether ITS turn finished.
+                        if len(t) > 200 and t in seen_text:
                             continue
                         seen_text.add(t)
-                        cur["items"].append(("text", t, n))
+                        cur["items"].append(("text", redact(t), n))
                     elif b.get("type") == "tool_use":
                         cur["items"].append(("tool", tool_line(b.get("name", ""), b.get("input")), n))
                         pending[b.get("id")] = (b.get("name", ""), len(cur["items"]) - 1)
     return turns
 
 
+def _cut(body, line, what, keep=CUT_CHARS):
+    if len(body) <= keep:
+        return body
+    return body[:keep] + f"\n[... {what} cut, {len(body) - keep} chars more at line {line}]"
+
+
 def _render_turn(i, t, level):
-    """One turn as markdown. level 0 = whole; 1 = no tool output; 2 = no narration;
-    3 = tool trail folded; 4 = long answers and reports cut; 5 = the user's words and the head
-    of the answer only."""
+    """One turn as markdown. Level 0 = whole; 1 = no tool output; 2 = the user's words, a
+    folded tool trail and the answer and reports cut (narration dropped)."""
     texts = [k for k, it in enumerate(t["items"]) if it[0] == "text"]
-    last_text = texts[-1] if texts else -1
+    last = texts[-1] if texts else -1
     out = [f"### Turn {i} - {t['at']} (transcript line {t['line']})"]
     tools, files = [], []
     for k, (kind, text, line) in enumerate(t["items"]):
         if kind == "user":
-            out.append("**User:**\n" + "\n".join("> " + x for x in redact(text).splitlines()))
+            out.append("**User:**\n" + "\n".join("> " + x for x in text.splitlines()))
         elif kind == "compact":
-            out.append(f"**Earlier compaction summary (line {line}):**\n{redact(text)}")
+            out.append(f"**Earlier compaction summary (line {line}):**\n{text}")
         elif kind == "tool":
-            excerpt = t.get("outs", {}).get(k)
-            tools.append(text + ("\n  -> " + _one_line(redact(excerpt), 1200)
-                                 if excerpt and level < 1 else ""))
-            if text.split(" ", 1)[0] in ("Edit", "Write", "NotebookEdit", "MultiEdit"):
+            excerpt = t["outs"].get(k)
+            tools.append(text + (f"\n  -> {excerpt}" if excerpt and level == 0 else ""))
+            if text.split(" ", 1)[0] in FILE_TOOLS[1:]:
                 files.append(text.split(" ", 1)[-1])
         elif kind in ("error", "refused"):
-            out.append(("**User refused:** " if kind == "refused" else "**Error:** ") + redact(text))
+            out.append(("**User refused:** " if kind == "refused" else "**Error:** ") + text)
         elif kind == "agent":
-            body = redact(text)
-            lim = AGENT_REPORT_CHARS if level < 4 else CUT_ANSWER_CHARS
-            if len(body) > lim:
-                body = body[:lim] + f"\n[... report cut, {len(body) - lim} chars more at line {line}]"
-            out.append(f"**Subagent report (line {line}):**\n{body}")
-        elif kind == "text":
-            if k != last_text and level >= 2:
-                continue
-            body = redact(text)
-            if k == last_text and level >= 4 and len(body) > CUT_ANSWER_CHARS:
-                keep = CUT_ANSWER_CHARS if level == 4 else 300
-                body = body[:keep] + f"\n[... answer cut, {len(body) - keep} chars more at line {line}]"
-            out.append(("**Assistant:** " if k == last_text else "*(working)* ") + body)
-    if tools:
-        if level >= 3:
-            names = {}
-            for x in tools:
-                names[x.split(" ", 1)[0].rstrip(":")] = names.get(x.split(" ", 1)[0].rstrip(":"), 0) + 1
-            line = ", ".join(f"{k} x{v}" for k, v in names.items())
-            out.append(f"**Tools:** {line}" + (f"; changed: {', '.join(dict.fromkeys(files))}"
-                                               if files else ""))
-        else:
-            out.append("**Tools:**\n" + "\n".join("- " + redact(x) for x in tools))
+            out.append(f"**Subagent report (line {line}):**\n"
+                       + _cut(text, line, "report", CUT_CHARS if level == 2 else AGENT_CHARS))
+        elif kind == "text" and (k == last or level < 2):
+            body = _cut(text, line, "answer") if level == 2 else text
+            out.append(("**Assistant:** " if k == last else "*(working)* ") + body)
+    if tools and level == 2:
+        names = Counter(x.split(" ", 1)[0].rstrip(":") for x in tools)
+        out.append("**Tools:** " + ", ".join(f"{n} x{c}" for n, c in names.items())
+                   + (f"; changed: {', '.join(dict.fromkeys(files))}" if files else ""))
+    elif tools:
+        out.append("**Tools:**\n" + "\n".join("- " + x for x in tools))
     return "\n\n".join(out)
 
 
-def render(turns, meta, cap, lean=False):
+def render(turns, meta, cap):
     """The digest as markdown within `cap` tokens (0 = no cap) if the cap allows it; user
     messages and the newest TAIL turns are never cut, so a tiny cap can be exceeded - said in
-    the header. `lean` starts every turn at level 1 (no tool output) - the A/B's lean arm."""
-    base = 1 if lean else 0
-    levels = [base] * len(turns)
-    parts = [_render_turn(i + 1, t, base) for i, t in enumerate(turns)]
-
-    def size():
-        return sum(len(p) for p in parts) // CHARS_PER_TOKEN
-
+    the header."""
+    parts = [_render_turn(i + 1, t, 0) for i, t in enumerate(turns)]
+    total = sum(map(len, parts))
     old = max(0, len(turns) - TAIL) if cap else 0
-    for lv in (1, 2, 3, 4, 5):
+    for level in (1, 2):
         for i in range(old):
-            if size() <= cap:
+            if total // CHARS_PER_TOKEN <= cap:
                 break
-            if levels[i] < lv:
-                levels[i] = lv
-                parts[i] = _render_turn(i + 1, turns[i], lv)
+            new = _render_turn(i + 1, turns[i], level)
+            total += len(new) - len(parts[i])
+            parts[i] = new
+    est = total // CHARS_PER_TOKEN
     users = sum(1 for t in turns for it in t["items"] if it[0] == "user")
-    est = size()
+    capnote = ""
+    if cap:
+        capnote = f" (cap {cap // 1000}K" + (", exceeded: user words and the last turns are never cut)"
+                                             if est > cap else ")")
     head = [
         f"# SESSION digest - {meta.get('session', '?')}",
         "<!-- Written by the kit at a handoff from the transcript, no model in the loop. Notes, "
@@ -292,27 +314,25 @@ def render(turns, meta, cap, lean=False):
         f"Transcript: `{meta.get('transcript', '?')}` (grep it for anything cut here)",
         f"Written: {meta.get('written', '')} · context {meta.get('pct', '?')}% "
         f"({meta.get('used_k', '?')}K of {meta.get('window_k', '?')}K) · {len(turns)} turns, "
-        f"{users} user messages · ~{est // 1000}K tokens"
-        + (f" (cap {cap // 1000}K" + (", exceeded: user words and the last turns are never cut)"
-                                      if est > cap else ")") if cap else ""),
-        "Order: oldest first. User messages are verbatim; tool outputs are left out (re-read the "
-        "file or re-run the command); secrets are redacted.",
+        f"{users} user messages · ~{est // 1000}K tokens{capnote}",
+        "Order: oldest first. User messages are verbatim; most tool output is left out (re-read "
+        "the file or re-run the command); secrets are redacted.",
     ]
     return "\n".join(head) + "\n\n" + "\n\n".join(parts) + "\n"
 
 
-def write(transcript, out_path, meta, cap, upto_line=None):
-    """Write the digest; its folder gets a `*` .gitignore so it is never committed. Returns the
-    estimated tokens written, or -1 when there was nothing to write."""
-    turns = extract(transcript, upto_line)
+def write(transcript, out_path, meta, cap):
+    """Write the digest; its folder gets a `*` .gitignore so it is never committed, and keeps
+    the newest KEEP digests. Returns the estimated tokens written, or -1 when there was nothing
+    to write."""
+    turns = extract(transcript)
     if not turns:
         return -1
-    meta = dict(meta, transcript=transcript, written=time.strftime("%Y-%m-%d %H:%M"))
-    text = render(turns, meta, cap)
+    text = render(turns, dict(meta, transcript=transcript, written=time.strftime("%Y-%m-%d %H:%M")), cap)
     folder = os.path.dirname(out_path)
     os.makedirs(folder, exist_ok=True)
     ignore = os.path.join(folder, ".gitignore")
-    if not os.path.exists(ignore):
+    if not os.path.lexists(ignore):  # a committed .gitignore symlink is never followed
         with open(ignore, "w", encoding="utf-8") as f:
             f.write("# Session digests hold the conversation verbatim: never commit them.\n*\n")
     tmp = out_path + ".tmp"
@@ -323,33 +343,19 @@ def write(transcript, out_path, meta, cap, upto_line=None):
     return len(text) // CHARS_PER_TOKEN
 
 
-KEEP = 20  # digests kept per project; one is written per session that reaches a handoff
-
-
-def prune(folder, keep=KEEP):
-    """Delete all but the newest `keep` digests: they are 0.1-0.7 MB each and only the last
-    few are ever resumed from. Only `*.md` files this module writes are touched."""
+def prune(folder):
+    """Delete all but the newest KEEP digests (regular *.md files only)."""
     try:
-        files = sorted((os.path.getmtime(os.path.join(folder, f)), f) for f in os.listdir(folder)
-                       if f.endswith(".md") and not os.path.islink(os.path.join(folder, f)))
+        files = sorted((os.path.getmtime(p), p) for f in os.listdir(folder)
+                       if f.endswith(".md") and os.path.isfile(p := os.path.join(folder, f))
+                       and not os.path.islink(p))
     except OSError:
         return
-    for _, f in files[:-keep] if len(files) > keep else []:
+    for _, p in files[:-KEEP]:
         try:
-            os.remove(os.path.join(folder, f))
+            os.remove(p)
         except OSError:
             pass
-
-
-def newest(root):
-    """(path, mtime) of the newest digest under <root>/.claude/scratch/_sessions, or (None, 0)."""
-    folder = os.path.join(root, ".claude", "scratch", "_sessions")
-    try:
-        best = max(((os.path.getmtime(os.path.join(folder, f)), os.path.join(folder, f))
-                    for f in os.listdir(folder) if f.endswith(".md")), default=(0, None))
-    except OSError:
-        return None, 0
-    return best[1], best[0]
 
 
 def main(argv):
@@ -363,9 +369,9 @@ def main(argv):
     ap.add_argument("--out")
     a = ap.parse_args(argv)
     cap = a.cap if a.cap is not None else (cap_tokens(a.pct, a.window) if a.pct else 0)
-    turns = extract(a.transcript, a.upto_line)
-    text = render(turns, {"session": os.path.basename(a.transcript), "pct": a.pct,
-                          "transcript": a.transcript, "window_k": a.window // 1000}, cap)
+    text = render(extract(a.transcript, a.upto_line), {"session": os.path.basename(a.transcript),
+                                                       "pct": a.pct, "transcript": a.transcript,
+                                                       "window_k": a.window // 1000}, cap)
     if a.out:
         with open(a.out, "w", encoding="utf-8") as f:
             f.write(text)

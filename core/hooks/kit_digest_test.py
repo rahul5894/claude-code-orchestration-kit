@@ -71,6 +71,22 @@ lines = [
     "{torn line",
     user("last question: what next?"),
     asst(text("Next: run the gate.")),
+    # review 2026-10-07: git's "[rejected]" is no refusal; a refusal's words are the user's,
+    # whole; a short answer that repeats an earlier one still answers its own turn
+    user("now push it"),
+    asst(tool("t6", "Bash", {"command": "git push"})),
+    result("t6", "Exit code 1\n ! [rejected]        main -> main (fetch first)", err=True),
+    asst(tool("t7", "Bash", {"command": "git push -f"})),
+    result("t7", "The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it "
+                 "was a file edit, the new_string was NOT written to the file). To tell you how to proceed, "
+                 "the user said: " + "Never force-push; push to release-2026-10, tag v3.4.1 and quote the "
+                 "CHANGELOG line exactly. " * 3, err=True),
+    asst(text("Done.")),
+    user("and again for the tag"),
+    asst(text("Done.")),
+    asst(tool("t8", "Bash", {"command": "env | grep KEY"})),
+    result("t8", "EXA_API_KEY=3f1c0a9b8c7d6e5f6666\nDB_PASSWORD=Sup3rS3cretPw\n{\"password\": \"hunter2hunter2\"}\n"
+                 "Authorization: Bearer abcdefghijklmnopqrstuvwx\n" + "x" * 590 + " sk-ant-api03-" + "Q" * 620),
 ]
 path = os.path.join(tmp, "t.jsonl")
 with open(path, "w", encoding="utf-8") as f:
@@ -98,9 +114,32 @@ try:
        "secrets are redacted")
     ok("Next: run the gate." in full and "**Assistant:** Next: run the gate." in full,
        "the turn's final answer is kept as the answer")
-    lean = kd.render(turns, {}, 0, lean=True)
+    ok("[rejected]" in full and "**User refused:** Bash: git push\n" not in full
+       and full.count("**User refused:**") == 2,
+       "git's [rejected] is an error, not a user refusal")
+    ok(("Never force-push; push to release-2026-10, tag v3.4.1 and quote the CHANGELOG line exactly. " * 3).strip() in full,
+       "a refusal's words are kept whole as the user's")
+    ok(full.count("**Assistant:** Done.") == 2, "a short answer repeated in a later turn is kept for that turn")
+    ok(not any(s in full for s in ("3f1c0a9b8c7d6e5f6666", "Sup3rS3cretPw", "hunter2hunter2",
+                                   "abcdefghijklmnopqrstuvwx", "QQQQQQQQQQ")),
+       "KEY=, PASSWORD=, JSON passwords, Bearer tokens and a key at the cut edge are all redacted")
+    # refuter 7-9: counts survive, more secret shapes go, a key at a 200-char command cut too
+    ok(kd.redact('max_tokens=200000 "cache_read_input_tokens": 123456 pwd: D:/Projects/x token: 4096')
+       == 'max_tokens=200000 "cache_read_input_tokens": 123456 pwd: D:/Projects/x token: 4096',
+       "token counts and paths are not secrets: kept as written")
+    ok(all(s not in kd.redact(t) for s, t in (
+        ("Hunter2Secret", "postgres://admin:Hunter2Secret@db.local:5432/x"),
+        ("b3BlbnNzaC1rZXk", "-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXk\n-----END OPENSSH PRIVATE KEY-----"),
+        ("YWRtaW46aHVudGVyMg", "Authorization: Basic YWRtaW46aHVudGVyMg=="),
+        ("abc12", "PASSWORD=abc12"),
+        ("12345678", "PASSWORD=12345678"),  # verifier N1: digits only is still a password
+        ("99887766", "api_key=99887766"))),
+       "DB URL passwords, private keys, Basic auth and short passwords are redacted")
+    ok("ghp_ABC" not in kd.tool_line("Bash", {"command": "x" * 190 + " ghp_ABCDEFGHIJKLMNOPQRSTUVWX1234"}),
+       "a key straddling the 200-char command cut leaves no prefix behind")
+    lean = kd.render([dict(t, outs={}) for t in turns], {}, 0)
     ok("RESULT: 41/41 passed" not in lean and LONG in lean and len(lean) < len(full),
-       "lean drops tool output, keeps the words")
+       "without the output excerpts the words all remain")
 
     # The cap: old turns lose detail, user words and the newest TAIL turns never do.
     many = os.path.join(tmp, "many.jsonl")
@@ -136,12 +175,9 @@ try:
     left = [f for f in os.listdir(out_dir) if f.endswith(".md")]
     ok(len(left) == kd.KEEP and "s1.md" in left and "old0.md" not in left,
        f"prune keeps the newest {kd.KEEP} digests")
-    ok(kd.newest(os.path.join(tmp, "proj"))[0].endswith("s1.md"), "newest() names the latest digest")
     ok(kd.extract(os.path.join(tmp, "nope.jsonl")) == [] and kd.write(
         os.path.join(tmp, "nope.jsonl"), os.path.join(out_dir, "z.md"), {}, 0) == -1,
        "a missing transcript -> nothing extracted, nothing written")
-    src = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "kit_digest.py"), encoding="utf-8").read()
-    ok(not [c for c in src if ord(c) < 32 and c not in "\n\t"], "no literal control character in the source")
 finally:
     shutil.rmtree(tmp, ignore_errors=True)
 

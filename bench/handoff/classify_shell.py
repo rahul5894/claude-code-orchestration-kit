@@ -37,7 +37,7 @@ for path in files:
                     elif g.MD_OPTION.search(cmd):
                         k = "recursive .md filter (--include=*.md / -g)"
                     else:
-                        toks = g._md_tokens(stripped); res = [g._resolve(p, base) for p in toks]
+                        toks = [x for t in g._candidates(stripped) for x in g._spellings(t, g._vars(stripped), base) if ".md" in x.lower()]; res = [g._resolve(p, base) for p in toks]
                         if any(r is None for r in res):
                             bad = [p for p, r in zip(toks, res) if r is None]
                             k = "unresolved path: $VAR" if any("$" in p for p in bad) else ("unresolved path: glob" if any(ch in "".join(bad) for ch in "*?[") else "unresolved path: missing/relative")

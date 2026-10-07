@@ -212,3 +212,12 @@ Handoff, 4 real chains × 20 probes × 2 readers (share of probes answered; toke
 md-guard, 3 tasks × 3 runs: every run correct under all three guards; the new guard costs
 what no guard costs (whole spec 127K vs 123K tokens; brief 93K vs 108K) where the old one cost
 166K and 122K. Real transcripts: after a deny the agent read the doc whole 0 of 14 times.
+
+Round 2 the same day (old guard pinned to `d5da6a2`): whole spec none 93K, old 138K, window
+144K; brief none 58K, old 92K, window 57K. With no Read guard cheapest or equal in both rounds,
+and Claude Code's own Read paging a doc over 25K tokens with a PARTIAL-view note, the kit's Read
+window was dropped (bucket kit-digest-review D005): md-guard now guards shell reads only.
+
+After the review rework (same probes, fresh readers): kit + full digest 93.4%, 0 wrong (v1
+94.7%, 2 wrong); digest alone 86.6% (v1 89.7%) - the content barely moved, the gap is reader
+variance.

@@ -31,7 +31,7 @@ for p in glob.glob(os.path.expanduser("~/.claude/projects/*/*.jsonl")):
     pct = used * 100 // w
     turns = kd.extract(p, first)
     nat = len(kd.render(turns, {}, 0)) // 4
-    lean = len(kd.render(turns, {}, 0, lean=True)) // 4
+    lean = len(kd.render([dict(t, outs={}) for t in turns], {}, 0)) // 4
     cap = kd.cap_tokens(pct, w)
     capped = len(kd.render(turns, {}, cap)) // 4
     users = sum(1 for t in turns for it in t["items"] if it[0] == "user")

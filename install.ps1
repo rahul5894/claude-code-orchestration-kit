@@ -226,7 +226,7 @@ if ($pre['subagentPromptCacheTtl'] -and $pre['subagentPromptCacheTtl'] -ne '1h')
 }
 
 # 5. md-guard hook: copy the script, pin a Python 3.12+ path, register once in settings.json.
-#    Big markdown files are read in windows; this hook windows a whole-file Read and denies an uncapped shell read.
+#    Big markdown files are never dumped raw into a shell; Read pages them by itself.
 New-Item -ItemType Directory -Force (Join-Path $dest 'hooks') | Out-Null
 Copy-Item (Join-Path $kit 'core\hooks\*.py') (Join-Path $dest 'hooks') -Force
 # The wildcard copy is silent about a file missing from the clone, and the blocks below then
@@ -249,7 +249,9 @@ else {
     # could want back changes. On a fresh machine the file here is the one step 3 just wrote,
     # so a backup of it preserves nothing.
     $set = if ((Read-Text $sf).Trim()) { Read-Text $sf | ConvertFrom-Json -AsHashtable } else { [ordered]@{} }
-    Register-Hook $set 'PreToolUse' 'Read|Bash|PowerShell' 'md-guard.py' 'md-guard'
+    # Bash|PowerShell only: Claude Code's own Read pages big files itself (2026-10-07, D005);
+    # Register-Hook re-asserts the matcher, so an older install drops Read here too.
+    Register-Hook $set 'PreToolUse' 'Bash|PowerShell' 'md-guard.py' 'md-guard'
     # 6. kit-session-start: the missing-FAST-GATE line and the open-bucket list. Writes nothing.
     Register-Hook $set 'SessionStart' 'startup|resume|clear|compact' 'kit-session-start.py' 'kit-session-start'
     # 7. kit-subagent-report: file every finished subagent's final message into the project's

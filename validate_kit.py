@@ -65,7 +65,8 @@ print('=== 0. NO LITERAL CONTROL CHARACTERS IN SOURCE ===')
 # turns \\b, \\f, \\a and \\v into control bytes silently; nothing else in the toolchain
 # complains, and the line still LOOKS right in an editor.
 CTRL = {0x08: 'backspace', 0x0c: 'formfeed', 0x07: 'bell', 0x0b: 'vtab', 0x00: 'NUL'}
-for _f in sorted(glob.glob('*.py') + glob.glob('*.ps1') + glob.glob('core/**/*.md', recursive=True)):
+for _f in sorted(glob.glob('*.py') + glob.glob('*.ps1') + glob.glob('core/**/*.md', recursive=True)
+                 + glob.glob('core/**/*.py', recursive=True) + glob.glob('bench/handoff/*.py')):
     _b = open(_f, 'rb').read()
     _found = sorted({CTRL[c] for c in set(_b) & set(CTRL)})
     chk(not _found, f'{_f}: no literal control characters', str(_found))
@@ -791,8 +792,8 @@ for p in DOCS + ['extras/rejected/README.md', 'extras/prideconnect-section.md']:
     chk(os.path.isfile(p), f'{p} exists')
 
 print()
-print('=== 9b. FILES A WHOLE `Read` IS DENIED ON ===')
-# md-guard cuts a no-limit Read of any .md over 300 lines to a window. A verifier, which has no shell and so cannot
+print('=== 9b. FILES AN AGENT MUST BE SENT AT A LINE RANGE ===')
+# Read pages a doc over 25K tokens and refuses one over 256 KB. A verifier, which has no shell and so cannot
 # run qmd, hit this three times in one run because the BRIEF told it these files were short.
 # The orchestrator writes that brief, so the orchestrator has to be told. This is a census,
 # not a failure: the files are allowed to be long, but an agent must be sent at a line range.
@@ -968,16 +969,17 @@ chk('`task` skill' in _ct and '$ARGUMENTS' in _ct,
     'core/commands/continue.md resumes through the task skill, slug optional')
 # The session digest (2026-10-07): on 4 real handoffs STATE.md alone answered 63% of what the
 # next session needed, STATE.md + digest 95% (bucket kit-2.1.292-optimize F13). Each clause is
-# one a rewrite could drop silently: the hook stops writing it, the block stops naming it, the
-# resume stops reading it, the installer stops shipping it - or the conversation, which holds
-# whatever the user pasted, lands in a repo.
+# one a rewrite could drop silently: the hook stops writing it, stops putting it in the bucket
+# the handoff went to, the resume stops reading it, the installer stops shipping it - or the
+# conversation, which holds whatever the user pasted, lands in a repo.
 _kd = open('core/hooks/kit_digest.py', encoding='utf-8').read() if os.path.isfile('core/hooks/kit_digest.py') else ''
-chk('import kit_digest' in _kc and 'write_digest' in _kc and 'Digest:' in _kc and 'refresh_digest' in _kc,
-    'kit-context writes the session digest before the block, names it, and refreshes it after')
-chk('def state_lines' in _kc and '{lines}' in _kc,
-    'kit-context sizes STATE.md by the context band (the user: no fixed size)')
-chk('session digest' in _tk and 'whole' in _tk and 'Digest:' in _tk,
-    'task.md: a handoff cites its digest and /continue reads the digest whole')
+chk('import kit_digest' in _kc and 'def sync_digest' in _kc and 'def session_bucket' in _kc
+    and '"digests"' in _kc and 'digests/' in _kc,
+    "kit-context keeps the session digest in the bucket THIS session handed off to, in digests/")
+chk('def state_lines' in _kc and '{lines}' in _kc and 'BANDS' in _kd and 'def budget' in _kd,
+    'kit-context sizes STATE.md by the context band from one table, kit_digest.BANDS')
+chk('session digest' in _tk and 'whole' in _tk and '`digests/`' in _tk,
+    "task.md: /continue reads the newest digest in the bucket's digests/ whole")
 chk('".gitignore"' in _kd and '\\n*\\n")' in _kd,
     'kit_digest writes a `*` .gitignore beside every digest (it holds the conversation verbatim)')
 chk('SECRET' in _kd and 'redact(' in _kd and 'sk-' in _kd,
@@ -985,8 +987,6 @@ chk('SECRET' in _kd and 'redact(' in _kd and 'sk-' in _kd,
 chk(os.path.isfile('core/hooks/kit_digest_test.py') and "'kit_digest.py'" in _inst
     and "'kit_digest_test.py'" in _inst,
     'kit_digest.py ships with a self-test; the installer requires it and runs the test')
-_kss = open('core/hooks/kit-session-start.py', encoding='utf-8').read()
-chk('kit_digest.newest' in _kss, 'kit-session-start names the newest session digest for /continue')
 # No style set = plain Opus + hooks + handoff (2026-09-24). An agent description is shown to
 # the main session in every mode, so "Use for every change" there made a styleless session
 # delegate; so did a bucket's old briefs read as a pattern by /continue.
@@ -1035,15 +1035,13 @@ for _f in sorted(glob.glob('core/agents/*.md')):
 chk(_ro_set == _shell_only,
     "md-guard's read-only agent set equals every agent that holds Bash without Edit",
     f'{sorted(_ro_set)} vs {sorted(_shell_only)}')
-# md-guard rewrites a big whole-file Read instead of denying it (2026-10-07: after a deny the
-# agent read the doc whole 0 of 14 times). The rewrite must NOT carry a permissionDecision: an
-# "allow" there would also skip the permission prompt a Read outside the project gets.
-_win = re.search(r'def window\(.*?\n    sys\.exit\(0\)', _mg, re.S)
-chk(_win is not None and '"updatedInput"' in _win.group(0) and '"additionalContext"' in _win.group(0)
-    and '"permissionDecision"' not in _win.group(0),
-    'md-guard windows a big Read with updatedInput + outline and no permissionDecision')
-chk('MUST_READ_DIRS' in _mg and 'scratch' in _mg and 'briefs' in _mg and 'handoffs' in _mg,
-    'md-guard passes briefs, handoffs and bucket files whole (an agent never starts on half a brief)')
+# Read is Claude Code's own (2026-10-07, kit-digest-review D005): it returns a doc whole up to
+# 25K tokens, pages a longer one with a PARTIAL-view note, refuses >256 KB. A kit Read window
+# cost more tokens than none in two live A/B rounds with the same answers, so md-guard must not
+# come back on Read - not in the hook, not in the registration.
+chk("tool == \"Read\"" not in _mg and "updatedInput" not in _mg
+    and "Register-Hook $set 'PreToolUse' 'Bash|PowerShell' 'md-guard.py'" in _inst,
+    'md-guard leaves Read to Claude Code: no Read branch, registered on Bash|PowerShell only')
 chk('kit-subagent-start.py' in _setup,
     'SETUP-NEW-MACHINE.md names the SubagentStart decisions injector')
 _ki = open('core/commands/kit-init.md', encoding='utf-8').read() if os.path.isfile('core/commands/kit-init.md') else ''

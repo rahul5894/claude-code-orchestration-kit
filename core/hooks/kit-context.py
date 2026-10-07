@@ -20,13 +20,14 @@ the temp dir and removed once usage falls under 45% (after a compaction), so the
 crossing blocks again. Transcripts reach tens of MB: only lines containing `"usage"` or
 `"modelId"` are parsed.
 
-Before the block it writes the session digest (kit_digest.py: every user message and answer
-verbatim, the tool trail, output excerpts; no model call) to
-<project>/.claude/scratch/_sessions/<session>.md and names it in REASON, and every later stop
-of the session rewrites it if the transcript is newer, so the digest reaches the last turn
-before /clear. REASON sizes STATE.md by the band (60/80/100/120 lines). Measured 2026-10-07 on
-4 real handoff chains: STATE.md alone let a cold reader answer 63.4% of 80 probes, STATE.md +
-digest 94.7%; Claude Code's own /compact 72.5% (bucket kit-2.1.292-optimize, F13).
+The session digest (kit_digest.py: every user message and answer verbatim, the tool trail,
+output excerpts; no model call) goes into the handoff's own bucket. The block writes nothing
+and names no path; every stop after it finds the bucket whose STATE.md THIS session wrote last
+(its own transcript says which) and keeps <bucket>/digests/<session>.md current, so it reaches
+the last turn before /clear and /continue finds it beside the STATE.md it reads. REASON sizes STATE.md by the band
+(kit_digest.BANDS: 60/80/100/120 lines). Measured 2026-10-07 on 4 real handoff chains: STATE.md
+alone let a cold reader answer 63.4% of 80 probes, STATE.md + digest 94.7%; Claude Code's own
+/compact 72.5% (bucket kit-2.1.292-optimize, F13).
 
 Exit 0 always. Any crash = silence (fail open, dev tool). Writes the temp-dir band marker and
 the digest only; a digest that fails to write never costs the block.
@@ -42,10 +43,6 @@ import tempfile
 # is not on sys.path, the import fails and the hook exits 1 - which fails open (refuter-02).
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from kit_off import kit_off  # noqa: E402
-try:
-    import kit_digest  # noqa: E402
-except Exception:  # an install missing the module still hands off, just without a digest
-    kit_digest = None
 
 THRESHOLD = 45
 BAND = 10
@@ -56,8 +53,10 @@ UNSAFE = re.compile(r"[^A-Za-z0-9._-]")
 FAMILY = re.compile(r"claude-(opus|sonnet|haiku|fable)-(\d+)(?:-(\d{1,2}))?(?![0-9])")
 TRUTHY = ("1", "true", "yes", "on")
 REASON = ("orchestration-kit: context is at {pct}% ({used}K of {window}K). Hand off now, before "
-          "any new work.{digest} Rewrite the OPEN bucket's STATE.md as the handoff, by the task "
-          "skill's STATE rules, in at most ~{lines} lines (sized to how full this session is){cite}"
+          "any new work. Rewrite the OPEN bucket's STATE.md as the handoff, by the task "
+          "skill's STATE rules, in at most ~{lines} lines (sized to how full this session is). "
+          "The kit then saves this whole conversation word for word into that bucket's digests/ "
+          "and keeps it current each turn, so STATE.md is the curated snapshot, not a transcript"
           "; Next action exact; under User said, the user's own words "
           "quoted - every approval, preference, way they want results reported, worry and open "
           "question that lives only in this chat; paths, commands and IDs copied exactly; traps "
@@ -66,11 +65,6 @@ REASON = ("orchestration-kit: context is at {pct}% ({used}K of {window}K). Hand 
           "/clear. If work goes on after the handoff (a commit, a push), keep STATE.md current "
           "before each turn ends. Then tell the user in one line: handoff saved - run /clear, "
           "then type /continue.")
-DIGEST_NOTE = (" The kit has written this conversation's digest - every user message and every "
-               "answer verbatim, the tool trail without outputs, ~{k}K tokens - to `{path}`, "
-               "and refreshes it after each later turn.")
-DIGEST_CITE = ("; put `Digest: {path}` under ## Repo, and cite a digest turn (`digest T12`) "
-               "instead of restating what it holds word for word")
 # Not "saved": REASON lets the model skip the handoff when nothing carries over (code-review).
 NOTICE = ("Context {pct}% full - handoff written? Next: /clear, then type /continue.")
 
@@ -153,50 +147,98 @@ def usage(transcript_path, session_id=""):
 
 
 def state_lines(pct):
-    """STATE.md's line budget at a handoff, by how full the session is: the user asked for a
-    handoff that grows with the session (2026-10-07), the ~60-line rule being the 45% size."""
-    return 60 if pct < 60 else 80 if pct < 70 else 100 if pct < 80 else 120
+    """STATE.md's line budget at a handoff: the user's table in kit_digest.BANDS (2026-10-07, a
+    handoff that grows with the session); the ~60-line rule when the module is missing."""
+    try:
+        import kit_digest
+        return kit_digest.budget(pct)[0]
+    except Exception:
+        return 60
 
 
 def scratch_root(data):
     """The project root whose .claude/scratch holds the buckets: CLAUDE_PROJECT_DIR, else the
-    payload cwd, the first that has one (as kit-session-start.py picks it); else the first of
-    them that is a directory, where the handoff will open its bucket."""
+    payload cwd, the first that has one (as kit-session-start.py picks it) and is not switched
+    off; None when neither has one. The digest never creates .claude/scratch: a project that
+    has no bucket yet gets one from the handoff itself, and the next stop writes the digest."""
     roots = [r for r in (os.environ.get("CLAUDE_PROJECT_DIR"), data.get("cwd")) if r]
-    return next((r for r in roots if os.path.isdir(os.path.join(r, ".claude", "scratch"))),
-                next((r for r in roots if os.path.isdir(r)), None))
+    return next((r for r in roots if os.path.isdir(os.path.join(r, ".claude", "scratch"))
+                 and not kit_off(r)), None)
 
 
-def digest_path(root, sid):
-    return os.path.join(root, ".claude", "scratch", "_sessions", UNSAFE.sub("_", sid) + ".md")
+# A transcript this big is skipped: the hook has 5 s and the digest must never cost a stop's
+# budget. Measured 2026-10-07: 0.31 s for the largest real one (53 MB, 1.32 s before the
+# redaction fix), so 200 MB stays near 1.2 s.
+MAX_TRANSCRIPT = 200_000_000
 
 
-def write_digest(data, sid, pct, used, size):
-    """(path, tokens) of this session's digest, written now; (None, 0) when it cannot be."""
+# A write of .claude/scratch/<slug>/STATE.md, in a Write/Edit target or a shell command.
+STATE_PATH = re.compile(r"(?:^|[/\\\s\"'=])\.claude[/\\]scratch[/\\]([^/\\\s\"'*?<>|]+)[/\\]STATE\.md",
+                        re.IGNORECASE)
+SHELL_WRITE = re.compile(r">|\btee\b|Set-Content|Out-File|Add-Content|write_text|\.write\(|"
+                         r"open\([^)]*['\"][wa]", re.IGNORECASE)
+
+
+def session_bucket(transcript, root):
+    """The bucket of the STATE.md THIS session wrote last - a Write/Edit target, or a shell
+    command that writes .claude/scratch/<slug>/STATE.md - i.e. the handoff the block asked
+    for. Read from the session's own transcript, so a parallel session's STATE.md, an older
+    one, or a bucket the session only read never counts (review 2026-10-07, refuter 1-3).
+    None when it wrote none, or when the bucket is a symlink, a `_` kit folder, or outside."""
+    slug = None
+    with open(transcript, encoding="utf-8", errors="replace") as f:
+        for line in f:
+            if "STATE.md" not in line or '"tool_use"' not in line:
+                continue
+            try:
+                o = json.loads(line)
+            except ValueError:
+                continue
+            if not isinstance(o, dict) or o.get("isSidechain") or o.get("type") != "assistant":
+                continue
+            for b in (o.get("message") or {}).get("content") or []:
+                if not (isinstance(b, dict) and b.get("type") == "tool_use"):
+                    continue
+                inp = b.get("input") if isinstance(b.get("input"), dict) else {}
+                if b.get("name") in ("Write", "Edit", "MultiEdit"):
+                    target = str(inp.get("file_path") or "")
+                elif b.get("name") in ("Bash", "PowerShell") and SHELL_WRITE.search(str(inp.get("command"))):
+                    target = str(inp.get("command") or "")
+                else:
+                    continue
+                for m in STATE_PATH.finditer(target):
+                    slug = m.group(1)
+    if not slug or slug.startswith("_"):
+        return None
+    scratch = os.path.realpath(os.path.join(root, ".claude", "scratch"))
+    bucket = os.path.join(scratch, slug)
+    if (os.path.islink(bucket) or not os.path.isdir(bucket)
+            or os.path.dirname(os.path.realpath(bucket)) != scratch):
+        return None
+    return bucket
+
+
+def sync_digest(data, sid, pct, used, size):
+    """After the block, keep <bucket>/digests/<session>.md current to the last turn before
+    /clear, in the bucket this session handed off to. Never through a symlinked or junctioned
+    digests/ folder: write and prune would follow it out of the bucket (refuter 6)."""
     root = scratch_root(data)
     transcript = data.get("transcript_path") or ""
-    if kit_digest is None or not (root and sid and os.path.isfile(transcript)):
-        return None, 0
-    path = digest_path(root, sid)
-    meta = {"session": sid, "pct": pct, "used_k": used // 1000, "window_k": size // 1000}
-    n = kit_digest.write(transcript, path, meta, kit_digest.cap_tokens(pct, size))
-    return (path, n) if n >= 0 else (None, 0)
-
-
-def refresh_digest(data, sid, pct, used, size):
-    """After the handoff, keep the digest current to the last turn before /clear: rewrite it
-    when the transcript is newer. Measured 0.2 s on a 32 MB transcript."""
-    root = scratch_root(data)
-    transcript = data.get("transcript_path") or ""
-    if not (root and sid):
+    if not (root and sid and os.path.isfile(transcript)) or os.path.getsize(transcript) > MAX_TRANSCRIPT:
         return
-    path = digest_path(root, sid)
-    try:
-        if os.path.getmtime(transcript) <= os.path.getmtime(path):
-            return
-    except OSError:
-        return  # no digest yet for this session: only a block writes the first one
-    write_digest(data, sid, pct, used, size)
+    bucket = session_bucket(transcript, root)
+    if not bucket:
+        return  # this session wrote no STATE.md: no handoff to sit beside
+    folder = os.path.join(bucket, "digests")
+    if os.path.lexists(folder) and (os.path.islink(folder)
+                                    or os.path.realpath(folder) != os.path.join(os.path.realpath(bucket), "digests")):
+        return
+    path = os.path.join(folder, UNSAFE.sub("_", sid) + ".md")
+    if os.path.isfile(path) and os.path.getmtime(transcript) <= os.path.getmtime(path):
+        return
+    import kit_digest
+    meta = {"session": sid, "pct": pct, "used_k": used // 1000, "window_k": size // 1000}
+    kit_digest.write(transcript, path, meta, kit_digest.cap_tokens(pct, size))
 
 
 def main():
@@ -231,26 +273,25 @@ def main():
             stored = int(f.read().strip())
     except (OSError, ValueError):
         stored = -1
-    # stop_hook_active = this stop follows our own block: the handoff was just written, so the
-    # user is told once. Blocking again would loop.
+    # stop_hook_active = this stop follows a block: the handoff was just written, so the user is
+    # told once - unless no block of ours came first (another Stop hook blocked). Every stop
+    # after our block keeps the digest current; a failure there never costs the notice.
     if data.get("stop_hook_active"):
-        _try(refresh_digest, data, sid, pct, used, size)
+        if stored < 0:
+            return
+        _try(sync_digest, data, sid, pct, used, size)
         out = {"systemMessage": NOTICE.format(pct=pct)}
     elif band > stored:
+        # The block itself writes no digest: it stays as fast as before, and the digest goes
+        # where the model puts the handoff, known once it has written STATE.md.
         with open(marker, "w", encoding="utf-8") as f:
             f.write(str(band))
-        # The digest is written before the block, so the reason can name it; a failure to
-        # write it must not cost the handoff itself.
-        path, k = _try(write_digest, data, sid, pct, used, size) or (None, 0)
-        shown = path.replace("\\", "/") if path else ""
         out = {"decision": "block",
-               "reason": REASON.format(
-                   pct=pct, used=used // 1000, window=size // 1000, lines=state_lines(pct),
-                   digest=DIGEST_NOTE.format(k=max(k // 1000, 1), path=shown) if path else "",
-                   cite=DIGEST_CITE.format(path=shown) if path else "")}
+               "reason": REASON.format(pct=pct, used=used // 1000, window=size // 1000,
+                                       lines=state_lines(pct))}
     else:
         # Same band again: already said. A notice on every stop reached 56 in one session.
-        _try(refresh_digest, data, sid, pct, used, size)
+        _try(sync_digest, data, sid, pct, used, size)
         return
     sys.stdout.write(json.dumps(out))
 
