@@ -20,7 +20,16 @@ the temp dir and removed once usage falls under 45% (after a compaction), so the
 crossing blocks again. Transcripts reach tens of MB: only lines containing `"usage"` or
 `"modelId"` are parsed.
 
-Exit 0 always. Any crash = silence (fail open, dev tool). Never writes outside the temp dir.
+Before the block it writes the session digest (kit_digest.py: every user message and answer
+verbatim, the tool trail, output excerpts; no model call) to
+<project>/.claude/scratch/_sessions/<session>.md and names it in REASON, and every later stop
+of the session rewrites it if the transcript is newer, so the digest reaches the last turn
+before /clear. REASON sizes STATE.md by the band (60/80/100/120 lines). Measured 2026-10-07 on
+4 real handoff chains: STATE.md alone let a cold reader answer 63.4% of 80 probes, STATE.md +
+digest 94.7%; Claude Code's own /compact 72.5% (bucket kit-2.1.292-optimize, F13).
+
+Exit 0 always. Any crash = silence (fail open, dev tool). Writes the temp-dir band marker and
+the digest only; a digest that fails to write never costs the block.
 Self-check: python kit-context_test.py
 """
 import json
@@ -33,6 +42,10 @@ import tempfile
 # is not on sys.path, the import fails and the hook exits 1 - which fails open (refuter-02).
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from kit_off import kit_off  # noqa: E402
+try:
+    import kit_digest  # noqa: E402
+except Exception:  # an install missing the module still hands off, just without a digest
+    kit_digest = None
 
 THRESHOLD = 45
 BAND = 10
@@ -43,15 +56,21 @@ UNSAFE = re.compile(r"[^A-Za-z0-9._-]")
 FAMILY = re.compile(r"claude-(opus|sonnet|haiku|fable)-(\d+)(?:-(\d{1,2}))?(?![0-9])")
 TRUTHY = ("1", "true", "yes", "on")
 REASON = ("orchestration-kit: context is at {pct}% ({used}K of {window}K). Hand off now, before "
-          "any new work: rewrite the OPEN bucket's STATE.md as the handoff, by the task skill's "
-          "STATE rules (<= ~60 lines; Next action exact; under User said, the user's own words "
+          "any new work.{digest} Rewrite the OPEN bucket's STATE.md as the handoff, by the task "
+          "skill's STATE rules, in at most ~{lines} lines (sized to how full this session is){cite}"
+          "; Next action exact; under User said, the user's own words "
           "quoted - every approval, preference, way they want results reported, worry and open "
           "question that lives only in this chat; paths, commands and IDs copied exactly; traps "
-          "as seen, never inferred); if no bucket is open, open one the /task way and write it "
+          "as seen, never inferred. If no bucket is open, open one the /task way and write it "
           "there - or, if nothing needs to carry over, skip the bucket and just tell the user to "
           "/clear. If work goes on after the handoff (a commit, a push), keep STATE.md current "
           "before each turn ends. Then tell the user in one line: handoff saved - run /clear, "
           "then type /continue.")
+DIGEST_NOTE = (" The kit has written this conversation's digest - every user message and every "
+               "answer verbatim, the tool trail without outputs, ~{k}K tokens - to `{path}`, "
+               "and refreshes it after each later turn.")
+DIGEST_CITE = ("; put `Digest: {path}` under ## Repo, and cite a digest turn (`digest T12`) "
+               "instead of restating what it holds word for word")
 # Not "saved": REASON lets the model skip the handoff when nothing carries over (code-review).
 NOTICE = ("Context {pct}% full - handoff written? Next: /clear, then type /continue.")
 
@@ -133,6 +152,53 @@ def usage(transcript_path, session_id=""):
     return used, (WINDOW_1M if w == WINDOW and used > WINDOW else w)
 
 
+def state_lines(pct):
+    """STATE.md's line budget at a handoff, by how full the session is: the user asked for a
+    handoff that grows with the session (2026-10-07), the ~60-line rule being the 45% size."""
+    return 60 if pct < 60 else 80 if pct < 70 else 100 if pct < 80 else 120
+
+
+def scratch_root(data):
+    """The project root whose .claude/scratch holds the buckets: CLAUDE_PROJECT_DIR, else the
+    payload cwd, the first that has one (as kit-session-start.py picks it); else the first of
+    them that is a directory, where the handoff will open its bucket."""
+    roots = [r for r in (os.environ.get("CLAUDE_PROJECT_DIR"), data.get("cwd")) if r]
+    return next((r for r in roots if os.path.isdir(os.path.join(r, ".claude", "scratch"))),
+                next((r for r in roots if os.path.isdir(r)), None))
+
+
+def digest_path(root, sid):
+    return os.path.join(root, ".claude", "scratch", "_sessions", UNSAFE.sub("_", sid) + ".md")
+
+
+def write_digest(data, sid, pct, used, size):
+    """(path, tokens) of this session's digest, written now; (None, 0) when it cannot be."""
+    root = scratch_root(data)
+    transcript = data.get("transcript_path") or ""
+    if kit_digest is None or not (root and sid and os.path.isfile(transcript)):
+        return None, 0
+    path = digest_path(root, sid)
+    meta = {"session": sid, "pct": pct, "used_k": used // 1000, "window_k": size // 1000}
+    n = kit_digest.write(transcript, path, meta, kit_digest.cap_tokens(pct, size))
+    return (path, n) if n >= 0 else (None, 0)
+
+
+def refresh_digest(data, sid, pct, used, size):
+    """After the handoff, keep the digest current to the last turn before /clear: rewrite it
+    when the transcript is newer. Measured 0.2 s on a 32 MB transcript."""
+    root = scratch_root(data)
+    transcript = data.get("transcript_path") or ""
+    if not (root and sid):
+        return
+    path = digest_path(root, sid)
+    try:
+        if os.path.getmtime(transcript) <= os.path.getmtime(path):
+            return
+    except OSError:
+        return  # no digest yet for this session: only a block writes the first one
+    write_digest(data, sid, pct, used, size)
+
+
 def main():
     if kit_off():
         return
@@ -168,16 +234,33 @@ def main():
     # stop_hook_active = this stop follows our own block: the handoff was just written, so the
     # user is told once. Blocking again would loop.
     if data.get("stop_hook_active"):
+        _try(refresh_digest, data, sid, pct, used, size)
         out = {"systemMessage": NOTICE.format(pct=pct)}
     elif band > stored:
         with open(marker, "w", encoding="utf-8") as f:
             f.write(str(band))
+        # The digest is written before the block, so the reason can name it; a failure to
+        # write it must not cost the handoff itself.
+        path, k = _try(write_digest, data, sid, pct, used, size) or (None, 0)
+        shown = path.replace("\\", "/") if path else ""
         out = {"decision": "block",
-               "reason": REASON.format(pct=pct, used=used // 1000, window=size // 1000)}
+               "reason": REASON.format(
+                   pct=pct, used=used // 1000, window=size // 1000, lines=state_lines(pct),
+                   digest=DIGEST_NOTE.format(k=max(k // 1000, 1), path=shown) if path else "",
+                   cite=DIGEST_CITE.format(path=shown) if path else "")}
     else:
         # Same band again: already said. A notice on every stop reached 56 in one session.
+        _try(refresh_digest, data, sid, pct, used, size)
         return
     sys.stdout.write(json.dumps(out))
+
+
+def _try(fn, *args):
+    """fn(*args), or None when it raises: the digest is an extra, the block is the handoff."""
+    try:
+        return fn(*args)
+    except Exception:
+        return None
 
 
 if __name__ == "__main__":

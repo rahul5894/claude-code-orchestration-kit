@@ -28,6 +28,18 @@ with open(SMALL, "w") as f:
     f.write("".join(f"line {i}\n" for i in range(10)))
 with open(BIG_ACCENT, "w", encoding="utf-8") as f:
     f.write("".join(f"line {i} " + "x" * 200 + "\n" for i in range(400)))
+# A big doc with headings (the outline handed over with a window), and big docs an agent must
+# hold whole: they pass untouched (2026-10-07, "adhoori information se agent shuru ho gaya").
+DOC = os.path.join(tmp, "guide.md").replace("\\", "/")
+with open(DOC, "w", encoding="utf-8") as f:
+    f.write("".join((f"## Part {i // 50}\n" if i % 50 == 0 else f"text {i}\n") for i in range(700)))
+MUST = []
+for rel in (".claude/scratch/b1/STATE.md", "CLAUDE.md", "briefs/01-task.md", "docs/SKILL.md"):
+    p_ = os.path.join(tmp, rel).replace("\\", "/")
+    os.makedirs(os.path.dirname(p_), exist_ok=True)
+    with open(p_, "w", encoding="utf-8") as f:
+        f.write("".join(f"row {i}\n" for i in range(500)))
+    MUST.append(p_)
 
 CASES = [
     # (want, tool, input, agent_type)
@@ -38,7 +50,10 @@ CASES = [
     ("ALLOW", "Bash", {"command": f"cat >> {SMALL} <<-\"EOF\"\n- type continue then read STATE.md\n\tEOF"}, None),
     ("DENY",  "Bash", {"command": f"cat >> {SMALL} <<'EOF'\nrow\nEOF\ncat {BIG}"}, None),
     # unterminated: nothing is stripped, the verdict is what it was before stripping existed
-    ("DENY",  "Bash", {"command": f"cat >> {SMALL} <<'EOF'\n- type continue then read STATE.md"}, None),
+    ("DENY",  "Bash", {"command": f"cat >> {SMALL} <<'EOF'\n- then cat {BIG}"}, None),
+    # ...and a body naming a .md that does not exist reads nothing big (2026-10-07: unresolved
+    # paths pass - 64% of shell denials since 09-29 were such paths or small files)
+    ("ALLOW", "Bash", {"command": f"cat >> {SMALL} <<'EOF'\n- type continue then read STATE.md"}, None),
     # D009: a body is data only under a file-write line with a QUOTED delimiter. An unquoted
     # one expands $(...) and backticks, an interpreter runs its body, and a `<<` inside quotes,
     # a comment or arithmetic opens no heredoc at all - each of those is judged line by line.
@@ -100,7 +115,20 @@ CASES = [
     ("ALLOW", "Bash", {"command": f"sed -n 1,5p {SMALL}"}, None),
     ("DENY",  "Bash", {"command": f"cat {BIG_WIN}"}, None),
     ("ALLOW", "Bash", {"command": f"git diff {BIG}"}, None),
-    ("DENY",  "Bash", {"command": "cat some/unknown.md"}, None),
+    ("ALLOW", "Bash", {"command": "cat some/unknown.md"}, None),
+    # 2026-10-07 false denials, each seen live: a search string naming a .md, a file the same
+    # command creates, `$VAR` and loop paths to small files (the kit's own session, F11)
+    ("ALLOW", "Bash", {"command": f'grep -rl "STATE.md" {tmp} | head -3'}, None),
+    ("ALLOW", "Bash", {"command": f"python - <<'EOF'\nopen('{tmp}/made.md','w').write('x')\nEOF\nhead {tmp}/made-later.md"}, None),
+    ("ALLOW", "Bash", {"command": f'M={tmp}; for f in small; do echo "== $f"; cat "$M/$f.md"; done'}, None),
+    ("ALLOW", "Bash", {"command": 'cat "$KIT_TEST_UNSET_VAR/big.md"'}, None),
+    # ...while a variable or loop that lands on the big file still denies
+    ("DENY",  "Bash", {"command": f'M={tmp}; cat "$M/big.md"'}, None),
+    ("DENY",  "Bash", {"command": f'M={tmp} && cat "${{M}}/big.md" | head -50'}, None),
+    ("DENY",  "Bash", {"command": f'for f in small big; do cat "{tmp}/$f.md"; done'}, None),
+    # a doc the agent must have whole reads raw in a shell too when small; big, it still goes
+    # through Read (which passes it whole, below)
+    ("DENY",  "Bash", {"command": f"cat {MUST[0]}"}, None),
     ("ALLOW", "Bash", {"command": f"wc -l {BIG}"}, None),
     ("ALLOW", "Bash", {"command": "git add CLAUDE.md && git commit -m x"}, None),
     # 2026-09-29: 218 of 320 real shell denials were false. Precision without narrowing the
@@ -131,10 +159,19 @@ CASES = [
     ("DENY",  "Bash", {"command": f"git status && cat {BIG} | head -5"}, None),
     ("DENY",  "PowerShell", {"command": f"Get-Content {BIG_WIN}"}, None),
     ("ALLOW", "PowerShell", {"command": f"Get-Content {BIG_WIN} -TotalCount 40 | % {{ $_.Substring(0, [Math]::Min(300, $_.Length)) }}"}, None),
-    ("DENY",  "Read", {"file_path": BIG_ACCENT}, None),
-    ("DENY",  "Read", {"file_path": BIG}, None),
-    ("DENY",  "Read", {"file_path": BIG, "offset": 200}, None),
+    # A whole-file Read of a big doc is REWRITTEN to a 300-line window with the map (2026-10-07):
+    # after a deny the agent read the doc whole 0 of 14 times (F4), and a deny costs a turn.
+    ("WINDOW", "Read", {"file_path": BIG_ACCENT}, None),
+    ("WINDOW", "Read", {"file_path": BIG}, None),
+    ("WINDOW", "Read", {"file_path": BIG, "offset": 200}, None),
+    ("WINDOW", "Read", {"file_path": BIG, "offset": 1, "limit": 1000}, None),
+    ("WINDOW", "Read", {"file_path": DOC}, None),
     ("ALLOW", "Read", {"file_path": BIG, "offset": 20, "limit": 100}, None),
+    ("ALLOW", "Read", {"file_path": BIG, "offset": 900}, None),
+    ("ALLOW", "Read", {"file_path": MUST[0]}, None),
+    ("ALLOW", "Read", {"file_path": MUST[1]}, None),
+    ("ALLOW", "Read", {"file_path": MUST[2]}, None),
+    ("ALLOW", "Read", {"file_path": MUST[3]}, None),
     ("ALLOW", "Read", {"file_path": SMALL}, None),
     ("ALLOW", "Read", {"file_path": HOOK}, None),
     ("ALLOW", "Edit", {"file_path": BIG}, None),
@@ -218,7 +255,9 @@ def run(tool, inp, agent_type=None):
         payload["agent_type"] = agent_type
     raw = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     p = subprocess.run([sys.executable, HOOK], input=raw, capture_output=True)
-    return "DENY" if b'"deny"' in p.stdout else "ALLOW"
+    if b'"deny"' in p.stdout:
+        return "DENY"
+    return "WINDOW" if b'"updatedInput"' in p.stdout else "ALLOW"
 
 
 fails = 0
@@ -231,20 +270,32 @@ for want, tool, inp, agent_type in CASES:
 
 # A denial must say how to get ALL of the file, not only how to find a spot in it: a model
 # told "grep, then Read a window" can stop at one window and work from part of the document.
-def reason(tool, inp):
+def reason(tool, inp, field="permissionDecisionReason"):
     raw = json.dumps({"tool_name": tool, "tool_input": inp}, ensure_ascii=False).encode("utf-8")
     p = subprocess.run([sys.executable, HOOK], input=raw, capture_output=True)
     try:
-        return json.loads(p.stdout)["hookSpecificOutput"]["permissionDecisionReason"]
+        out = json.loads(p.stdout)["hookSpecificOutput"]
+        return json.dumps(out[field]) if field == "updatedInput" else out[field]
     except (ValueError, KeyError, TypeError):
         return ""
 
 
 MESSAGES = [
-    ("Read deny names the whole-file route",
-     reason("Read", {"file_path": BIG}), ["Read every window in order", "offset 1, 301, 601"]),
+    ("Read window names the unread offsets and the read-it-all rule",
+     reason("Read", {"file_path": DOC}, "additionalContext"),
+     ["has 700 lines", "lines 1-300", "Unread windows: offset 301, 601",
+      "Read every unread window before you act", "L1 ## Part 0", "L651 ## Part 13"]),
+    ("Read window keeps the call's own offset and caps the limit",
+     reason("Read", {"file_path": BIG, "offset": 200}, "updatedInput"),
+     ['"offset": 200', '"limit": 300', '"file_path"']),
+    ("Read window sets no permissionDecision (normal permission checks still run)",
+     "permissionDecision" not in subprocess.run(
+         [sys.executable, HOOK], input=json.dumps({"tool_name": "Read", "tool_input": {"file_path": BIG}}).encode(),
+         capture_output=True).stdout.decode() and "ok", ["ok"]),
     ("shell deny says cut truncates, read content with Read",
      reason("Bash", {"command": f"cat {BIG}"}), ["truncates long lines", "Read every window in order"]),
+    ("shell deny carries the line count and the outline",
+     reason("Bash", {"command": f"cat {DOC}"}), ["guide.md (700 lines)", "Outline:", "L351 ## Part 7"]),
 ]
 for label, text, needles in MESSAGES:
     good = all(n in text for n in needles)

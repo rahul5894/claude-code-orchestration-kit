@@ -22,10 +22,10 @@ Every session, every project. A repo's own `CLAUDE.md` wins on conflict.
   have never seen (verified: a fresh verifier got the stub for a symbol the orchestrator had
   read). Re-read with `fresh=true`; judge nothing you do not hold.
 - **The web is Firecrawl → Exa → Context7**, never `WebFetch`/`WebSearch`.
-- **Never read a document wholesale.** Anything over ~300 lines is reached through
-  `grep -n | cut -c1-300` + a Read window, or qartez windows. Need all of it? Read every
-  window in order;
-  `cut` only locates, as it truncates long lines.
+- **Never read a document wholesale** - except your brief, CLAUDE.md and handoff files, which
+  you read whole. Anything else over ~300 lines is reached through `grep -n | cut -c1-300` + a
+  Read window, or qartez windows (a no-limit Read returns lines 1-300 plus the outline). Need
+  all of it? Read every window in order; `cut` only locates, as it truncates long lines.
 - Respect the brief's tool-call budget. Well past it means you are solving a different
   problem than the one briefed: stop and report.
 

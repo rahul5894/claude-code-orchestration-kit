@@ -97,7 +97,13 @@ nothing from this conversation, in as few tokens as that takes:
 - **Anything done after the handoff** (a commit, a push, a test run) updates Repo and
   Changed + verified before the turn ends.
 - Done work that no next step depends on is dropped; FINDINGS, DECISIONS and git keep it.
-- **At most ~60 lines.** Longer means history crept in: move it to FINDINGS.
+- **At most ~60 lines** for a 45% handoff; the Stop hook's note sizes a fuller session's (80
+  lines at 60%, 100 at 70%, 120 at 80%+). Longer means history crept in: move it to FINDINGS.
+- **A handoff the Stop hook asked for has a session digest** beside it: the whole
+  conversation, every user message and answer verbatim, written by the kit, not by you. Put
+  `Digest: <path from the hook's note>` under Repo. STATE.md stays the curated snapshot: cite a
+  digest turn (`digest T12`) instead of restating a long quote, never instead of a decision,
+  a requirement or the next action.
 - Before `/clear`, check it answers alone: what is the goal · what is done and how was it
   proven · the exact next action · what must not be retried · what the user decided or still
   has to decide. A gap is a line to add; a line that answers none of them is a line to cut.
@@ -127,6 +133,12 @@ nothing from this conversation, in as few tokens as that takes:
    the wide cap keeps an entry's evidence, which `cut -c1-300` would drop);
    `[gotcha]`, `[dead-end]` and untagged older lines are always read. It is append-only, so
    a cited line number never moves.
+   Then the **session digest** - the one STATE.md names under `Digest:`, else the one the
+   session-start note names - **whole**: it is the previous conversation word for word, so
+   Read it to the end, every window (each Read's notice gives the next offset), before you act.
+   Measured on 4 real handoffs: STATE.md alone answered 63% of what the next session needed,
+   STATE.md + digest 95%. Where the two disagree, the later turn wins; where the repo
+   disagrees with either, the repo wins.
 2. **Verify before trusting.** Check the recorded branch and HEAD against
    `git rev-parse --abbrev-ref HEAD`, `git rev-parse --short HEAD`, `git status --short`.
    Where the file and the repo disagree, **the repo is right**: correct the file and say

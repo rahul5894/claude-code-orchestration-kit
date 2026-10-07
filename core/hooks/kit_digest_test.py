@@ -1,0 +1,152 @@
+"""Self-contained check for kit_digest.py. Run from anywhere: python kit_digest_test.py
+Builds its own transcript in a temp dir and deletes it on the way out."""
+import json
+import os
+import shutil
+import sys
+import tempfile
+import time
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import kit_digest as kd  # noqa: E402
+
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+except (AttributeError, OSError):
+    pass
+
+tmp = tempfile.mkdtemp(prefix="kit-digest-test-")
+cases = []
+
+
+def ok(cond, label):
+    cases.append((bool(cond), label))
+
+
+def user(text, **kw):
+    return dict({"type": "user", "isSidechain": False, "timestamp": "2026-10-07T08:15:00Z",
+                 "message": {"role": "user", "content": text}}, **kw)
+
+
+def asst(*blocks):
+    return {"type": "assistant", "isSidechain": False, "timestamp": "2026-10-07T08:16:00Z",
+            "message": {"role": "assistant", "content": list(blocks)}}
+
+
+def text(t):
+    return {"type": "text", "text": t}
+
+
+def tool(tid, name, inp):
+    return {"type": "tool_use", "id": tid, "name": name, "input": inp}
+
+
+def result(tid, out, err=False):
+    return {"type": "user", "isSidechain": False,
+            "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": tid,
+                                                     "content": out, "is_error": err}]}}
+
+
+LONG = "Make the archive queue robust: it must keep running with no stops, ever, and report in Hinglish tables."
+lines = [
+    user(LONG),
+    user("<system-reminder>internal note</system-reminder><ide_opened_file>x.py</ide_opened_file>please also check B2"),
+    user("<command-name>/continue</command-name><command-message>continue</command-message><command-args>b2-storage</command-args>"),
+    user("skill text the harness injected", isMeta=True),
+    {"type": "user", "isSidechain": True, "message": {"content": "a subagent's own prompt"}},
+    asst(text("Reading the two files."), tool("t1", "Read", {"file_path": "D:/p/a.md"}),
+         tool("t2", "Bash", {"command": "python check.py --all"})),
+    # parallel calls answer out of order: the Bash output must sit under the Bash call
+    result("t2", "line\n" * 300 + "RESULT: 41/41 passed"),
+    result("t1", "the whole file a.md, which is on disk"),
+    asst(tool("t3", "Agent", {"subagent_type": "researcher", "description": "find the cap"})),
+    result("t3", "Report: the cap is 4096 tokens (docs, verified)."),
+    asst(tool("t4", "Bash", {"command": "rm -rf /"})),
+    result("t4", "The user doesn't want to proceed with this tool use.", err=True),
+    asst(tool("t5", "Edit", {"file_path": "D:/p/app.py"})),
+    result("t5", "Error: String to replace not found in file.", err=True),
+    {"type": "attachment", "attachment": {"type": "queued_command", "prompt": [{"type": "text", "text": "and push after"}]}},
+    asst(text("Done: 41/41 passed, key sk-ant-api03-ABCDEFGHIJKLMNOPQRSTUV kept out, api_key=supersecret123")),
+    user(LONG),  # the same long message pasted again adds nothing
+    "{torn line",
+    user("last question: what next?"),
+    asst(text("Next: run the gate.")),
+]
+path = os.path.join(tmp, "t.jsonl")
+with open(path, "w", encoding="utf-8") as f:
+    for ln in lines:
+        f.write((ln if isinstance(ln, str) else json.dumps(ln)) + "\n")
+
+try:
+    turns = kd.extract(path)
+    full = kd.render(turns, {"session": "s1", "transcript": path}, 0)
+    ok(LONG in full and full.count(LONG) == 1, "a user message is kept verbatim, a repeat of it once only")
+    ok("please also check B2" in full and "internal note" not in full and "x.py" not in full,
+       "system-reminder and IDE-opened-file noise is cut from the user's words")
+    ok("/continue b2-storage" in full, "a slash command reads as `/name args`")
+    ok("skill text the harness injected" not in full and "a subagent's own prompt" not in full,
+       "isMeta rows and sidechain rows are left out")
+    i_bash = full.find("Bash: python check.py --all")
+    ok(i_bash >= 0 and "RESULT: 41/41 passed" in full[i_bash:i_bash + 900]
+       and "the whole file a.md" not in full,
+       "a shell's output tail sits under its own call; a Read's output is left out")
+    ok("Report: the cap is 4096 tokens" in full, "a subagent's report is kept")
+    ok("**User refused:**" in full and "**Error:**" in full and "String to replace not found" in full,
+       "a refusal and an error are kept, labelled")
+    ok("and push after" in full, "a prompt queued while a turn ran is kept")
+    ok("sk-ant-api03" not in full and "supersecret123" not in full and "[redacted]" in full,
+       "secrets are redacted")
+    ok("Next: run the gate." in full and "**Assistant:** Next: run the gate." in full,
+       "the turn's final answer is kept as the answer")
+    lean = kd.render(turns, {}, 0, lean=True)
+    ok("RESULT: 41/41 passed" not in lean and LONG in lean and len(lean) < len(full),
+       "lean drops tool output, keeps the words")
+
+    # The cap: old turns lose detail, user words and the newest TAIL turns never do.
+    many = os.path.join(tmp, "many.jsonl")
+    with open(many, "w", encoding="utf-8") as f:
+        for i in range(20):
+            f.write(json.dumps(user(f"instruction number {i}: keep exact")) + "\n")
+            f.write(json.dumps(asst(text(f"narration {i} " + "n" * 400), tool(f"b{i}", "Bash", {"command": f"cmd{i}"}))) + "\n")
+            f.write(json.dumps(result(f"b{i}", "o" * 2000)) + "\n")
+            f.write(json.dumps(asst(text(f"answer {i} " + "a" * 3000))) + "\n")
+    t2 = kd.extract(many)
+    capped = kd.render(t2, {}, 3000)
+    ok(all(f"instruction number {i}: keep exact" in capped for i in range(20)),
+       "under a tight cap every user message survives")
+    ok(f"answer 19 {'a' * 3000}" in capped and "narration 0" not in capped,
+       "the newest turns stay whole while the oldest lose narration")
+    ok("exceeded" in capped.splitlines()[3], "a cap the never-cut parts exceed is said in the header")
+    ok(kd.cap_tokens(45, 1_000_000) == 100_000 and kd.cap_tokens(65, 1_000_000) == 180_000
+       and kd.cap_tokens(75, 1_000_000) == 250_000 and kd.cap_tokens(85, 1_000_000) == 300_000,
+       "the user's table: 45% 10%, 60-70% 18%, 70-80% 25%, 80%+ 30% of the window")
+
+    # write(): the folder ignores itself; only the newest KEEP digests are kept.
+    out_dir = os.path.join(tmp, "proj", ".claude", "scratch", "_sessions")
+    n = kd.write(path, os.path.join(out_dir, "s1.md"), {"session": "s1"}, 0)
+    gi = open(os.path.join(out_dir, ".gitignore"), encoding="utf-8").read()
+    ok(n > 0 and os.path.isfile(os.path.join(out_dir, "s1.md")) and gi.strip().endswith("*"),
+       "write() makes the digest and a `*` .gitignore beside it")
+    for k in range(kd.KEEP + 3):
+        p = os.path.join(out_dir, f"old{k}.md")
+        with open(p, "w") as f:
+            f.write("x")
+        os.utime(p, (time.time() - 10_000 + k, time.time() - 10_000 + k))
+    kd.prune(out_dir)
+    left = [f for f in os.listdir(out_dir) if f.endswith(".md")]
+    ok(len(left) == kd.KEEP and "s1.md" in left and "old0.md" not in left,
+       f"prune keeps the newest {kd.KEEP} digests")
+    ok(kd.newest(os.path.join(tmp, "proj"))[0].endswith("s1.md"), "newest() names the latest digest")
+    ok(kd.extract(os.path.join(tmp, "nope.jsonl")) == [] and kd.write(
+        os.path.join(tmp, "nope.jsonl"), os.path.join(out_dir, "z.md"), {}, 0) == -1,
+       "a missing transcript -> nothing extracted, nothing written")
+    src = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "kit_digest.py"), encoding="utf-8").read()
+    ok(not [c for c in src if ord(c) < 32 and c not in "\n\t"], "no literal control character in the source")
+finally:
+    shutil.rmtree(tmp, ignore_errors=True)
+
+fails = sum(1 for good, _ in cases if not good)
+for good, label in cases:
+    print(f"{'ok ' if good else 'BAD'} {label}")
+print(f"\n{len(cases) - fails}/{len(cases)} passed")
+sys.exit(1 if fails else 0)

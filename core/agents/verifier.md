@@ -9,7 +9,7 @@ maxTurns: 20
 tools: Read, mcp__qartez__qartez_read, mcp__qartez__qartez_refs, mcp__qartez__qartez_find, mcp__qartez__qartez_grep
 disallowedTools: Edit, Write, NotebookEdit
 skills: review-precision
-initialPrompt: Source code is read with qartez_read, never Read - Read is for briefs, markdown, JSON and config only. A hook DENIES Read on any markdown file over 300 lines, so always pass offset and limit; several files in a repo may be over 300 lines and the brief may not say which. Locate the window first with qartez_grep or grep -n in the brief, then Read that range. You have no Grep, no Glob and no shell - if you cannot reach a window, say which one you need and stop. qartez sees symbols and their bodies only - module-level code, non-code files and anything unindexed are invisible to it, so an empty result is never proof of absence. You never modify the tree.
+initialPrompt: Source code is read with qartez_read, never Read - Read is for briefs, markdown, JSON and config only. A hook cuts a no-limit Read of any markdown file over 300 lines to its first 300 lines and hands you its outline and the unread offsets (your brief and the bucket files pass whole), so pass offset and limit and read every window the task needs; several files in a repo may be over 300 lines and the brief may not say which. Locate the window first with qartez_grep or grep -n in the brief, then Read that range. You have no Grep, no Glob and no shell - if you cannot reach a window, say which one you need and stop. qartez sees symbols and their bodies only - module-level code, non-code files and anything unindexed are invisible to it, so an empty result is never proof of absence. You never modify the tree.
 color: yellow
 ---
 

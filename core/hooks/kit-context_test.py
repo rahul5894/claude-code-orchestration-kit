@@ -217,6 +217,42 @@ try:
     ok(blocked(run(transcript(asst(20_000, sid="old-session"), asst(100_000, sid=s)), s), 50),
        "this session's own lines still count: 100K of 200K = 50% -> block")
 
+    # 34-38. the session digest (2026-10-07): written before the block and named in it, the
+    # STATE.md budget sized by the band, refreshed by a later stop once the transcript moved on
+    def digest(sid):
+        return os.path.join(tmp, ".claude", "scratch", "_sessions", sid + ".md")
+
+    s = session()
+    path = transcript({"type": "user", "message": {"content": "keep the report in Hinglish"}},
+                      asst(100_000))
+    res = run(path, s)
+    reason = res[1].get("reason", "") if isinstance(res[1], dict) else ""
+    d = digest(s)
+    ok(blocked(res, 50) and os.path.isfile(d) and "keep the report in Hinglish" in open(d, encoding="utf-8").read()
+       and "Digest:" in reason and "_sessions/" + s + ".md" in reason and "~60 lines" in reason,
+       "50% block writes the digest (user words verbatim) and names it, STATE at ~60 lines")
+    ok(os.path.isfile(os.path.join(tmp, ".claude", "scratch", "_sessions", ".gitignore"))
+       and open(os.path.join(tmp, ".claude", "scratch", "_sessions", ".gitignore")).read().strip().endswith("*"),
+       "the digest folder ignores itself in git (`*`)")
+    before = os.path.getmtime(d)
+    ok(quiet(run(path, s)) and os.path.getmtime(d) == before,
+       "same band, transcript unchanged -> silent, digest not rewritten")
+    with open(path, "a", encoding="utf-8") as f:
+        f.write(json.dumps({"type": "user", "message": {"content": "then commit and push"}}) + "\n")
+        f.write(json.dumps(asst(101_000)) + "\n")
+    os.utime(path, (before + 5, before + 5))
+    ok(quiet(run(path, s)) and "then commit and push" in open(d, encoding="utf-8").read(),
+       "a later stop in the same band refreshes the digest to the last turn")
+    s = session()
+    r70 = run(transcript(asst(140_000)), s)
+    r80 = run(transcript(asst(160_000)), s)
+    ok(blocked(r70, 70) and "~100 lines" in r70[1].get("reason", "")
+       and blocked(r80, 80) and "~120 lines" in r80[1].get("reason", ""),
+       "STATE budget grows with the band: 70% -> ~100 lines, 80% -> ~120 lines")
+    s = session()
+    ok(quiet(run(transcript(asst(80_000)), s)) and not os.path.exists(digest(s)),
+       "under the threshold -> no digest written")
+
     # 12-13. fail open
     ok(quiet(run(os.path.join(tmp, "nope.jsonl"), session())), "missing transcript -> no output, exit 0")
     ok(quiet(run(None, session(), raw=b"{not json")), "non-JSON stdin -> no output, exit 0")

@@ -226,13 +226,13 @@ if ($pre['subagentPromptCacheTtl'] -and $pre['subagentPromptCacheTtl'] -ne '1h')
 }
 
 # 5. md-guard hook: copy the script, pin a Python 3.12+ path, register once in settings.json.
-#    Big markdown files are read in windows; this hook denies whole-file Read / uncapped shell reads.
+#    Big markdown files are read in windows; this hook windows a whole-file Read and denies an uncapped shell read.
 New-Item -ItemType Directory -Force (Join-Path $dest 'hooks') | Out-Null
 Copy-Item (Join-Path $kit 'core\hooks\*.py') (Join-Path $dest 'hooks') -Force
 # The wildcard copy is silent about a file missing from the clone, and the blocks below then
 # register a command pointing at nothing - every Read, session start and finished subagent
 # would spawn a python that dies. Fail the install instead.
-$missing = @('md-guard.py', 'kit-session-start.py', 'kit-subagent-report.py', 'kit-subagent-start.py', 'kit-context.py', 'kit_off.py', 'kit_index.py') |
+$missing = @('md-guard.py', 'kit-session-start.py', 'kit-subagent-report.py', 'kit-subagent-start.py', 'kit-context.py', 'kit_off.py', 'kit_index.py', 'kit_digest.py') |
     Where-Object { -not (Test-Path (Join-Path $dest "hooks\$_")) }
 if ($missing) { throw "Hook script(s) missing from the kit checkout, nothing registered: $($missing -join ', ')" }
 $py = $null
@@ -259,7 +259,8 @@ else {
     # 8. kit-subagent-start: inject the DECISIONS.md of every OPEN bucket into a spawned agent.
     #    The five briefed agents only: Explore runs omitClaudeMd and stays tiny on purpose
     Register-Hook $set 'SubagentStart' 'builder|refuter|verifier|debugger|researcher' 'kit-subagent-start.py' 'kit-subagent-start'
-    # 9. kit-context: at the end of a finished turn, measure context and ask for the handoff.
+    # 9. kit-context: at the end of a finished turn, measure context, write the session digest
+    #    (kit_digest.py) and ask for the handoff.
     Register-Hook $set 'Stop' $null 'kit-context.py' 'kit-context'
     $out  = ($set | ConvertTo-Json -Depth 20) + "`n"
     $prev = Read-Text $sf
@@ -268,7 +269,8 @@ else {
         Write-Lf $sf $out
     }
     foreach ($f in 'md-guard_test.py', 'kit-session-start_test.py', 'kit-subagent-report_test.py',
-                   'kit-subagent-start_test.py', 'kit-context_test.py', 'kit_off_test.py') {
+                   'kit-subagent-start_test.py', 'kit-context_test.py', 'kit_off_test.py',
+                   'kit_digest_test.py') {
         $t = & $py (Join-Path $dest "hooks\$f") 2>&1 | Select-Object -Last 1
         $f.Replace('_test.py', '') + " self-check: $t"
     }

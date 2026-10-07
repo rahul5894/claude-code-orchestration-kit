@@ -183,3 +183,32 @@ not promoted: it missed the "time within plain +5%" bar and its catches are not 
 from noise. Correctness still ties (45/45 x9). `num_turns`/`duration_ms` in a run's JSON
 cover only the last segment when the session woke on a background task; `wall_s` is the
 harness's own clock.
+
+## Handoff and md-guard (2026-10-07, Claude Code 2.1.292, Opus 5.5)
+
+`bench/handoff/` measures what reaches the NEXT session, not one ticket. Everything it writes
+goes to `bench/results/` (gitignored: it holds other projects' conversations).
+
+| Script | What it does |
+|---|---|
+| `mine_guard.py`, `classify_shell.py` | every md-guard denial in `~/.claude/projects`, why it fired, and what the agent read afterwards |
+| `measure_digest.py` | the session digest's size at each real handoff point |
+| `chains.py`, `prep.py`, `compact_fork.py` | real A→B handoff chains; the materials per arm, incl. Claude Code's own `/compact` run on a fork |
+| `ab.py probes/read/grade/report` | 20 probes per chain from A's raw transcript, cold no-tool readers per arm, a blind grader |
+| `guard_probe.py` | live `claude -p` runs: no guard / old / new md-guard on three doc tasks |
+
+Handoff, 4 real chains × 20 probes × 2 readers (share of probes answered; tokens of the note):
+
+| What the next session got | Score | Wrong | ~Tokens |
+|---|---|---|---|
+| nothing (/clear) | 0.0% | 0 | 0 |
+| Claude Code `/compact` | 72.5% | 1 | 4.9K |
+| kit STATE+DECISIONS+FINDINGS (before) | 63.4% | 2 | 5.0K |
+| digest, words only | 85.3% | 0 | 45K |
+| digest, words + output excerpts | 89.7% | 0 | 77K |
+| kit + words-only digest | 91.9% | 2 | 50K |
+| kit + full digest (shipped) | 94.7% | 2 | 82K |
+
+md-guard, 3 tasks × 3 runs: every run correct under all three guards; the new guard costs
+what no guard costs (whole spec 127K vs 123K tokens; brief 93K vs 108K) where the old one cost
+166K and 122K. Real transcripts: after a deny the agent read the doc whole 0 of 14 times.

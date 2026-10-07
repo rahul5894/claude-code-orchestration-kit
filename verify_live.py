@@ -614,8 +614,8 @@ for _st in ('kit_off self-check: 11/11 passed', 'kit-switch self-check: 12/12 pa
     ok(_st in r2.stdout, _st, [l for l in r2.stdout.splitlines() if _st.split(':')[0] in l])
 # The "fully global" pieces: the SessionStart notice and the two files /kit-init reads from
 # ~/.claude/kit. Without them a new project starts with no gate and nothing says so.
-ok('kit-session-start self-check: 28/28 passed' in r2.stdout,
-   'kit-session-start self-check 28/28',
+ok('kit-session-start self-check: 31/31 passed' in r2.stdout,
+   'kit-session-start self-check 31/31',
    [l for l in r2.stdout.splitlines() if 'kit-session-start' in l])
 for _kf in ('project-template.md', 'audit_project.py', 'scan_project.py', 'kit_switch.py'):
     ok((HOME / 'kit' / _kf).exists(), f'~/.claude/kit/{_kf} published for /kit-init')
@@ -649,7 +649,7 @@ ok(_ss_ok, 'the installed SubagentStart injector emits nothing or a well-formed 
 print("  NOTE  per-project state is checked by `python audit_project.py <repo>`, not here")
 # These counts are pinned on purpose: a suite that silently shrinks is the failure this
 # catches. Bump them WITH the test, never to make a red line green.
-ok('md-guard self-check: 144/144 passed' in r2.stdout, 'md-guard self-check 144/144',
+ok('md-guard self-check: 163/163 passed' in r2.stdout, 'md-guard self-check 163/163',
    [l for l in r2.stdout.splitlines() if 'md-guard' in l])
 ok('kit-subagent-report self-check: 12/12 passed' in r2.stdout,
    'kit-subagent-report self-check 12/12',
@@ -657,9 +657,12 @@ ok('kit-subagent-report self-check: 12/12 passed' in r2.stdout,
 ok('kit-subagent-start self-check: 19/19 passed' in r2.stdout,
    'kit-subagent-start self-check 19/19',
    [l for l in r2.stdout.splitlines() if 'kit-subagent-start' in l])
-ok('kit-context self-check: 33/33 passed' in r2.stdout,
-   'kit-context self-check 33/33',
+ok('kit-context self-check: 39/39 passed' in r2.stdout,
+   'kit-context self-check 39/39',
    [l for l in r2.stdout.splitlines() if 'kit-context' in l])
+ok('kit_digest self-check: 20/20 passed' in r2.stdout,
+   'kit_digest self-check 20/20',
+   [l for l in r2.stdout.splitlines() if 'kit_digest' in l])
 ok('scan-project self-check: 38/38 passed' in r2.stdout,
    'scan-project self-check 38/38',
    [l for l in r2.stdout.splitlines() if 'scan-project' in l])

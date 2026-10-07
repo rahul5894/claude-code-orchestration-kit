@@ -2,9 +2,9 @@
 
 > **REPLACED, never appended.** This file says what is true NOW. History lives in
 > FINDINGS.md, DECISIONS.md and git. If this file and the repo disagree, the repo is
-> right — correct this file and say so. At most ~60 lines: longer means history crept in,
-> so move it to FINDINGS.md. Same headings as the file `/task` seeds, plus the long-form
-> extras below.
+> right — correct this file and say so. At most ~60 lines at a 45% handoff (the Stop hook
+> sizes a fuller session's: 80/100/120): longer means history crept in, so move it to
+> FINDINGS.md. Same headings as the file `/task` seeds, plus the long-form extras below.
 
 **Updated:** <YYYY-MM-DD HH:MM>
 **Status:** OPEN | BLOCKED | CLOSED <date>
@@ -16,6 +16,7 @@
 - Branch: `<branch>`
 - HEAD: `<short sha>`
 - Tree: `clean` | `<N> dirty` — <files>
+- Digest: `<.claude/scratch/_sessions/<session>.md, from the Stop hook's note>`
 
 ## Scope — in
 - <exact files / areas this task may touch>

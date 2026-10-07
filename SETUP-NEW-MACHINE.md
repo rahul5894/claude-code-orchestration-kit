@@ -72,12 +72,13 @@ kit-session-start: registered in settings.json
 kit-subagent-report: registered in settings.json
 kit-subagent-start: registered in settings.json
 kit-context: registered in settings.json
-md-guard self-check: 144/144 passed
-kit-session-start self-check: 28/28 passed
+md-guard self-check: 163/163 passed
+kit-session-start self-check: 31/31 passed
 kit-subagent-report self-check: 12/12 passed
 kit-subagent-start self-check: 19/19 passed
-kit-context self-check: 33/33 passed
+kit-context self-check: 39/39 passed
 kit_off self-check: 11/11 passed
+kit_digest self-check: 20/20 passed
 kit-switch self-check: 12/12 passed
 scan-project self-check: 38/38 passed
 done. ...
@@ -227,12 +228,18 @@ no harm; `npm uninstall -g @tobilu/qmd` removes it.
 `~/.claude/hooks/md-guard.py` is a PreToolUse hook on `Read`, `Bash` and `PowerShell`.
 It makes "read big docs in windows" enforced instead of remembered.
 
+It rewrites, never denies, a `Read` of a `.md` file with more than 300 lines and no `limit`
+(or one over 300): the call goes on with `limit: 300` from its own offset, and the model gets
+the doc's heading outline with line numbers and the offsets still unread. Docs an agent must
+hold whole pass untouched: `CLAUDE.md`, `AGENTS.md`, `SKILL.md`, and anything under
+`.claude/scratch/`, `briefs/`, `reports/`, `handoffs/` or `memory/`.
+
 It denies:
 
-- `Read` of a `.md` file with more than 300 lines, unless `limit` is 300 or less.
 - A shell read (`cat`, `sed`, `grep`, `rg`, `head`, `tail`, `awk`, `Get-Content`,
-  `Select-String`) of a `.md` file with more than 300 lines, or of a path it cannot
-  find, when the command has no column cap.
+  `Select-String`) of a `.md` path that resolves to a file with more than 300 lines, when the
+  command has no column cap. `$VAR`, `${VAR}` and `for` loop variables are expanded first; a
+  path that resolves to nothing passes. The denial carries the line count and the outline.
 
 - Any `Bash` / `PowerShell` command with a named write shape (redirection, `sed -i`, `tee`,
   rm/mv/cp, tree-changing `git`, a write-mode `open(`, a package install) when the payload's
@@ -245,7 +252,7 @@ judged on its own, so `rm big.md; git status | head` passes.
 
 The deny message tells Claude the capped `grep -n` + `Read` window to use instead.
 
-Check: `python ~/.claude/hooks/md-guard_test.py` prints `144/144 passed`. The test
+Check: `python ~/.claude/hooks/md-guard_test.py` prints `163/163 passed`. The test
 builds its own fixtures in a temp folder, so it runs on any machine. The installer runs
 it for you.
 
@@ -255,16 +262,21 @@ each spawned builder, refuter, verifier, debugger and researcher, capped at 6000
 Check: `python ~/.claude/hooks/kit-subagent-start_test.py` prints `19/19 passed`.
 
 `~/.claude/hooks/kit-context.py` is a `Stop` hook. At 45%+ context, the first stop in each
-10-point band asks the model to write the handoff into the bucket's `STATE.md` and tell you
-"/clear, then /continue"; the stop after that shows "Context N% full" once, and later stops
-in the same band say nothing. It stays silent while a
+10-point band asks the model to write the handoff into the bucket's `STATE.md` (60 lines at
+45%, up to 120 at 80%+) and tell you "/clear, then /continue"; the stop after that shows
+"Context N% full" once, and later stops in the same band say nothing. Before asking, it writes
+the session digest (`kit_digest.py`, no model call): every user message and answer verbatim,
+the tool trail, output excerpts, secrets redacted, to `.claude/scratch/_sessions/<session>.md`
+(a folder with its own `*` `.gitignore`), refreshed after every later turn; `/continue` reads
+it whole. Measured on 4 real handoffs: `STATE.md` alone answered 63% of what the next session
+needed, `STATE.md` + digest 95%, Claude Code's own `/compact` 73%. It stays silent while a
 background agent runs and never blocks a headless `claude -p` run. The window is 1M unless the
 model is a known 200K one (Haiku, Sonnet 4.x, Opus 4.6 and older, claude-3*, or a
 Bedrock/Vertex/Foundry id without `[1m]`); `CLAUDE_CODE_DISABLE_1M_CONTEXT=1` makes it 200K, and
 `CLAUDE_CODE_MAX_CONTEXT_TOKENS` counts together with `DISABLE_COMPACT`. The `[1m]` marker never
 reaches the transcript, so the model id alone cannot say 1M. Only lines of the current
 session count, so a new session starts from 0.
-Check: `python ~/.claude/hooks/kit-context_test.py` prints `33/33 passed`.
+Check: `python ~/.claude/hooks/kit-context_test.py` prints `39/39 passed`.
 
 Known gaps, on purpose:
 
@@ -402,18 +414,20 @@ report format. The skill is worth keeping, so the kit ships its own copy at
 |---|---|---|
 | `md-guard: no Python 3.12+ on PATH` | Python missing or old | install the latest Python 3, open a new terminal, re-run `install.ps1` |
 | Hook never fires | settings loaded before the change | start a new Claude Code session |
-| Hook fires on a file you must read | it has more than 300 lines | `grep -n "<anchor>" <file> \| cut -c1-300`, then `Read` with `offset` + `limit` |
+| A `Read` returned only 300 lines | the doc has more than 300 and is not a brief/handoff/CLAUDE.md | Read the unread offsets the hook named, in order, to the end |
+| Hook denies a shell read of a doc | it has more than 300 lines | `grep -n "<anchor>" <file> \| cut -c1-300`, then `Read` with `offset` + `limit` |
 | Two md-guard entries in settings.json | edited by hand | delete one; the installer only ever adds one |
 | Agents ignore their `effort` | `CLAUDE_CODE_EFFORT_LEVEL` set in `env` | remove it from `settings.json` |
 
 ## 7. Final checklist
 
-- [ ] `pwsh install.ps1` printed `md-guard self-check: 144/144 passed`
-- [ ] the same run printed `kit-session-start self-check: 28/28 passed`
+- [ ] `pwsh install.ps1` printed `md-guard self-check: 163/163 passed`
+- [ ] the same run printed `kit-session-start self-check: 31/31 passed`
 - [ ] the same run printed `kit-subagent-report self-check: 12/12 passed`
 - [ ] the same run printed `kit-subagent-start self-check: 19/19 passed`
-- [ ] the same run printed `kit-context self-check: 33/33 passed`
+- [ ] the same run printed `kit-context self-check: 39/39 passed`
 - [ ] the same run printed `kit_off self-check: 11/11 passed`
+- [ ] the same run printed `kit_digest self-check: 20/20 passed`
 - [ ] the same run printed `kit-switch self-check: 12/12 passed`
 - [ ] the same run printed `scan-project self-check: 38/38 passed`
 - [ ] `verify_live.py` C6 lists no unreviewed plugin

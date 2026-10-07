@@ -1,9 +1,17 @@
-"""PreToolUse guard: big markdown docs are read in windows, never raw Read/cat whole.
+"""PreToolUse guard: big markdown docs are read in windows, and never left half-read.
 
-Read  -> deny when a .md file has >300 lines and no limit<=300 is given.
-Bash  -> deny when cat/sed/awk/grep/rg/head/tail READ a .md path that is big
-         (or cannot be resolved) with no column cap. Writes (heredoc, redirect,
-         sed -i, tee), counts and capped output pass.
+Read  -> a .md of <=300 lines, or a doc an agent must have whole (CLAUDE.md, AGENTS.md,
+         SKILL.md, anything under .claude/scratch, briefs/, reports/, handoffs/, memory/),
+         passes untouched. Any other .md over 300 lines read with no limit (or one over 300)
+         is REWRITTEN, not denied: the call goes on with limit 300 and the model is handed the
+         doc's heading outline with line numbers and the offsets still unread. Measured
+         2026-10-07: after a deny the agent read the doc whole 0 of 14 times (FINDINGS F4).
+Bash  -> deny when cat/sed/awk/grep/rg/head/tail READ a .md path that resolves to a file over
+         300 lines, with no column cap. Writes (heredoc, redirect, sed -i, tee), counts and
+         capped output pass. A path that resolves to nothing (a search string, a file the same
+         command creates, an unknown variable) passes: 64% of the shell denials since 09-29
+         were such paths or small files (F5). `$VAR`, `${VAR}` and `for v in ...` loop
+         variables are expanded first, from the command's own assignments and the env.
 Bash/PowerShell -> deny outright when the payload's agent_type is a read-only
          agent and the command has a named write shape (redirect, sed -i, tee,
          rm/mv/cp, tree-changing git, a write-mode open(), a package install).
@@ -145,18 +153,80 @@ def line_count(path):
         return 0
 
 
+# Docs an agent must hold whole before it acts: the project's instructions, a skill, and every
+# file of the kit's handoff and brief system. Denying or windowing these is how an agent started
+# work on half its brief (the user, 2026-10-07: "adhoori information se agent shuru ho gaya. ye
+# kabhi nahi hoga"). Read's own token limit still pages a truly huge one, with its notice.
+MUST_READ_NAMES = {"claude.md", "agents.md", "claude.local.md", "skill.md"}
+MUST_READ_DIRS = re.compile(r"[/\\](?:\.claude[/\\]scratch|briefs|reports|handoffs|memory)[/\\]",
+                            re.IGNORECASE)
+HEADING = re.compile(r"^(#{1,4})\s+(.+?)\s*#*\s*$")
+MAX_OUTLINE = 4000  # characters of headings handed over; additionalContext caps at 10,000
+
+
+def must_read(path):
+    return (os.path.basename(path).lower() in MUST_READ_NAMES
+            or bool(MUST_READ_DIRS.search(os.path.abspath(path))))
+
+
+def outline(path):
+    """`L<n> <heading>` per markdown heading outside code fences, cut at MAX_OUTLINE chars."""
+    out, fence, size = [], False, 0
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            for n, line in enumerate(f, 1):
+                if line.lstrip().startswith(("```", "~~~")):
+                    fence = not fence
+                    continue
+                m = None if fence else HEADING.match(line)
+                if not m:
+                    continue
+                row = f"L{n} {m.group(1)} {m.group(2)[:100]}"
+                size += len(row) + 1
+                if size > MAX_OUTLINE:
+                    out.append("... (more headings; grep -n '^#' the file)")
+                    break
+                out.append(row)
+    except OSError:
+        return ""
+    return "\n".join(out)
+
+
+def window(inp, path, n):
+    """Allow the Read with limit MAX_LINES from its own offset, and hand the model the map:
+    which lines it got, which offsets are left, the outline, and when it must read them all.
+    No permissionDecision: the rewritten call still goes through the normal permission checks."""
+    start = max(int(inp.get("offset") or 1), 1)
+    if start > n:
+        return  # past the end: Read says so itself, there is no window to give
+    end = min(start + MAX_LINES - 1, n)
+    rest = [o for o in range(1, n + 1, MAX_LINES) if o > end or o + MAX_LINES - 1 < start]
+    ctx = (f"md-guard: {os.path.basename(path)} has {n} lines; this Read returns lines "
+           f"{start}-{end} ({(end - start + 1) * 100 // n}%). Unread windows: "
+           f"offset {', '.join(map(str, rest[:12]))}{' ...' if len(rest) > 12 else ''} "
+           f"(limit {MAX_LINES}). If this document is your task's spec, brief, plan or "
+           "instructions, Read every unread window before you act - never work from part of "
+           "it. For a lookup, Read the window holding the heading you need.\nOutline:\n"
+           + outline(path))
+    print(json.dumps({"hookSpecificOutput": {
+        "hookEventName": "PreToolUse",
+        "updatedInput": dict(inp, offset=start, limit=MAX_LINES),
+        "additionalContext": ctx,
+    }}))
+    sys.exit(0)
+
+
 def check_read(inp):
     path = inp.get("file_path", "")
     if not path.lower().endswith(".md"):
         return
     n = line_count(path)
-    if n <= MAX_LINES:
+    if n <= MAX_LINES or must_read(path):
         return
     limit = inp.get("limit")
     if isinstance(limit, int) and limit <= MAX_LINES:
         return
-    deny(f"md-guard: {os.path.basename(path)} has {n} lines (>{MAX_LINES}). "
-         f"Do not Read it whole. {HOW}")
+    window(inp, path, n)
 
 
 def _resolve(raw, base):
@@ -238,28 +308,78 @@ def _lists_only(seg):
                 and all(STDIN_FILTER.match(s) for s in stages[1:]))
 
 
-def _segment_reads_big_md(cmd, base, tool="Bash"):
+def _segment_reads_big_md(cmd, base, tool="Bash", env=None):
+    """The big .md file this segment reads raw ("*.md" for a recursive .md filter), else ""."""
     # A reader word ANYWHERE in the segment counts: judging only the command position let `<x.md
     # cat`, `find -exec cat`, `eval cat`, `bash -lc` and ~25 more shapes through (refuter,
     # 2026-09-29). Precision comes from the cases below, never from narrowing this.
     paths = _md_tokens(cmd)
     if not paths or not READERS.search(cmd):
-        return False
+        return ""
     if CAP_RE.search(cmd) or WRITE_RE.search(cmd):
-        return False
+        return ""
     if MD_OPTION.search(cmd):
-        return True
+        return "*.md"
     if tool == "Bash" and _lists_only(cmd):
-        return False
-    # small files are fine to read raw; only big (or unresolvable) ones are gated
+        return ""
+    # small files are fine to read raw; only a path that resolves to a big file is gated. An
+    # unresolvable one (a search string, a file this command creates, an unset variable) reads
+    # nothing big that the guard can know of, and denying it was most of the noise (F5).
+    env = env if env is not None else _vars(cmd)
+    # A bare name may live in a directory the same segment names (`find <dir> -name x.md -exec
+    # cat`), and `git show <rev>:<path>` prefixes the path with the revision (refuter shapes).
+    dirs = [d for t in re.split(r"[\s|<>;&()`=]+", cmd) for d in _expand(t.strip("'\""), env)
+            if len(d) > 1 and os.path.isdir(d.replace("~", os.path.expanduser("~")))]
     for p in paths:
-        files = _resolve(p, base)
-        if not files or any(line_count(f) > MAX_LINES for f in files):
-            return True
-    return False
+        for cand in _expand(p, env):
+            rev = re.match(r"^[^/\\:\s]{2,}:(.+)$", cand)
+            names = [cand] + ([rev.group(1)] if rev else [])
+            for name in names:
+                found = _resolve(name, base)
+                if found is None and not os.path.isabs(name):
+                    found = next((r for d in dirs[:10] if (r := _resolve(os.path.join(d, name), base))),
+                                 None)
+                for f in found or []:
+                    if line_count(f) > MAX_LINES:
+                        return f
+    return ""
+
+
+_ASSIGN = re.compile(r"(?:^|[\s;&|(])([A-Za-z_]\w*)=(\"[^\"]*\"|'[^']*'|[^\s;&|]*)")
+_FOR = re.compile(r"\bfor\s+([A-Za-z_]\w*)\s+in\s+([^;\n]*?)\s*;?\s*do\b")
+_VAR = re.compile(r"\$\{?([A-Za-z_]\w*)\}?")
+
+
+def _vars(cmd):
+    """name -> [values]: the command's own `X=...` assignments and `for x in a b c` loop words,
+    over the environment's. The full command, not one segment: an assignment before `&&` is
+    still set in the segment that reads."""
+    env = {k: [v] for k, v in os.environ.items()}
+    for name, val in _ASSIGN.findall(cmd):
+        env[name] = [val.strip("'\"")]
+    for name, words in _FOR.findall(cmd):
+        env[name] = [w.strip("'\"") for w in words.split()] or [""]
+    return env
+
+
+def _expand(path, env, depth=0):
+    """Every spelling `path` can take once its variables are filled in; a variable with no
+    known value stays as it is (and then resolves to nothing)."""
+    m = _VAR.search(path)
+    if not m or depth > 4:
+        return [path]
+    vals = env.get(m.group(1))
+    if not vals:
+        return [path]
+    out = []
+    for v in vals[:20]:
+        out += _expand(path[:m.start()] + v + path[m.end():], env, depth + 1)
+    return out[:40]
 
 
 def _reads_big_md(cmd, base, tool="Bash"):
+    """The big .md file `cmd` reads raw, or "" (truthy = deny)."""
+    env = _vars(cmd)
     segments = _scan(cmd)
     if segments is None:  # an unclosed quote: split as before quotes were read at all
         segments = re.split(r"&&|\|\||;|\n", cmd)
@@ -273,9 +393,10 @@ def _reads_big_md(cmd, base, tool="Bash"):
             if os.path.isdir(target):
                 base = target
             continue
-        if _segment_reads_big_md(seg, base, tool):
-            return True
-    return False
+        big = _segment_reads_big_md(seg, base, tool, env)
+        if big:
+            return big
+    return ""
 
 
 def _mask(line):
@@ -318,12 +439,19 @@ def check_bash(inp, cwd=None, tool="Bash"):
     # judge each `a && b ; c || d` segment on its own (split outside quotes, so a `;` inside a
     # sed script does not cut its `| cut -c` off): `rm x.md && git status | head` must not trip
     # on the `head` of an unrelated segment
-    if _reads_big_md(cmd, cwd if cwd and os.path.isdir(cwd) else os.getcwd(), tool):
-        deny("md-guard: reading a .md file in a shell without a column cap "
-             "(long paragraph-lines blow the output). To locate, add `| cut -c1-300` "
+    big = _reads_big_md(cmd, cwd if cwd and os.path.isdir(cwd) else os.getcwd(), tool)
+    if big:
+        # The map goes with the refusal, so the next call can be the right Read window.
+        what = ("a recursive .md search" if big == "*.md" else
+                f"{os.path.basename(big)} ({line_count(big)} lines)")
+        tail = "" if big == "*.md" else (
+            " A doc the agent must have whole (CLAUDE.md, a brief, a handoff) Reads whole with "
+            "no limit. Outline:\n" + outline(big))
+        deny(f"md-guard: {what} read in a shell without a column cap (long paragraph-lines "
+             "blow the output). To locate, add `| cut -c1-300` "
              "(PowerShell: `| % { $_.Substring(0,[Math]::Min(300,$_.Length)) }`); it "
              "truncates long lines, so read the content itself with Read, not the shell. "
-             + HOW)
+             + HOW + tail)
 
 
 def main():
