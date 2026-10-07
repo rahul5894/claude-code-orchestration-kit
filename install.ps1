@@ -242,7 +242,7 @@ foreach ($name in 'python3.13', 'python3.12', 'python', 'python3', 'py') {
     $v = & $cmd.Source -c 'import sys; print(sys.version_info >= (3, 12))' 2>$null
     if ($v -eq 'True') { $py = $cmd.Source.Replace('\', '/'); break }
 }
-if (-not $py) { Write-Warning "md-guard: no Python 3.12+ on PATH. Install one (winget install Python.Python.3.12) and re-run."; }
+if (-not $py) { Write-Warning "md-guard: no Python 3.12+ on PATH. Install the latest Python 3 (winget search Python.Python) and re-run."; }
 else {
     # One read, five registrations, one write. The hooks section is written after step 3's
     # write, so step 3's backup predates it: take our own - and only when something the user

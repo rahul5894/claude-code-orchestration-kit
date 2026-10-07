@@ -44,7 +44,9 @@ Install these first. Open a new terminal after each install so PATH updates.
 | Node 22 or newer | optional: npm-based MCP servers | `node --version` |
 | Python 3.12 or newer, on PATH | runs the md-guard hook | `python -c "import sys; print(sys.version)"` |
 
-If Python is missing: `winget install Python.Python.3.12`. The installer looks for
+If Python is missing: install the latest 3.x (`winget search Python.Python`, then
+`winget install -e --id Python.Python.3.<newest>`); keep one Python, not a second
+minor beside an existing one. The installer looks for
 `python3.13`, `python3.12`, `python`, `python3`, `py` in that order and pins the first
 one that reports 3.12 or newer.
 
@@ -398,7 +400,7 @@ report format. The skill is worth keeping, so the kit ships its own copy at
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `md-guard: no Python 3.12+ on PATH` | Python missing or old | install 3.12, open a new terminal, re-run `install.ps1` |
+| `md-guard: no Python 3.12+ on PATH` | Python missing or old | install the latest Python 3, open a new terminal, re-run `install.ps1` |
 | Hook never fires | settings loaded before the change | start a new Claude Code session |
 | Hook fires on a file you must read | it has more than 300 lines | `grep -n "<anchor>" <file> \| cut -c1-300`, then `Read` with `offset` + `limit` |
 | Two md-guard entries in settings.json | edited by hand | delete one; the installer only ever adds one |
