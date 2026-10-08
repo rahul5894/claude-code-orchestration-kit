@@ -241,7 +241,8 @@ How to read it:
   tests, and the arms without Ponytail write the stronger ones.
 - **Kit without Ponytail:** about base's quality and slightly faster. With Ponytail, the kit
   adds about 20% to the cost.
-- **Verdict:** the same trade as v4. Ponytail stays in `core/plugins.json` `disable`.
+- **Verdict:** the same trade as v4. The kit takes no side (2026-10-08, user decision): Ponytail
+  is in `core/plugins.json` `allow`, so the kit neither installs nor disables it.
 
 ## Handoff and md-guard (2026-10-07, Claude Code 2.1.292, Opus 5.5)
 

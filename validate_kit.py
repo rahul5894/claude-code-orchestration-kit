@@ -723,7 +723,6 @@ chk(env.get('CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH') == '1', 'env: spawn depth 1'
 chk(env.get('CLAUDE_CODE_SUBAGENT_MODEL') == 'opus', 'env: off-roster subagent model opus')
 chk(env.get('CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS') == '0',
     'env: agent teams pinned off (a named subagent would become a ~7x-token teammate)')
-chk('PONYTAIL_SUBAGENT_MATCHER' not in env, 'env: no ponytail pin (the plugin is disabled, bench E)')
 chk('CLAUDE_CODE_EFFORT_LEVEL' not in env,
     'env: CLAUDE_CODE_EFFORT_LEVEL absent (would override frontmatter effort)')
 chk('CLAUDE_CODE_SUBAGENT_MODEL_FORCE' not in env, 'env: _FORCE absent (would erase model pins)')
@@ -1184,9 +1183,6 @@ for _m in ('disable', 'allow'):
         chk(isinstance(_why, str) and _why.strip(), f'plugins.json {_m}[{_id}] gives a reason')
 chk('simple-english@simple-english' in (_pl.get('disable') or {}),
     'plugins.json disables simple-english (its hooks fight the report rules)')
-# Bench E: ponytail's rules halved the arm's tests and dropped DB hardening (FINDINGS kit-modes);
-# bench F re-ran v5.0.0 on 2026-10-08 and found the same trade (bench/README.md).
-chk('ponytail@ponytail' in (_pl.get('disable') or {}), 'plugins.json disables ponytail')
 chk(os.path.isfile('core/skills/simple-english/LICENSE'),
     'core/skills/simple-english/LICENSE ships (the copy is MIT, attribution required)')
 _se = 'core/skills/simple-english/SKILL.md'
