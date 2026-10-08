@@ -107,6 +107,9 @@ try:
        and "the whole file a.md" not in full,
        "a shell's output tail sits under its own call; a Read's output is left out")
     ok("Report: the cap is 4096 tokens" in full, "a subagent's report is kept")
+    files = next((ln for ln in full.splitlines() if ln.startswith("Files Edit/Write was called on")), "")
+    ok("(1," in files and "`D:/p/app.py`" in files and "a.md" not in files,
+       "the header lists every file Edit/Write was called on, a Read is not one")
     ok("**User refused:**" in full and "**Error:**" in full and "String to replace not found" in full,
        "a refusal and an error are kept, labelled")
     ok("and push after" in full, "a prompt queued while a turn ran is kept")

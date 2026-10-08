@@ -925,7 +925,7 @@ for p, why in [('core/hooks/kit-session-start.py', 'the SessionStart notice'),
     chk(os.path.isfile(p), f'{p} exists ({why})')
 _inst = open('install.ps1', encoding='utf-8').read() if os.path.isfile('install.ps1') else ''
 for frag, label in [('kit-session-start.py', 'installer registers the SessionStart hook'),
-                    ("startup|resume|clear|compact", 'SessionStart hook matches every session kind'),
+                    ("startup|resume|clear|compact|fork", 'SessionStart hook matches every session kind'),
                     ('kit-session-start_test.py', 'installer runs the hook self-test'),
                     ('kit-subagent-report.py', 'installer registers the SubagentStop hook'),
                     ('SubagentStop', 'the report filer is hung on the SubagentStop event'),
@@ -972,9 +972,24 @@ chk('`task` skill' in _ct and '$ARGUMENTS' in _ct,
 # the handoff went to, the resume stops reading it, the installer stops shipping it - or the
 # conversation, which holds whatever the user pasted, lands in a repo.
 _kd = open('core/hooks/kit_digest.py', encoding='utf-8').read() if os.path.isfile('core/hooks/kit_digest.py') else ''
-chk('import kit_digest' in _kc and 'def sync_digest' in _kc and 'def session_bucket' in _kc
-    and '"digests"' in _kc and 'digests/' in _kc,
+_ki = open('core/hooks/kit_index.py', encoding='utf-8').read() if os.path.isfile('core/hooks/kit_index.py') else ''
+_ks = open('core/hooks/kit-session-start.py', encoding='utf-8').read() if os.path.isfile('core/hooks/kit-session-start.py') else ''
+chk('import kit_digest' in _kc and 'def sync_digest' in _kc and 'session_bucket(' in _kc
+    and 'def session_bucket' in _ki and '"digests"' in _kc and 'digests/' in _kc,
     "kit-context keeps the session digest in the bucket THIS session handed off to, in digests/")
+# Parallel windows (2026-10-09, bucket parallel-window-resume D001): two windows that hand off and
+# /clear each get their own task back. Each clause is one a rewrite could drop silently: the
+# window id, the marks the model resumes by, the handoff naming its own bucket - or a liveness
+# probe that on Windows KILLS the process it asks about (os.kill(pid, 0) = TerminateProcess).
+chk('"CLAUDE_PID"' in _ki and 'def busy_buckets' in _ki and 'def write_window' in _ki
+    and 'os.name != "nt"' in _ki and 'os.kill(' in _ki
+    and _ki.index('os.name != "nt"') < _ki.index('os.kill('),
+    'kit_index: windows by CLAUDE_PID, busy buckets of live windows, never os.kill on Windows')
+chk("(this window's task)" in _ks and "(open in another window)" in _ks and '_try(write_window' in _ks
+    and "(this window's task)" in _ct and 'open in another window' in _ct,
+    "kit-session-start marks this window's task and buckets open elsewhere; /continue follows the marks")
+chk('WHERE_MINE' in _kc and 'where=where(data)' in _kc and "never another task's bucket" in _kc,
+    "kit-context's handoff names this session's own bucket, never a parallel window's")
 chk('def state_lines' in _kc and '{lines}' in _kc and 'BANDS' in _kd and 'def budget' in _kd,
     'kit-context sizes STATE.md by the context band from one table, kit_digest.BANDS')
 chk('session digest' in _tk and 'whole' in _tk and '`digests/`' in _tk,

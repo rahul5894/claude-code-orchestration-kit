@@ -242,8 +242,9 @@ try:
                       asst(100_000))
     res = run(path, s)
     ok(blocked(res, 50) and "~60 lines" in res[1].get("reason", "") and "digests/" in res[1].get("reason", "")
-       and not os.path.exists(os.path.join(tmp, ".claude")),
-       "50% block: STATE at ~60 lines, digest promised, nothing written into the project")
+       and not os.path.exists(os.path.join(tmp, ".claude"))
+       and "touched no bucket" in res[1].get("reason", "") and "parallel window" in res[1].get("reason", ""),
+       "50% block: STATE at ~60 lines, digest promised, nothing written; no bucket -> open one, never another's")
     state("other")  # another session's STATE.md: only on disk, never in this transcript
     ok(notice(run(path, s, stop_hook_active=True), 50) and not os.path.exists(digest("other", s)),
        "the stop after the block: only another session's STATE.md exists -> no digest")
@@ -251,6 +252,15 @@ try:
     ok(notice(run(path, s, stop_hook_active=True), 50) and os.path.isfile(digest("task-a", s))
        and "keep the report in Hinglish" in open(digest("task-a", s), encoding="utf-8").read(),
        "this session wrote task-a's STATE.md -> the digest lands there, user words verbatim")
+    # The block names THIS session's bucket (parallel-window-resume F5): "other" is newer on disk.
+    s2 = session()
+    path2 = transcript(asst(100_000))
+    state("task-a", path2)
+    state("other")
+    res = run(path2, s2)
+    ok(blocked(res, 50) and "This session's bucket is `task-a`" in res[1].get("reason", "")
+       and "`other`" not in res[1].get("reason", ""),
+       "the block names the bucket this session wrote, not a newer one of another session")
     gi = os.path.join(tmp, ".claude", "scratch", "task-a", "digests", ".gitignore")
     ok(os.path.isfile(gi) and open(gi).read().strip().endswith("*"), "the digests folder ignores itself in git")
     before = os.path.getmtime(digest("task-a", s))

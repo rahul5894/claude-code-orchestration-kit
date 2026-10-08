@@ -64,17 +64,28 @@ MIX = bucket_project("mix", True, [("blocked-one", "BLOCKED", "wait for the user
                                    ("../x", "OPEN", "escaped the scratch dir")])
 
 
-def run(how, root, project_dir=None, source="startup"):
-    """Parsed stdout: {} when silent, {"_bad": text} when it is not JSON."""
+PRIVATE_TMP = os.path.join(tmp, "_tmp")  # window records land here, never in the real temp dir
+os.makedirs(PRIVATE_TMP)
+
+
+def run(how, root, project_dir=None, source="startup", pid=None, sid=None, transcript=None):
+    """Parsed stdout: {} when silent, {"_bad": text} when it is not JSON. `pid` plays the
+    window (env CLAUDE_PID); without it the run has none, whatever window runs the test."""
     # The hook prefers CLAUDE_PROJECT_DIR; a caller inside Claude Code has it set, so every run
     # starts from an env without it and only the case that tests it puts it back.
-    env = {k: v for k, v in os.environ.items() if k != "CLAUDE_PROJECT_DIR"}
+    env = {k: v for k, v in os.environ.items() if k not in ("CLAUDE_PROJECT_DIR", "CLAUDE_PID")}
+    env.update(TEMP=PRIVATE_TMP, TMP=PRIVATE_TMP, TMPDIR=PRIVATE_TMP)
     if project_dir:
         env["CLAUDE_PROJECT_DIR"] = project_dir
+    if pid:
+        env["CLAUDE_PID"] = str(pid)
     if how == "stdin":
         # Raw UTF-8 bytes, the way JSON.stringify feeds the real hook. text=True would
         # encode with the locale codec and the non-ASCII case could never run.
-        raw = json.dumps({"cwd": root, "source": source}, ensure_ascii=False).encode("utf-8")
+        payload = {"cwd": root, "source": source}
+        if sid:
+            payload.update(session_id=sid, transcript_path=transcript or "")
+        raw = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         p = subprocess.run([sys.executable, HOOK], input=raw, capture_output=True, cwd=root, env=env)
     elif how == "check":
         p = subprocess.run([sys.executable, HOOK, "--check", root], capture_output=True, env=env)
@@ -226,9 +237,77 @@ for i, (slug, body) in enumerate((("older", "Status: OPEN\n"), ("newer", "Status
     os.utime(p, (1_700_000_000 + i, 1_700_000_000 + i))
 o = run("stdin", NEW)
 extra.append(("newer [OPEN]: b (newest handoff)" in context(o) and "older [OPEN]: a\n" in context(o)
-              and "shut [OPEN]: c\n" in context(o) and "do not ask which" in context(o)
-              and o.get("systemMessage", "").endswith("resume newer."),
-              "3 open, newest STATE.md says CLOSED -> the next newest is marked, systemMessage names it"))
+              and "shut [OPEN]: c\n" in context(o) and "ask the user which" in context(o)
+              and o.get("systemMessage", "").endswith("it asks which (newest: newer)."),
+              "3 open, newest STATE.md says CLOSED -> 2 free handoffs: newest marked, /continue asks"))
+os.remove(os.path.join(NEW, ".claude", "scratch", "older", "STATE.md"))
+o = run("stdin", NEW)
+extra.append((o.get("systemMessage", "").endswith("resume newer."),
+              "one free handoff left -> /continue resumes it unasked"))
+
+# Parallel windows (D001): two windows each hand off and /clear; each gets ITS task back, not the
+# one newest handoff. A window is env CLAUDE_PID; both must be live processes.
+PAR = bucket_project("parallel", True, [("task-x", "OPEN", "x next"), ("task-y", "OPEN", "y next")])
+
+
+def wrote_state(name, slug, read=False):
+    """A transcript in which a session wrote (or only read) <slug>/STATE.md."""
+    path = os.path.join(tmp, name + ".jsonl")
+    target = os.path.join(PAR, ".claude", "scratch", slug, "STATE.md")
+    os.makedirs(os.path.dirname(target), exist_ok=True)
+    if not os.path.isfile(target):
+        with open(target, "w", encoding="utf-8") as f:
+            f.write(f"# STATE - {slug}\nStatus: OPEN\nSTATE-OF-{slug}\n")
+    use = {"type": "tool_use", "id": name, "name": "Read" if read else "Write", "input": {"file_path": target}}
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(json.dumps({"type": "assistant", "isSidechain": False, "message": {"content": [use]}}) + "\n")
+    return path
+
+
+tx, ty = wrote_state("tx", "task-x"), wrote_state("ty", "task-y")
+os.utime(os.path.join(PAR, ".claude", "scratch", "task-x", "STATE.md"), (1_700_000_000, 1_700_000_000))
+win_a = os.getpid()                       # this test process: alive for every run below
+other = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(120)"])
+win_b = other.pid
+dead = subprocess.Popen([sys.executable, "-c", "pass"])
+dead.wait()
+try:
+    run("stdin", PAR, pid=win_a, sid="sa1", transcript=tx)          # window A works on task-x
+    run("stdin", PAR, pid=win_b, sid="sb1", transcript=ty)          # window B on task-y (newest)
+    a2 = run("stdin", PAR, source="clear", pid=win_a, sid="sa2", transcript=os.path.join(tmp, "sa2.jsonl"))
+    b2 = run("stdin", PAR, source="clear", pid=win_b, sid="sb2", transcript=os.path.join(tmp, "sb2.jsonl"))
+    extra.append(("task-x [OPEN]: x next (this window's task)" in context(a2)
+                  and "task-y [OPEN]: y next (open in another window)" in context(a2)
+                  and "resume task-x (this window's task)" in a2.get("systemMessage", ""),
+                  "window A /clear -> its own task-x, task-y is open in window B (not the newest)"))
+    extra.append(("task-y [OPEN]: y next (this window's task)" in context(b2)
+                  and "task-x [OPEN]: x next (open in another window)" in context(b2),
+                  "window B /clear -> its own task-y; task-x held by A's lineage before A's new session touched it"))
+    c = run("stdin", PAR, pid=dead.pid, sid="sc1", transcript=os.path.join(tmp, "sc1.jsonl"))
+    extra.append(("next (this window's task)" not in context(c) and "x next (open in another window)" in context(c) and "y next (open in another window)" in context(c)
+                  and "<slug> to take one here" in c.get("systemMessage", ""),
+                  "a third window at startup -> both tasks busy, nothing resumed unasked"))
+    # A closed window holds nothing: its record is dropped and its bucket is free again.
+    other.kill()
+    other.wait()
+    d = run("stdin", PAR, pid=win_a, sid="sa3", transcript=tx, source="compact")
+    extra.append(("task-y [OPEN]: y next (newest handoff)" in context(d)
+                  and not os.path.exists(os.path.join(PRIVATE_TMP, f"kit-window-{win_b}.json")),
+                  "window B closed -> its claim is dropped, task-y is free again"))
+    extra.append(("task-x's STATE.md" in context(d) and "STATE-OF-task-x" in context(d)
+                  and "STATE-OF-task-y" not in context(d),
+                  "compact -> this session's own STATE.md rides along, not the newer one of another task"))
+    e = run("stdin", PAR, source="clear", pid=99999999, sid="se", transcript=os.path.join(tmp, "se.jsonl"))
+    extra.append(("next (this window's task)" not in context(e) and e.get("systemMessage", "").endswith(
+                  "resume task-y. Open in another window: task-x.")
+                  and "task-x [OPEN]: x next (open in another window)" in context(e),
+                  "/clear in a window with no record -> no lineage; task-x busy in A, task-y free"))
+    rx = wrote_state("rx", "task-x", read=True)
+    f2 = run("stdin", PAR, source="resume", pid=win_a, sid="sa4", transcript=rx)
+    extra.append(("task-x [OPEN]: x next (this window's task)" in context(f2),
+                  "resume of a session that only READ task-x's STATE.md (a /continue) -> task-x is its own"))
+finally:
+    other.kill()
 for good, label in extra:
     if not good:
         fails += 1

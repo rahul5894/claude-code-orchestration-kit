@@ -36,6 +36,8 @@ CMD_CHARS = 200
 OUT_CHARS = 600          # a tool output excerpt: a shell's tail, a search's or web tool's head
 SHELLS = ("Bash", "PowerShell")
 FILE_TOOLS = ("Read", "Edit", "Write", "NotebookEdit", "MultiEdit")
+WRITE_TOOLS = FILE_TOOLS[1:]
+MAX_FILES = 80           # paths named in the header's files-changed line
 AGENTS = ("Agent", "Task")
 # Tools whose output is the file itself (on disk), a report kept apart, or bookkeeping.
 NO_OUTPUT = set(FILE_TOOLS) | set(AGENTS) | {"TodoWrite", "Skill", "ToolSearch", "TaskStop",
@@ -318,7 +320,25 @@ def render(turns, meta, cap):
         "Order: oldest first. User messages are verbatim; most tool output is left out (re-read "
         "the file or re-run the command); secrets are redacted.",
     ]
+    changed = changed_files(turns)
+    if changed:
+        head.append(f"Files Edit/Write was called on ({len(changed)}, in order; a failed call is listed "
+                    "too, a shell edit is not - `git status` is the truth): " + ", ".join(f"`{p}`" for p in changed[:MAX_FILES])
+                    + (f" (+{len(changed) - MAX_FILES} more)" if len(changed) > MAX_FILES else ""))
     return "\n".join(head) + "\n\n" + "\n\n".join(parts) + "\n"
+
+
+def changed_files(turns):
+    """Every path an Edit/Write/MultiEdit/NotebookEdit touched, once, in first-touch order. The
+    header keeps it whole when the cap folds old turns' tool trails: Factory's compression study
+    (2025) found the files-touched trail the weakest part of every summary it scored."""
+    out = []
+    for t in turns:
+        for kind, text, _ in t["items"]:
+            name, _, path = text.partition(" ") if kind == "tool" else ("", "", "")
+            if name in WRITE_TOOLS and path and path not in out:
+                out.append(path)
+    return out
 
 
 def write(transcript, out_path, meta, cap):

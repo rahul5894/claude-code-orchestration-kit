@@ -253,7 +253,7 @@ else {
     # Register-Hook re-asserts the matcher, so an older install drops Read here too.
     Register-Hook $set 'PreToolUse' 'Bash|PowerShell' 'md-guard.py' 'md-guard'
     # 6. kit-session-start: the missing-FAST-GATE line and the open-bucket list. Writes nothing.
-    Register-Hook $set 'SessionStart' 'startup|resume|clear|compact' 'kit-session-start.py' 'kit-session-start'
+    Register-Hook $set 'SessionStart' 'startup|resume|clear|compact|fork' 'kit-session-start.py' 'kit-session-start'
     # 7. kit-subagent-report: file every finished subagent's final message into the project's
     #    .claude/scratch/_inbox/, so a report is never lost to a forgotten write.
     #    '*' = activates on every occurrence of the event, whatever the agent type

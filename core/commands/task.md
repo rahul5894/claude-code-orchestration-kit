@@ -127,6 +127,9 @@ nothing from this conversation, in as few tokens as that takes:
 
 ## 5. Continue a bucket
 
+If the session-start note marks the bucket `(open in another window)`, say so and ask before
+going on: two windows writing one `STATE.md` lose each other's lines.
+
 1. Read `STATE.md` and `DECISIONS.md` whole. In `FINDINGS.md` skip only the `[fact]` and
    `[measure]` lines STATE does not cite (`grep -vn "\[fact\]\|\[measure\]" FINDINGS.md | cut -c1-2000` shows the rest;
    the wide cap keeps an entry's evidence, which `cut -c1-300` would drop);

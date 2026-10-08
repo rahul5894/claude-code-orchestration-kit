@@ -43,6 +43,7 @@ import tempfile
 # is not on sys.path, the import fails and the hook exits 1 - which fails open (refuter-02).
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from kit_off import kit_off  # noqa: E402
+from kit_index import MAX_TRANSCRIPT, session_bucket  # noqa: E402
 
 THRESHOLD = 45
 BAND = 10
@@ -53,18 +54,23 @@ UNSAFE = re.compile(r"[^A-Za-z0-9._-]")
 FAMILY = re.compile(r"claude-(opus|sonnet|haiku|fable)-(\d+)(?:-(\d{1,2}))?(?![0-9])")
 TRUTHY = ("1", "true", "yes", "on")
 REASON = ("orchestration-kit: context is at {pct}% ({used}K of {window}K). Hand off now, before "
-          "any new work. Rewrite the OPEN bucket's STATE.md as the handoff, by the task "
+          "any new work. {where} It is the handoff: write it by the task "
           "skill's STATE rules, in at most ~{lines} lines (sized to how full this session is). "
           "The kit then saves this whole conversation word for word into that bucket's digests/ "
           "and keeps it current each turn, so STATE.md is the curated snapshot, not a transcript"
           "; Next action exact; under User said, the user's own words "
           "quoted - every approval, preference, way they want results reported, worry and open "
           "question that lives only in this chat; paths, commands and IDs copied exactly; traps "
-          "as seen, never inferred. If no bucket is open, open one the /task way and write it "
-          "there - or, if nothing needs to carry over, skip the bucket and just tell the user to "
-          "/clear. If work goes on after the handoff (a commit, a push), keep STATE.md current "
+          "as seen, never inferred. If nothing needs to carry over, skip it and just tell the "
+          "user to /clear. If work goes on after the handoff (a commit, a push), keep STATE.md current "
           "before each turn ends. Then tell the user in one line: handoff saved - run /clear, "
           "then type /continue.")
+# Named from the session's own transcript: "the OPEN bucket" let a window with no bucket of its
+# own hand off into a parallel window's (bucket parallel-window-resume, F5).
+WHERE_MINE = "This session's bucket is `{slug}`: rewrite .claude/scratch/{slug}/STATE.md."
+WHERE_NONE = ("This session has touched no bucket: open one for what this conversation did, the "
+              "/task way, and write its STATE.md - never another task's bucket, which may be a "
+              "parallel window's.")
 # Not "saved": REASON lets the model skip the handoff when nothing carries over (code-review).
 NOTICE = ("Context {pct}% full - handoff written? Next: /clear, then type /continue.")
 
@@ -166,56 +172,16 @@ def scratch_root(data):
                  and not kit_off(r)), None)
 
 
-# A transcript this big is skipped: the hook has 5 s and the digest must never cost a stop's
-# budget. Measured 2026-10-07: 0.31 s for the largest real one (53 MB, 1.32 s before the
-# redaction fix), so 200 MB stays near 1.2 s.
-MAX_TRANSCRIPT = 200_000_000
+# session_bucket and MAX_TRANSCRIPT live in kit_index.py: kit-session-start uses them too, to
+# tell which bucket each window works on.
 
 
-# A write of .claude/scratch/<slug>/STATE.md, in a Write/Edit target or a shell command.
-STATE_PATH = re.compile(r"(?:^|[/\\\s\"'=])\.claude[/\\]scratch[/\\]([^/\\\s\"'*?<>|]+)[/\\]STATE\.md",
-                        re.IGNORECASE)
-SHELL_WRITE = re.compile(r">|\btee\b|Set-Content|Out-File|Add-Content|write_text|\.write\(|"
-                         r"open\([^)]*['\"][wa]", re.IGNORECASE)
-
-
-def session_bucket(transcript, root):
-    """The bucket of the STATE.md THIS session wrote last - a Write/Edit target, or a shell
-    command that writes .claude/scratch/<slug>/STATE.md - i.e. the handoff the block asked
-    for. Read from the session's own transcript, so a parallel session's STATE.md, an older
-    one, or a bucket the session only read never counts (review 2026-10-07, refuter 1-3).
-    None when it wrote none, or when the bucket is a symlink, a `_` kit folder, or outside."""
-    slug = None
-    with open(transcript, encoding="utf-8", errors="replace") as f:
-        for line in f:
-            if "STATE.md" not in line or '"tool_use"' not in line:
-                continue
-            try:
-                o = json.loads(line)
-            except ValueError:
-                continue
-            if not isinstance(o, dict) or o.get("isSidechain") or o.get("type") != "assistant":
-                continue
-            for b in (o.get("message") or {}).get("content") or []:
-                if not (isinstance(b, dict) and b.get("type") == "tool_use"):
-                    continue
-                inp = b.get("input") if isinstance(b.get("input"), dict) else {}
-                if b.get("name") in ("Write", "Edit", "MultiEdit"):
-                    target = str(inp.get("file_path") or "")
-                elif b.get("name") in ("Bash", "PowerShell") and SHELL_WRITE.search(str(inp.get("command"))):
-                    target = str(inp.get("command") or "")
-                else:
-                    continue
-                for m in STATE_PATH.finditer(target):
-                    slug = m.group(1)
-    if not slug or slug.startswith("_"):
-        return None
-    scratch = os.path.realpath(os.path.join(root, ".claude", "scratch"))
-    bucket = os.path.join(scratch, slug)
-    if (os.path.islink(bucket) or not os.path.isdir(bucket)
-            or os.path.dirname(os.path.realpath(bucket)) != scratch):
-        return None
-    return bucket
+def where(data):
+    """Which STATE.md the handoff goes to: the bucket this session wrote or read last, by its
+    own transcript; none touched = open a new one, never a parallel window's."""
+    root = _try(scratch_root, data)
+    bucket = _try(session_bucket, data.get("transcript_path") or "", root, True) if root else None
+    return WHERE_MINE.format(slug=os.path.basename(bucket)) if bucket else WHERE_NONE
 
 
 def sync_digest(data, sid, pct, used, size):
@@ -288,7 +254,7 @@ def main():
             f.write(str(band))
         out = {"decision": "block",
                "reason": REASON.format(pct=pct, used=used // 1000, window=size // 1000,
-                                       lines=state_lines(pct))}
+                                       lines=state_lines(pct), where=where(data))}
     else:
         # Same band again: already said. A notice on every stop reached 56 in one session.
         _try(sync_digest, data, sid, pct, used, size)

@@ -73,12 +73,12 @@ kit-subagent-report: registered in settings.json
 kit-subagent-start: registered in settings.json
 kit-context: registered in settings.json
 md-guard self-check: 177/177 passed
-kit-session-start self-check: 28/28 passed
+kit-session-start self-check: 36/36 passed
 kit-subagent-report self-check: 12/12 passed
 kit-subagent-start self-check: 19/19 passed
-kit-context self-check: 44/44 passed
+kit-context self-check: 45/45 passed
 kit_off self-check: 11/11 passed
-kit_digest self-check: 25/25 passed
+kit_digest self-check: 26/26 passed
 kit-switch self-check: 12/12 passed
 scan-project self-check: 38/38 passed
 done. ...
@@ -183,8 +183,11 @@ with a measured FAST GATE row**, and the kit now creates that itself:
 1. Open the repo in Claude Code. A global `SessionStart` hook (`kit-session-start.py`) sees
    there is no FAST GATE row and injects one line telling the orchestrator to run `/kit-init`
    before delegating anything. It also lists the open task buckets for the model and, on
-   startup and `/clear`, shows you "Open task(s): ... - type /continue to resume". After a
-   compaction it re-injects the newest open bucket's `STATE.md`, capped. It writes nothing. A `SubagentStart` hook
+   startup and `/clear`, shows you "Open task(s): ... - type /continue to resume". Each
+   window is told which task is its own (the one it worked on before `/clear`) and which are
+   open in another window, so two windows that both hand off each resume their own. After a
+   compaction it re-injects this session's own bucket's `STATE.md`, capped. It writes nothing
+   in the repo, only a per-window record in the temp dir. A `SubagentStart` hook
    (`kit-subagent-start.py`) injects the `DECISIONS.md` of every open bucket (OPEN, BLOCKED, or IN PROGRESS and the like when its folder exists) in
    `.claude/scratch/INDEX.md` into each spawned agent, so a settled decision binds an agent
    that never saw the conversation.
@@ -279,7 +282,7 @@ Bedrock/Vertex/Foundry id without `[1m]`); `CLAUDE_CODE_DISABLE_1M_CONTEXT=1` ma
 `CLAUDE_CODE_MAX_CONTEXT_TOKENS` counts together with `DISABLE_COMPACT`. The `[1m]` marker never
 reaches the transcript, so the model id alone cannot say 1M. Only lines of the current
 session count, so a new session starts from 0.
-Check: `python ~/.claude/hooks/kit-context_test.py` prints `44/44 passed`.
+Check: `python ~/.claude/hooks/kit-context_test.py` prints `45/45 passed`.
 
 Known gaps, on purpose:
 
@@ -425,12 +428,12 @@ report format. The skill is worth keeping, so the kit ships its own copy at
 ## 7. Final checklist
 
 - [ ] `pwsh install.ps1` printed `md-guard self-check: 177/177 passed`
-- [ ] the same run printed `kit-session-start self-check: 28/28 passed`
+- [ ] the same run printed `kit-session-start self-check: 36/36 passed`
 - [ ] the same run printed `kit-subagent-report self-check: 12/12 passed`
 - [ ] the same run printed `kit-subagent-start self-check: 19/19 passed`
-- [ ] the same run printed `kit-context self-check: 44/44 passed`
+- [ ] the same run printed `kit-context self-check: 45/45 passed`
 - [ ] the same run printed `kit_off self-check: 11/11 passed`
-- [ ] the same run printed `kit_digest self-check: 25/25 passed`
+- [ ] the same run printed `kit_digest self-check: 26/26 passed`
 - [ ] the same run printed `kit-switch self-check: 12/12 passed`
 - [ ] the same run printed `scan-project self-check: 38/38 passed`
 - [ ] `verify_live.py` C6 lists no unreviewed plugin
