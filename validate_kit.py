@@ -1184,7 +1184,8 @@ for _m in ('disable', 'allow'):
         chk(isinstance(_why, str) and _why.strip(), f'plugins.json {_m}[{_id}] gives a reason')
 chk('simple-english@simple-english' in (_pl.get('disable') or {}),
     'plugins.json disables simple-english (its hooks fight the report rules)')
-# Bench E: ponytail's rules halved the arm's tests and dropped DB hardening (FINDINGS kit-modes).
+# Bench E: ponytail's rules halved the arm's tests and dropped DB hardening (FINDINGS kit-modes);
+# bench F re-ran v5.0.0 on 2026-10-08 and found the same trade (bench/README.md).
 chk('ponytail@ponytail' in (_pl.get('disable') or {}), 'plugins.json disables ponytail')
 chk(os.path.isfile('core/skills/simple-english/LICENSE'),
     'core/skills/simple-english/LICENSE ships (the copy is MIT, attribution required)')

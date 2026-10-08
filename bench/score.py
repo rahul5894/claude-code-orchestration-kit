@@ -170,8 +170,18 @@ def _metrics(tree, pkg="shop"):
 def quality(repo, fixture=None, pkg="shop"):
     """What the arm added, measured against the untouched fixture: lint findings, vulture dead
     code, pylint duplicate blocks, new functions/classes, and radon complexity of new code."""
-    if not os.path.isfile(VENV_PY):
-        return "SKIPPED (no bench/.venv: python -m venv bench/.venv, then pip install ruff vulture radon pylint)"
+    # A venv copied from another machine exists but its python does not start; every count then
+    # read as a clean zero (2026-10-08), so prove the tools import before trusting them.
+    try:
+        proc = subprocess.run([VENV_PY, "-c", "import ruff, vulture, radon, pylint"],
+                              capture_output=True, text=True, encoding="utf-8", errors="replace")
+        broken = proc.returncode and ((proc.stderr or proc.stdout).strip()[-200:]
+                                      or f"exit {proc.returncode}")
+    except OSError as exc:
+        broken = str(exc)
+    if broken:
+        return (f"SKIPPED (bench/.venv cannot run its tools: {broken}; python -m venv bench/.venv, "
+                "then pip install ruff vulture radon pylint)")
     base = _metrics(fixture or os.path.join(HERE, "fixture"), pkg)
     final = _metrics(repo, pkg)
     before, after = Counter(base["lint_keys"]), Counter(final["lint_keys"])

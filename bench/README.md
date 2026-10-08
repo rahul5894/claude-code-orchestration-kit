@@ -19,6 +19,8 @@ score the result.
 | `score.py <repo> --ticket <t>` | one JSON line: spec, bugs, robust, security P/T, LOC added/removed, files changed under the package, and `quality` |
 | `variants/` | alternative project `CLAUDE.md` files for `run_arm.py --claude-md` (e.g. a gate with linters) |
 | `run_arm.py` | one arm, one ticket: clone, run `claude -p`, score, save `results/` |
+| `collect.py <tag-prefix>` | one JSON line per run and a median per arm; for billing it also probes the clone for the `staff:` email hole |
+| `mutate.py <clone> --ticket <t>` | how much the arm's OWN tests protect its code: seeds one bug at a time, counts the ones the hidden tests call real and the arm's tests caught |
 | `results/` | gitignored: one `.json` + `.patch` per run |
 
 ## Arms
@@ -28,6 +30,12 @@ score the result.
   needs an API key).
 - **lean** — a normal `claude -p` with the kit installed and `outputStyle` = `kit-lean`.
 - **full** — the same with `outputStyle` = `orchestrator`.
+- **base** — `--setting-sources project,local --strict-mcp-config` with CLAUDE.md and auto
+  memory switched off by env: the plain arm for testing a plugin, because `--safe-mode` also
+  drops the hooks of `--plugin-dir` (verified 2026-10-08: no kit agent, skill or MCP server).
+- **kit** — the installed kit exactly as the user runs it: no `outputStyle` override.
+
+`--plugin-dir PATH` loads a plugin for the arm (base, kit, lean, full), e.g. a ponytail checkout.
 
 ```
 python bench/run_arm.py --arm plain --ticket refunds --effort high --tag a
@@ -43,7 +51,9 @@ Another model: `--model claude-fable-5-1` (the same flag for every arm).
 
 `score.py` measures what an arm ADDED, as a delta against the untouched fixture, with the
 tools in `bench/.venv` (`python -m venv bench/.venv`, then `pip install ruff vulture radon
-pylint`; without it `quality` says SKIPPED):
+pylint`; when its python cannot import them `quality` says SKIPPED). A venv is per machine:
+one copied from another machine exists but cannot start, and before 2026-10-08 that read as
+zero findings everywhere - and broke `check.py` in every billing clone.
 
 - `lint_added` / `lint_codes`: ruff F (unused, undefined), B (likely bugs), SIM, UP (outdated
   syntax), C4, PERF, RET, PIE, C901 (a function over complexity 10).
@@ -183,6 +193,55 @@ not promoted: it missed the "time within plain +5%" bar and its catches are not 
 from noise. Correctness still ties (45/45 x9). `num_turns`/`duration_ms` in a run's JSON
 cover only the last segment when the session woke on a background task; `wall_s` is the
 harness's own clock.
+
+### Bench F: Ponytail 5 (2026-10-08, Claude Code 2.1.288, Opus 5.5 xhigh for every arm)
+
+Ponytail v5.0.0 (`b088b2d`) rewrote the rules that got v4 dropped after bench E: "the smallest
+complete change", and non-trivial logic must leave a test. Four arms, each with and without it
+through `--plugin-dir`: `base`, `base` + PT, `kit`, `kit` + PT. Billing ran 5 times per arm:
+wave 1 (12 at once) had `check.py`'s linters broken for every arm by a venv from another
+machine, and wave 2 (2 per arm) had the venv rebuilt. Checkout ran 2 times per arm in wave 2.
+Wave 1's quality metrics were re-scored offline. Values are medians.
+
+`Own tests catch` comes from `mutate.py`: real bugs, meaning those the hidden tests kill, that
+the arm's own tests also killed. Most runs used every mutation point or a 60-mutant sample.
+Four kit + PT runs used 15 mutants. It covers 23 of the 28 runs. Five billing clones were not
+measured: their clean hidden suite takes 11 s alone, but over 2 minutes with 9 clones
+contending for sqlite locks at once.
+
+| Ticket | Arm | Hidden | Wall s | Cost $ | Package LOC+ | Test LOC+ | Own tests catch | `staff:` hole closed |
+|---|---|---|---|---|---|---|---|---|
+| billing | base | 45/45 x5 | 997 | 3.88 | 588 | 766 | 285/286 (3 runs) | 4/5 |
+| billing | base + PT | 45/45 x5 | 551 | 2.14 | 353 | 234 | 447/480 (4 runs) | 2/5 |
+| billing | kit | 45/45 x5 | 927 | 3.69 | 577 | 639 | 114/117 (3 runs) | 4/5 |
+| billing | kit + PT | 45/45 x5 | 554 | 2.54 | 364 | 280 | 81/88 (5 runs) | 1/5 |
+| checkout | base | 44/44 x2 | 1106 | 2.94 | 346 | 422 | 118/122 | - |
+| checkout | base + PT | 44/44 x2 | 345 | 1.34 | 242 | 166 | 53/60 | - |
+| checkout | kit | 44/44 x2 | 629 | 2.63 | 334 | 312 | 63/65 | - |
+| checkout | kit + PT | 44/44 x2 | 371 | 1.64 | 232 | 142 | 52/59 | - |
+
+How to read it:
+
+- **Correctness ties.** Every one of the 28 runs passed every hidden test.
+- **Ponytail's gains:**
+  - wall time -40 to -69%
+  - cost -31 to -54%
+  - package code -30 to -40%
+- **What it costs:**
+  - **Fewer tests:** test code -54 to -69%.
+  - **Weaker tests:** without Ponytail the arm's own tests caught 580 of 590 real bugs (98.3%); with it, 633 of 687 (92.1%). Bugs that slip past the arm's own tests go from 1.7% to 7.9%, and every pair moved the same way.
+  - **Less beyond-spec hardening:** a customer registered as `staff:...` becomes staff. With Ponytail this was closed in 3 of 10 runs, without it in 8 of 10 (Fisher p=0.07).
+  - **Denser code:** the most complex new function on checkout reached 24.5 with base + PT, against 17 with base.
+  - **Some legacy lint left in place:** 6 of 10 Ponytail billing runs left 3 C408 findings (`dict()` calls, style only).
+- **Ties:**
+  - **Honesty:** every arm reported the broken gate in wave 1 and ended with its risks.
+  - **Subagent use:** no kit arm spawned a subagent, so Ponytail's SubagentStart injection was never exercised.
+- **The author's "injected bugs caught 66% vs 46%" does not reproduce here.** Their bench
+  disables Bash, so the no-skill arm often wrote no test. At xhigh with Bash, every arm writes
+  tests, and the arms without Ponytail write the stronger ones.
+- **Kit without Ponytail:** about base's quality and slightly faster. With Ponytail, the kit
+  adds about 20% to the cost.
+- **Verdict:** the same trade as v4. Ponytail stays in `core/plugins.json` `disable`.
 
 ## Handoff and md-guard (2026-10-07, Claude Code 2.1.292, Opus 5.5)
 

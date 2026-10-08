@@ -18,6 +18,8 @@ from score import VENV_PY, fixture_of, score
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 STYLES = {"lean": "kit-lean", "full": "orchestrator"}
+# base: no ~/.claude/CLAUDE.md or rules (and so no project CLAUDE.md, as under --safe-mode), no memory
+BASE_ENV = {"CLAUDE_CODE_DISABLE_CLAUDE_MDS": "1", "CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1"}
 
 
 def git(repo, *args):
@@ -65,8 +67,16 @@ def style_name(path):
 def build_command(args, prompt, clone):
     cmd = ["claude", "-p", prompt, "--model", args.model, "--permission-mode",
            "bypassPermissions", "--output-format", "json"]
+    for plugin in args.plugin_dir:
+        cmd += ["--plugin-dir", plugin]
     if args.arm == "plain":
         return cmd + ["--safe-mode", "--effort", args.effort or "high"]
+    if args.arm == "base":
+        # --safe-mode also drops --plugin-dir hooks; this drops only the user's setup (BASE_ENV too)
+        return cmd + ["--setting-sources", "project,local", "--strict-mcp-config",
+                      "--effort", args.effort or "high"]
+    if args.arm == "kit":  # the installed kit exactly as the user runs it: no style override
+        return cmd + (["--effort", args.effort] if args.effort else [])
     style = STYLES[args.arm]
     if args.style_file:
         dest = os.path.join(clone, ".claude", "output-styles")
@@ -82,7 +92,7 @@ def build_command(args, prompt, clone):
 
 def main():
     parser = argparse.ArgumentParser(description="Run one benchmark arm on one ticket.")
-    parser.add_argument("--arm", required=True, choices=["plain", "lean", "full"])
+    parser.add_argument("--arm", required=True, choices=["plain", "base", "kit", "lean", "full"])
     parser.add_argument("--ticket", required=True)
     parser.add_argument("--model", default="claude-opus-5-5")
     parser.add_argument("--effort", help="plain defaults to high; lean/full pass it only if given")
@@ -91,14 +101,18 @@ def main():
                         "{VENV_PY} in it becomes bench/.venv's python")
     parser.add_argument("--no-plugin", action="append", default=[],
                         help="disable a plugin for this arm (lean/full), e.g. ponytail@ponytail")
+    parser.add_argument("--plugin-dir", action="append", default=[],
+                        help="load a plugin for this session (base/kit/lean/full), e.g. ponytail")
     parser.add_argument("--tag", default="run")
     parser.add_argument("--timeout", type=int, default=2700)
     parser.add_argument("--cleanup", action="store_true", help="delete the clone afterwards")
     args = parser.parse_args()
     if args.style_file and args.arm == "plain":
         parser.error("--style-file needs --arm lean or full (plain runs with --safe-mode)")
-    if args.no_plugin and args.arm == "plain":
-        parser.error("--no-plugin needs --arm lean or full (plain's --safe-mode loads no plugin)")
+    if args.no_plugin and args.arm in ("plain", "base"):
+        parser.error("--no-plugin needs --arm kit, lean or full (plain and base load no user plugin)")
+    if args.plugin_dir and args.arm == "plain":
+        parser.error("--plugin-dir needs another arm: --safe-mode drops its hooks (use --arm base)")
     with open(os.path.join(HERE, "tickets", f"{args.ticket}.txt"), encoding="utf-8") as f:
         prompt = f.read().strip()
     # score() needs it; found only after the paid run, the run is spent and no record written
@@ -110,8 +124,10 @@ def main():
     print(f"clone: {clone}", flush=True)
     start = time.monotonic()
     try:
+        env = {**os.environ, **BASE_ENV} if args.arm == "base" else None
         proc = subprocess.run(cmd, cwd=clone, stdin=subprocess.DEVNULL, capture_output=True,
-                              text=True, encoding="utf-8", errors="replace", timeout=args.timeout)
+                              text=True, encoding="utf-8", errors="replace", timeout=args.timeout,
+                              env=env)
         stdout, stderr, timed_out, returncode = proc.stdout, proc.stderr, False, proc.returncode
     except subprocess.TimeoutExpired as exc:
         # str on Windows with text=True, bytes on POSIX
@@ -141,9 +157,10 @@ def main():
     record = {
         "argv": cmd[:2] + ["<ticket text>"] + cmd[3:],
         "model": args.model,
-        "effort": args.effort or ("high" if args.arm == "plain" else None),
+        "effort": args.effort or ("high" if args.arm in ("plain", "base") else None),
         "claude_md": args.claude_md,
         "no_plugin": args.no_plugin,
+        "plugin_dir": args.plugin_dir,
         "wall_s": wall_s,
         "timed_out": timed_out,
         "returncode": returncode,

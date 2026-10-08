@@ -1,7 +1,7 @@
 {
   "$comment": "Plugins whose hooks run in every session. install.ps1 applies `disable`; verify_live.py section C6 fails on any enabled plugin with a SessionStart, UserPromptSubmit or Stop hook that is in neither map.",
   "disable": {
-    "ponytail@ponytail": "bench E 2026-09-24: its SessionStart rules (shortest diff, YAGNI applies to tests) cut the arm's test code ~50% and its DB hardening; with it off kit-lean matched plain Opus on both. User removed it.",
+    "ponytail@ponytail": "bench E 2026-09-24 (v4): its SessionStart rules cut the arm's test code ~50% and its DB hardening; with it off kit-lean matched plain Opus on both. User removed it. Bench F 2026-10-08 (v5.0.0, Opus 5.5 xhigh, 28 runs): same hidden-test score and ~40% less time and cost, but test code -54..-69%, own tests catch ~92% of real bugs vs ~98%, beyond-spec staff: hole closed 3/10 vs 8/10. Still off: quality over speed.",
     "simple-english@simple-english": "SessionStart injects ~700 tokens of reply rules, PostToolUse lints every .md edit, Stop nags 'five sentences or fewer' after replies; all three fight the orchestrator's report rules. The skill ships in core/skills/simple-english as slash-only."
   },
   "allow": {
