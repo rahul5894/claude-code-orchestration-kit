@@ -1034,6 +1034,17 @@ chk('def scratch_ok' in _ki and 'def bucket_dir' in _ki and 'scratch_ok(root)' i
 chk('SESSIONS.md whole' in _tk and 'Step back only on a gap' in _tk and "Never read another bucket's records" in _tk
     and 'Priority: P2' in _tk and 'recommend one' in _ct and 'RECOMMEND one' in _ks,
     'task.md: /continue reads SESSIONS.md, steps back by session, never another task; 2+ free tasks -> recommend one')
+# Which task a session is filed under (2026-10-10, D008): a note counts as written only when the
+# shell command's write TARGETS it. The test it replaced - any `>` anywhere, so `2>/dev/null`
+# beside a read - filed sessions under closed tasks and could point /clear at the wrong one.
+chk('def shell_notes' in _ki and 'SHELL_WRITE' not in _ki and 'SHELL_WRITE' not in _kh
+    and 'shell_notes(inp.get("command"))' in _kh and 'notes = shell_notes(' in _ki,
+    'kit_index.shell_notes judges a shell note write by its target; kit_chain and session_bucket both use it')
+# The digest (2026-10-10, D009): round 3's one wrong answer came from an error line with no command;
+# 577 task notifications read as the user's words; 747 server commands were a bare tool name.
+chk('def harness_text' in _kd and 'kit_digest.harness_text(' in _kh and '"cmdString"' in _kd
+    and '"notice"' in _kd and 'CALL_CHARS' in _kd and 'Async agent launched' in _kd,
+    "kit_digest: an error names its call, an MCP command is shown, a task notice is never the user's")
 # No style set = plain Opus + hooks + handoff (2026-09-24). An agent description is shown to
 # the main session in every mode, so "Use for every change" there made a styleless session
 # delegate; so did a bucket's old briefs read as a pattern by /continue.

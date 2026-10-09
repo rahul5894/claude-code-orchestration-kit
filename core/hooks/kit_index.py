@@ -69,11 +69,63 @@ def open_rows(index_path):
     return out
 
 
-# A touch of .claude/scratch/<slug>/STATE.md, in a Read/Write/Edit target or a shell command.
-STATE_PATH = re.compile(r"(?:^|[/\\\s\"'=])\.claude[/\\]scratch[/\\]([^/\\\s\"'*?<>|]+)[/\\]STATE\.md",
-                        re.IGNORECASE)
-SHELL_WRITE = re.compile(r">|\btee\b|Set-Content|Out-File|Add-Content|write_text|\.write\(|"
-                         r"open\([^)]*['\"][wa]", re.IGNORECASE)
+# A touch of a bucket's notes - .claude/scratch/<slug>/STATE.md, FINDINGS.md or DECISIONS.md - in
+# a Read/Write/Edit target or a shell command; never a longer name (STATE.md.bak).
+NOTE_PATH = re.compile(r"(?:^|[/\\\s\"'=])\.claude[/\\]scratch[/\\]([^/\\\s\"'*?<>|]+)[/\\]"
+                       r"(STATE|FINDINGS|DECISIONS)\.md(?![\w-]|\.\w)", re.IGNORECASE)
+# Which notes a SHELL command writes is judged per path (bucket handoff-timeline, 2026-10-10): a
+# note is written only when IT is the target - of a redirect, of tee / Tee-Object / Set-Content /
+# Add-Content / Out-File, of sed or perl -i, as the last word of cp / mv / Copy-Item / Move-Item,
+# or of a write-mode open() / Path().write_text() / [IO.File]::Write*. The test it replaces (any
+# `>` anywhere in the command) made `x 2>/dev/null; head .claude/scratch/a/STATE.md` a write of
+# a's STATE.md: a session that only READ a closed task's notes was filed under that task, and
+# session_bucket() could hand this window's /clear to it.
+REDIRECT_END = re.compile(r"(?:(?<![-=<>&])>>?|&>>?)\|?$")
+STAGE_WRITER = re.compile(r"(?:sudo\s+)?(?:tee|Tee-Object|Set-Content|Add-Content|Out-File|touch|New-Item)\b",
+                          re.IGNORECASE)
+IN_PLACE = re.compile(r"(?:sudo\s+)?(?:sed|perl)\b.*?(?:\s-[A-Za-z]*i[\w.]*|\s--in-place\S*)(?=\s|$)",
+                      re.IGNORECASE | re.DOTALL)
+COPIER = re.compile(r"(?:sudo\s+)?(?:cp|mv|copy|move|Copy-Item|Move-Item|cpi|mi)\b", re.IGNORECASE)
+# A file mode that writes: 'w', 'a', 'x', or '+' with any of r/b/t ('ascii' is no mode).
+_MODE = r"[rbuf]{0,2}['\"](?=[rbtU]*[wax+])[rwxabtU+]{1,4}['\"]"
+CODE_WRITE = re.compile(
+    r"\bopen\(\s*[rbuf]{0,2}(['\"])([^'\"\n]*)\1\s*,\s*(?:[^)\n]*?\bmode\s*=\s*)?" + _MODE
+    + r"|\bPath\(\s*[rbuf]{0,2}(['\"])([^'\"\n]*)\3\s*\)\s*\.(?:write_text|write_bytes|open\(\s*" + _MODE + r")"
+    r"|::(?:Write|Append)All(?:Text|Lines|Bytes)\(\s*(['\"])([^'\"\n]*)\5", re.IGNORECASE)
+# The same writes through a name: `p = pathlib.Path(r'.claude/scratch/a/STATE.md')` ... `open(p, 'w')`.
+CODE_VAR = re.compile(r"\b([A-Za-z_]\w*)\s*=\s*(?:[\w.]*Path\(\s*)?[rbuf]{0,2}(['\"])([^'\"\n]*)\2", re.IGNORECASE)
+# A write through any name. In a code heredoc that has one, a note path handed over as a list
+# item or a call argument (`for p, old, new in [('.../STATE.md', ...)]: open(p, 'w')`) is written.
+NAME_WRITE = re.compile(r"\bopen\(\s*[A-Za-z_][\w.]*\s*,\s*(?:[^)\n]*?\bmode\s*=\s*)?" + _MODE
+                        + r"|\b[A-Za-z_]\w*\.(?:write_text|write_bytes)\(|\b[A-Za-z_]\w*\.open\(\s*(?:mode\s*=\s*)?"
+                        + _MODE, re.IGNORECASE)
+HEREDOC = re.compile(r"(?<!<)<<(?!<)-?\s*(['\"]?)([A-Za-z_]\w*)\1")
+# A heredoc body is one of three things. DATA - fed to cat/tee/git (a file's or a message's
+# text): a note named in it is no touch. SHELL - fed to bash/sh/pwsh: judged as shell. CODE -
+# anything else (python, node...), or a script file being written to run next (`cat > fix.py`):
+# only its write calls count (CODE_WRITE, CODE_VAR).
+DATA_SINK = re.compile(r"^\s*(?:sudo\s+)?(?:cat|tee|git)\b")
+SHELL_RUNNER = re.compile(r"(?:^|[\s|])(?:sudo\s+)?(?:bash|sh|zsh|dash|ksh|pwsh|powershell)(?:\.exe)?(?=\s|$)",
+                          re.IGNORECASE)
+SCRIPT_FILE = re.compile(r"\.(?:py|sh|bash|zsh|ps1|psm1|js|mjs|cjs|ts|rb|pl|php)\b", re.IGNORECASE)
+SHELL_SCRIPT = re.compile(r"\.(?:sh|bash|zsh|ps1|psm1)\b", re.IGNORECASE)
+# A path handed straight to a call that only reads or inspects it is no write, whatever else
+# the code writes through a name.
+READ_CALL = re.compile(r"\b(?:open|Path|exists|isfile|isdir|getsize|getmtime|stat|glob|listdir)\(\s*[rbuf]{0,2}['\"]$",
+                       re.IGNORECASE)
+# `cd <...>/.claude/scratch/<slug> && cat >> FINDINGS.md`: a bare note name after a cd into a
+# bucket is that bucket's note (293 such commands in 544 transcripts; neither test saw them).
+CD_INTO = re.compile(r"(?:^|[;&|(\n])\s*(?:cd|pushd|Push-Location|Set-Location)(?:\s+-(?:Literal)?Path)?\s+[\"']?"
+                     r"[^\s\"';&|]*?\.claude[/\\]scratch[/\\]([^/\\\s\"'*?<>|;&]+)[/\\]?[\"']?(?=\s|[;&|)]|$)",
+                     re.IGNORECASE)
+CD_ANY = re.compile(r"(?:^|[;&|(\n])\s*(?:cd|pushd|popd|Push-Location|Pop-Location|Set-Location)\b", re.IGNORECASE)
+BARE_NOTE = re.compile(r"(?<![\w/\\.-])(?:\.[/\\])?(STATE|FINDINGS|DECISIONS)\.md(?![\w-]|\.\w)", re.IGNORECASE)
+# A shell name holding a note or a bucket: `F=.claude/scratch/a/FINDINGS.md; printf x >> "$F"`,
+# `B=.claude/scratch/a; cat >> "$B/FINDINGS.md"`, PowerShell `$f = '...'`.
+SHELL_VAR = re.compile(r"(?:^|[;&|(\n\s])(?:export\s+|local\s+|\$)?([A-Za-z_]\w*)\s*=\s*([\"']?)([^\s\"';&|]*?"
+                       r"\.claude[/\\]scratch[/\\]([^/\\\s\"'*?<>|;&]+)(?:[/\\](STATE|FINDINGS|DECISIONS)\.md)?)"
+                       r"[/\\]?\2(?=\s|[;&|)]|$)", re.IGNORECASE)
+WORD_STOP = " \t\n\"'<>|;&()=`"
 WRITERS = ("Write", "Edit", "MultiEdit")
 SHELLS = ("Bash", "PowerShell")
 # A transcript this big is not parsed: hooks have seconds. Measured 2026-10-07: 0.31 s for the
@@ -141,6 +193,157 @@ def bucket_dir(root, slug):
     return bucket
 
 
+def _heredoc_bodies(cmd):
+    """[(kind, start, end)] of every terminated heredoc body, end exclusive (its terminator line
+    included); kind is data, shell or code (see DATA_SINK)."""
+    out, lines, pos = [], cmd.split("\n"), []
+    at = 0
+    for line in lines:
+        pos.append(at)
+        at += len(line) + 1
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        i += 1
+        m = HEREDOC.search(line)
+        if not m:
+            continue
+        name, tabs = m.group(2), "\t" if line[m.start():m.start() + 3] == "<<-" else ""
+        end = next((j for j in range(i, len(lines)) if lines[j].rstrip("\r").lstrip(tabs) == name), None)
+        if end is None:
+            continue  # never terminated: the rest stays shell text, as bash may read it
+        stage = re.split(r"&&|\|\||[;|(]", line[:m.start()])[-1]
+        piped = line[m.end():].split("|", 1)[1] if "|" in line[m.end():] else ""
+        if SHELL_RUNNER.search(piped or stage) or (not piped and SHELL_SCRIPT.search(stage)):
+            kind = "shell"
+        elif not piped and DATA_SINK.match(stage) and not SCRIPT_FILE.search(stage):
+            kind = "data"
+        else:
+            kind = "code"
+        out.append((kind, pos[i], min(len(cmd), pos[end] + len(lines[end]))))
+        i = end + 1
+    return out
+
+
+def _blank(text, ranges):
+    """`text` with each [start, end) range turned to spaces, newlines kept: same length."""
+    chars = list(text)
+    for a, b in ranges:
+        for k in range(a, b):
+            if chars[k] != "\n":
+                chars[k] = " "
+    return "".join(chars)
+
+
+def _quote_spans(s):
+    """[(start, end)] of every quoted string, end exclusive: '...' (no escapes, $'...' takes \\),
+    "..." (\\ escapes), a PowerShell here-string @'...'@ / @"..."@ whole; a backslash outside
+    quotes escapes the next character (`'it'\\''s'` is one word). An open quote runs to the end."""
+    out, i, n = [], 0, len(s)
+    while i < n:
+        c = s[i]
+        if c == "\\":
+            i += 2
+            continue
+        if c == "@" and s[i + 1:i + 2] in ("'", '"') and s[i + 2:i + 3] in ("\n", "\r"):
+            close = s.find("\n" + s[i + 1] + "@", i + 2)
+            j = n if close < 0 else close + 3
+        elif c in "'\"":
+            esc = c == '"' or (i > 0 and s[i - 1] == "$")
+            j = i + 1
+            while j < n and s[j] != c:
+                j += 2 if esc and s[j] == "\\" else 1
+            j = min(j + 1, n)
+        else:
+            i += 1
+            continue
+        out.append((i, j))
+        i = j
+    return out
+
+
+def _written(shell, masked, spans, c0, end):
+    """Whether the note whose path starts at c0 (`.claude`, or a bare name) and ends at `end`
+    is a write target in the shell text."""
+    q = next(((a, b) for a, b in spans if a < c0 < b), None)
+    if q:
+        start, end = q  # a quoted path is one shell word, quotes included
+    else:
+        start = c0
+        while start > 0 and shell[start - 1] not in WORD_STOP:
+            start -= 1
+    before, after = masked[:start].rstrip(), masked[end:]
+    if before.endswith("<"):
+        return False  # `< note`: an input redirect
+    if REDIRECT_END.search(before):
+        return True
+    stage = re.split(r"&&|\|\||[;|\n(`]", before)[-1].lstrip()
+    if STAGE_WRITER.match(stage) or IN_PLACE.match(stage):
+        return True
+    return bool(COPIER.match(stage)) and re.match(r"[ \t]*(?:$|[;&|)\n`])", after) is not None
+
+
+def shell_notes(cmd):
+    """[(slug, NOTE, written)] for each bucket note a shell command names, in order; NOTE is
+    STATE, FINDINGS or DECISIONS. `written` only when that very path is the write target (see
+    REDIRECT_END and the patterns below it). A note named in a data heredoc's body is text being
+    written somewhere else and counts for nothing; in a code body only a write call counts."""
+    cmd = str(cmd or "")
+    if "scratch" not in cmd.lower():
+        return []
+    bodies = _heredoc_bodies(cmd)
+    work = _blank(cmd, [(a, b) for k, a, b in bodies if k == "data"])    # what code may say
+    shell = _blank(cmd, [(a, b) for k, a, b in bodies if k != "shell"])  # what the shell parses
+    in_code = [(a, b) for k, a, b in bodies if k == "code"]
+    spans = _quote_spans(shell)
+    masked = list(shell)
+    for a, b in spans:  # a quoted string is no shell syntax: `grep "> x"` holds no redirect
+        masked[a + 1:b - 1] = "_" * max(0, b - a - 2)
+    masked = "".join(masked)
+    code = set()  # where `.claude` starts in a path that code opens for writing
+    for m in CODE_WRITE.finditer(work):
+        g = next(k for k in (2, 4, 6) if m.group(k) is not None)
+        for n in NOTE_PATH.finditer(m.group(g)):
+            code.add(m.start(g) + n.start() + n.group(0).lower().index(".claude"))
+    named = set()  # note paths bound to a name: judged by that name's writes alone
+    for m in CODE_VAR.finditer(work):
+        notes = [m.start(3) + n.start() + n.group(0).lower().index(".claude") for n in NOTE_PATH.finditer(m.group(3))]
+        named.update(notes)
+        var = re.escape(m.group(1))
+        if notes and re.search(r"\bopen\(\s*" + var + r"\s*,\s*(?:[^)\n]*?\bmode\s*=\s*)?" + _MODE
+                               + r"|\b" + var + r"\.write_(?:text|bytes)\(|\b" + var + r"\.open\(\s*(?:mode\s*=\s*)?"
+                               + _MODE + r"|\bPath\(\s*" + var + r"\s*\)\s*\.write_(?:text|bytes)\(",
+                               work[m.end():], re.IGNORECASE):
+            code.update(notes)
+    for a, b in ((a, b) for k, a, b in bodies if k == "code"):
+        if NAME_WRITE.search(work, a, b):
+            for n in NOTE_PATH.finditer(work, a, b):
+                c = n.start() + n.group(0).lower().index(".claude")
+                q = max(work.rfind("'", a, c), work.rfind('"', a, c))  # the literal's opening quote
+                if c not in named and not (q >= 0 and READ_CALL.search(work, a, q + 1)):
+                    code.add(c)
+    found = []
+    for m in NOTE_PATH.finditer(work):
+        c0 = m.start() + m.group(0).lower().index(".claude")
+        coded = any(a <= c0 < b for a, b in in_code)
+        found.append((c0, m.group(1), m.group(2).upper(),
+                      c0 in code or (not coded and _written(shell, masked, spans, c0, m.end()))))
+    stops = [m.start() for m in CD_ANY.finditer(shell)]
+    for cd in CD_INTO.finditer(shell):
+        until = next((s for s in stops if s > cd.start()), len(shell))
+        for m in BARE_NOTE.finditer(shell, cd.end(), until):
+            found.append((m.start(), cd.group(1), m.group(1).upper(), _written(shell, masked, spans, m.start(), m.end())))
+    for v in SHELL_VAR.finditer(shell):
+        if any(a < v.start(1) < b for a, b in spans):
+            continue  # `echo "F=..."`: an assignment inside a quoted string is text
+        name, slug, note = re.escape(v.group(1)), v.group(4), (v.group(5) or "").upper()
+        use = re.compile(r"\$\{?" + name + r"\}?" + (r"(?![\w/\\])" if note else
+                                                     r"[/\\](STATE|FINDINGS|DECISIONS)\.md(?![\w-]|\.\w)"), re.IGNORECASE)
+        for m in use.finditer(shell, v.end()):
+            found.append((m.start(), slug, note or m.group(1).upper(), _written(shell, masked, spans, m.start(), m.end())))
+    return [(slug, note, w) for _, slug, note, w in sorted(found)]
+
+
 def session_bucket(transcript, root, reads=False):
     """The bucket of the STATE.md this session WROTE last - a Write/Edit target, or a shell
     command that writes it; with reads=True, a session that wrote none but read one (a
@@ -171,17 +374,19 @@ def session_bucket(transcript, root, reads=False):
                 inp = b.get("input") if isinstance(b.get("input"), dict) else {}
                 name = b.get("name")
                 if name in WRITERS or name == "Read":
-                    target, write = str(inp.get("file_path") or ""), name != "Read"
+                    path = str(inp.get("file_path") or "")
+                    notes = [(m.group(1), m.group(2).upper(), name != "Read") for m in NOTE_PATH.finditer(path)]
                 elif name in SHELLS:
-                    target = str(inp.get("command") or "")
-                    write = bool(SHELL_WRITE.search(target))
+                    notes = shell_notes(inp.get("command"))
                 else:
                     continue
-                for m in STATE_PATH.finditer(target):
-                    if write:
-                        wrote = m.group(1)
+                for slug, note, written in notes:
+                    if note != "STATE":
+                        continue
+                    if written:
+                        wrote = slug
                     else:
-                        read = m.group(1)
+                        read = slug
     slug = wrote or (read if reads else None)
     return bucket_dir(root, slug)
 

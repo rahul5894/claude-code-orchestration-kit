@@ -35,6 +35,8 @@ AGENT_CHARS = 6000       # a subagent report
 CUT_CHARS = 700          # an old answer or report, once the cap bites
 ERROR_CHARS = 400
 CMD_CHARS = 200
+CALL_CHARS = 160         # the failing call named on an error line
+NOTICE_CHARS = 1500      # a background task's completion notice, once the cap bites
 OUT_CHARS = 600          # a tool output excerpt: a shell's tail, a search's or web tool's head
 SHELLS = ("Bash", "PowerShell")
 FILE_TOOLS = ("Read", "Edit", "Write", "NotebookEdit", "MultiEdit")
@@ -47,6 +49,16 @@ NO_OUTPUT = set(FILE_TOOLS) | set(AGENTS) | {"TodoWrite", "Skill", "ToolSearch",
 # (context % below which the band applies, STATE.md lines, digest share of the window)
 BANDS = ((50, 60, 0.10), (60, 60, 0.12), (70, 80, 0.18), (80, 100, 0.25), (10 ** 9, 120, 0.30))
 
+# What the harness puts in the user's turn: a background task's or agent's completion and the
+# interrupt marker. Never the user's words - measured 2026-10-10 over 544 transcripts: 577
+# `<task-notification>` lines beside 2,045 typed messages, and one became a timeline's "asked".
+HARNESS_USER = ("<task-notification>", "[Request interrupted")
+NOTICE_SUMMARY = re.compile(r"<summary>(.*?)</summary>", re.DOTALL)
+NOTICE_RESULT = re.compile(r"<result>(.*?)</result>", re.DOTALL)
+# Inputs that say what an MCP or other tool call did, first found wins: an ssh MCP's `cmdString`
+# is its whole command (747 of one task's server commands showed as a bare tool name).
+CALL_KEYS = ("command", "cmdString", "cmd", "script", "sql", "code", "url", "query", "file_path",
+             "path", "pattern", "prompt", "name")
 NOISE = re.compile(r"<system-reminder>.*?</system-reminder>|<ide_opened_file>.*?</ide_opened_file>"
                    r"|<command-message>.*?</command-message>|<local-command-caveat>.*?"
                    r"</local-command-caveat>", re.DOTALL)
@@ -146,10 +158,23 @@ def tool_line(name, inp):
         return f"Agent {inp.get('subagent_type', '')}: {_one_line(inp.get('description', ''), 100)}"
     if name == "Skill":
         return f"Skill {inp.get('skill', '')} {_one_line(inp.get('args', ''), 100)}".rstrip()
-    for k in ("url", "query", "file_path", "path", "pattern", "prompt", "name"):
+    for k in CALL_KEYS:
         if isinstance(inp.get(k), str) and inp[k]:
-            return f"{name} {_one_line(inp[k], 120)}"
+            return f"{name} {_one_line(inp[k], CMD_CHARS if k in CALL_KEYS[:6] else 120)}"
     return name
+
+
+def harness_text(text):
+    """A user-turn line the harness wrote (HARNESS_USER), not the user."""
+    return str(text).lstrip().startswith(HARNESS_USER)
+
+
+def notice_text(text):
+    """A `<task-notification>` as its summary line and result, the XML wrapper dropped."""
+    s, r = NOTICE_SUMMARY.search(text), NOTICE_RESULT.search(text)
+    if not s and not r:
+        return text.strip()
+    return ((s.group(1).strip() if s else "") + ("\n" + r.group(1).strip() if r else "")).strip()
 
 
 def _excerpt(name, text):
@@ -166,7 +191,7 @@ def extract(path, upto_line=None):
     item is (kind, text, line), kind in user/text/tool/error/refused/agent/compact; `outs` maps a
     tool item's index to its output excerpt. Every text is redacted here, once."""
     turns, cur = [], None
-    pending = {}  # tool_use_id -> (name, index of its tool item in cur["items"])
+    pending = {}  # tool_use_id -> (name, index of its tool item in cur["items"], its tool line)
     seen_user, seen_text = set(), set()
 
     def turn(at, n):
@@ -206,7 +231,12 @@ def extract(path, upto_line=None):
                 a = o.get("attachment") or {}
                 if a.get("type") == "queued_command":
                     t = clean_user(_blocks_text(a.get("prompt")))
-                    if t:
+                    if t.startswith("<task-notification>"):
+                        # most notices land here: a background task ended while a turn ran
+                        if cur is None:
+                            turn(at, n)
+                        cur["items"].append(("notice", redact(notice_text(t)), n))
+                    elif t:
                         add_user(t, at, n, new=False)  # typed while a turn ran: part of it
                 continue
             if kind == "user":
@@ -221,7 +251,7 @@ def extract(path, upto_line=None):
                     for b in content:
                         if not isinstance(b, dict) or b.get("type") != "tool_result" or cur is None:
                             continue
-                        name, idx = pending.pop(b.get("tool_use_id"), ("", -1))
+                        name, idx, call = pending.pop(b.get("tool_use_id"), ("", -1, ""))
                         text = _blocks_text(b.get("content"), keep_images=False)
                         if b.get("is_error") and "doesn't want to proceed" in text:
                             # A refusal is the user's: what they said with it is a user
@@ -232,7 +262,13 @@ def extract(path, upto_line=None):
                             if said:
                                 cur["items"].append(("user", redact(said), n))
                         elif b.get("is_error"):
-                            cur["items"].append(("error", f"{name}: {_one_line(redact(text), ERROR_CHARS)}", n))
+                            # The call goes with its error: on its own, "Exit code 49 Python was
+                            # not found" let a reader name the wrong command (python for python3,
+                            # step-back A/B round 3, the one confident wrong answer).
+                            cur["items"].append(("error", f"{_one_line(call or name, CALL_CHARS)} -> "
+                                                 f"{_one_line(redact(text), ERROR_CHARS)}", n))
+                        elif name in AGENTS and text.strip().startswith("Async agent launched"):
+                            continue  # a receipt: the report comes later, as a task notification
                         elif name in AGENTS and text.strip():
                             cur["items"].append(("agent", redact(text.strip()), n))
                         elif name and name not in NO_OUTPUT and text.strip() and idx >= 0:
@@ -241,7 +277,12 @@ def extract(path, upto_line=None):
                 if o.get("isMeta"):
                     continue
                 t = clean_user(_blocks_text(content))
-                if t:
+                if t.startswith("<task-notification>"):
+                    # It wakes the model as a message would: a turn of its own, so the cap can
+                    # still fold a long run of them - but the harness's, never the user's words.
+                    turn(at, n)
+                    cur["items"].append(("notice", redact(notice_text(t)), n))
+                elif t:
                     add_user(t, at, n, new=True)
                 continue
             if kind == "assistant" and cur is not None:
@@ -257,8 +298,9 @@ def extract(path, upto_line=None):
                         seen_text.add(t)
                         cur["items"].append(("text", redact(t), n))
                     elif b.get("type") == "tool_use":
-                        cur["items"].append(("tool", tool_line(b.get("name", ""), b.get("input")), n))
-                        pending[b.get("id")] = (b.get("name", ""), len(cur["items"]) - 1)
+                        line = tool_line(b.get("name", ""), b.get("input"))
+                        cur["items"].append(("tool", line, n))
+                        pending[b.get("id")] = (b.get("name", ""), len(cur["items"]) - 1, line)
     return turns
 
 
@@ -290,6 +332,9 @@ def _render_turn(i, t, level):
         elif kind == "agent":
             out.append(f"**Subagent report (line {line}):**\n"
                        + _cut(text, line, "report", CUT_CHARS if level == 2 else AGENT_CHARS))
+        elif kind == "notice":
+            out.append(f"**Background task done (line {line}; the harness, not the user):**\n"
+                       + _cut(text, line, "notice", NOTICE_CHARS if level == 2 else AGENT_CHARS))
         elif kind == "text" and (k == last or level < 2):
             body = _cut(text, line, "answer") if level == 2 else text
             out.append(("**Assistant:** " if k == last else "*(working)* ") + body)

@@ -403,6 +403,103 @@ try:
     ok(kc.backfill(root8, folder) == 2 and view(root8, "alpha").count("## S") == 2
        and "FINDINGS L" not in view(root8, "alpha") and len([f for f in os.listdir(note(root8, "alpha", "digests")) if f.endswith(".md")]) == 4,
        "backfill: every session on disk gets entry, snapshot and digest; no line ranges guessed")
+
+    # 17. Shell commands: a note is written only when it is the write's target (2026-10-10: a
+    # `2>/dev/null` made a READ of a closed task's STATE.md a write, and filed the session there).
+    S = ".claude/scratch/"
+    shapes = [
+        (f'"$X" --version 2>/dev/null; head -30 {S}a/STATE.md | cut -c1-300', [("a", "STATE", False)]),
+        (f"ls x 2>&1; cat {S}a/FINDINGS.md", [("a", "FINDINGS", False)]),
+        (f'grep -n "->" {S}a/STATE.md', [("a", "STATE", False)]),
+        (f'python3 -c "print(1 >= 0)"; cat {S}a/STATE.md', [("a", "STATE", False)]),
+        (f"cat >> {S}a/FINDINGS.md <<'EOF'\n- see {S}b/STATE.md > x\nEOF", [("a", "FINDINGS", True)]),
+        (f"echo x | tee -a {S}a/STATE.md", [("a", "STATE", True)]),
+        (f"sed -i 's|a|b|' {S}a/STATE.md", [("a", "STATE", True)]),
+        (f"sed -n '1,5p' {S}a/STATE.md", [("a", "STATE", False)]),
+        (f"cp /tmp/s.md {S}a/STATE.md", [("a", "STATE", True)]),
+        (f"cp {S}a/STATE.md /tmp/s.md", [("a", "STATE", False)]),
+        ('Set-Content -Path ".claude\\scratch\\a\\STATE.md" -Value $s', [("a", "STATE", True)]),
+        (f"Get-Content {S}a/STATE.md | Select-Object -First 5", [("a", "STATE", False)]),
+        (f"python -c \"open('{S}a/DECISIONS.md', 'a').write(x)\"", [("a", "DECISIONS", True)]),
+        (f"python -c \"print(open('{S}a/STATE.md').read())\"", [("a", "STATE", False)]),
+        (f'echo done > "{S}a/STATE.md"', [("a", "STATE", True)]),
+        (f"cat {S}a/STATE.md > /tmp/out.md", [("a", "STATE", False)]),
+        (f"wc -l < {S}a/STATE.md", [("a", "STATE", False)]),
+        (f"cat {S}a/STATE.md.bak", []),
+        (f"cat {S}a/STATE.md; echo x >> {S}b/FINDINGS.md", [("a", "STATE", False), ("b", "FINDINGS", True)]),
+        (f"(Get-Content {S}a/STATE.md) -replace 'x','y' | Set-Content {S}a/STATE.md",
+         [("a", "STATE", False), ("a", "STATE", True)]),
+        (f"cat <<'EOF' | bash\necho x > {S}a/STATE.md\nEOF", [("a", "STATE", True)]),
+        (f"git commit -q -F - <<'EOF'\nfix: tee {S}a/STATE.md\nEOF", []),
+        (f'printf "%s" "- x" >> "D:/My Projects/p/{S}a/FINDINGS.md"', [("a", "FINDINGS", True)]),
+        # a bare name after a cd into the bucket (293 such commands in the user's transcripts)
+        (f"cd /d/p/{S}a && cat >> FINDINGS.md <<'EOF'\n- x\nEOF", [("a", "FINDINGS", True)]),
+        (f"cd {S}a && grep -c x STATE.md FINDINGS.md", [("a", "STATE", False), ("a", "FINDINGS", False)]),
+        (f"cd {S}a && cd /tmp && cat STATE.md", []),
+        # code that writes through a name, and a script file written to run next
+        (f"python - <<'EOF'\np = r'{S}a/STATE.md'\nt = open(p, encoding='utf-8').read()\n"
+         f"open(p, 'w', encoding='utf-8').write(t)\nEOF", [("a", "STATE", True)]),
+        (f"python - <<'EOF'\np = '{S}a/STATE.md'\nprint(open(p, encoding='ascii').read())\nEOF", [("a", "STATE", False)]),
+        (f"cat > /tmp/fix.py <<'EOF'\np = r'{S}a/STATE.md'\nopen(p, 'w').write('x')\nEOF\npython /tmp/fix.py",
+         [("a", "STATE", True)]),
+        (f"python - <<'EOF'\nimport pathlib\np = pathlib.Path('{S}a/STATE.md')\np.write_text(p.read_text())\nEOF",
+         [("a", "STATE", True)]),
+        (f"python - <<'EOF'\nfrom pathlib import Path\np = Path(r'D:/x/{S}a/FINDINGS.md')\n"
+         f"with p.open('a', encoding='utf-8') as f:\n    f.write('- x')\nEOF", [("a", "FINDINGS", True)]),
+        (f"python - <<'EOF'\nfor p, old, new in [('{S}a/STATE.md', 'x', 'y')]:\n"
+         f"    s = open(p).read(); open(p, 'w').write(s.replace(old, new))\nEOF", [("a", "STATE", True)]),
+        (f"python - <<'EOF'\np = '{S}INDEX.md'\nq = '{S}a/STATE.md'\nprint(open(q).read())\n"
+         f"open(p, 'w').write('x')\nEOF", [("a", "STATE", False)]),
+        (f"python - <<'EOF'\np = '{S}INDEX.md'\nprint(open('{S}a/STATE.md').read())\n"
+         f"open(p, 'w').write('x')\nEOF", [("a", "STATE", False)]),
+        (f"cat > /tmp/x.sh <<'EOF'\necho y >> {S}a/FINDINGS.md\nEOF\nbash /tmp/x.sh", [("a", "FINDINGS", True)]),
+        # quoting the shell itself would read: a PowerShell here-string, an escaped quote
+        ("$b = @'\nsee .claude/scratch/b/STATE.md, don't\n'@\nSet-Content -Path '.claude\\scratch\\a\\STATE.md' -Value $b",
+         [("b", "STATE", False), ("a", "STATE", True)]),
+        (f"printf '%s\\n' 'it'\\''s done' >> {S}a/FINDINGS.md", [("a", "FINDINGS", True)]),
+        (f"touch {S}a/FINDINGS.md", [("a", "FINDINGS", True)]),
+        # a name holding the note or the bucket
+        (f'F={S}a/FINDINGS.md; printf "%s" "- x" >> "$F"; tail -1 "$F"',
+         [("a", "FINDINGS", False), ("a", "FINDINGS", True), ("a", "FINDINGS", False)]),
+        (f'B=/d/p/{S}a; cat >> "$B/DECISIONS.md" <<\'EOF\'\n- D1 x\nEOF', [("a", "DECISIONS", True)]),
+        (f"$f = 'D:\\p\\.claude\\scratch\\a\\STATE.md'; Get-Content $f | Select-Object -First 3",
+         [("a", "STATE", False), ("a", "STATE", False)]),
+        (f'echo "F={S}a/STATE.md"; cat x > "$F"', [("a", "STATE", False)]),
+    ]
+    bad = [(c, ki.shell_notes(c), want) for c, want in shapes if ki.shell_notes(c) != want]
+    for c, got, want in bad:
+        print(f"shell_notes({c!r}) = {got}, want {want}")
+    ok(not bad, f"shell_notes: {len(shapes) - len(bad)}/{len(shapes)} command shapes judged right "
+                "(redirect target, tee, sed -i, cp target, Set-Content, open('w'), data heredoc bodies)")
+
+    # 18. The dogfood case end to end: a session that wrote its own task, then READ a closed one.
+    root9 = project("p9", slugs=("mine", "closed"))
+    sid9 = "99999999-0000-4000-8000-000000000009"
+    t9 = transcript(sid9, [
+        u(sid9, "2026-10-10T01:00:00Z", "work on mine"),
+        a(sid9, "2026-10-10T01:01:00Z", call("Write", file_path=note(root9, "mine", "STATE.md"), content=state("mine", "m"))),
+        a(sid9, "2026-10-10T01:02:00Z", call("Bash", command=f'claude --version 2>/dev/null; head -30 {S}closed/STATE.md | cut -c1-300')),
+    ])
+    kc.touch(t9, sid9, root9)
+    ok(entry(root9, "mine", sid9) and entry(root9, "closed", sid9) is None
+       and ki.session_bucket(t9, root9) == ki.bucket_dir(root9, "mine"),
+       "a read with `2>/dev/null` of another task's STATE.md files nothing there, and /clear stays on this task")
+
+    # 19. A background task's notice is never what the user asked.
+    sid10 = "aaaaaaaa-0000-4000-8000-00000000000a"
+    t10 = transcript(sid10, [
+        u(sid10, "2026-10-10T02:00:00Z", "<task-notification>\n<task-id>x1</task-id>\n<status>completed</status>\n"
+                                         "<summary>Agent \"r\" finished</summary>\n<result>report</result>\n</task-notification>"),
+        u(sid10, "2026-10-10T02:01:00Z", "the real request"),
+        a(sid10, "2026-10-10T02:02:00Z", call("Write", file_path=note(root9, "mine", "STATE.md"), content=state("mine", "m"))),
+    ])
+    kc.touch(t10, sid10, root9)
+    ok((entry(root9, "mine", sid10) or {}).get("asked") == "the real request",
+       "asked skips a <task-notification>: the harness wrote it, not the user")
+    ok(kc._asked([(1, "/clear"), (2, "/continue kya hum in numbers ko aur improve")], None)
+       == "/continue kya hum in numbers ko aur improve"
+       and kc._asked([(1, "/continue alpha"), (2, "haan, aage badho")], None) == "haan, aage badho",
+       "asked: a slash command given a sentence is the request; `/continue alpha` and `/clear` are not")
 finally:
     shutil.rmtree(tmp, ignore_errors=True)
 

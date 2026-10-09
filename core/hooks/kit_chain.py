@@ -37,12 +37,9 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import kit_digest  # noqa: E402
-from kit_index import (MAX_TRANSCRIPT, SHELL_WRITE, SHELLS, WRITERS, alive, bucket_dir,  # noqa: E402
-                       linked, read_window, safe_dir, scratch_ok)
+from kit_index import (MAX_TRANSCRIPT, NOTE_PATH, SHELLS, WRITERS, alive, bucket_dir,  # noqa: E402
+                       linked, read_window, safe_dir, scratch_ok, shell_notes)
 
-# A touch of a bucket's notes, in a Read/Write/Edit target or a shell command.
-NOTE_PATH = re.compile(r"(?:^|[/\\\s\"'=])\.claude[/\\]scratch[/\\]([^/\\\s\"'*?<>|]+)[/\\]"
-                       r"(STATE|FINDINGS|DECISIONS)\.md", re.IGNORECASE)
 SCRATCH_PATH = re.compile(r"\.claude[/\\]scratch[/\\]", re.IGNORECASE)
 SLUG_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
 SID_RE = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", re.IGNORECASE)
@@ -174,7 +171,7 @@ def scan(transcript, sid=""):
                         isinstance(b, dict) and b.get("type") == "tool_result" for b in content)):
                     continue
                 text = kit_digest.clean_user(kit_digest._blocks_text(content))
-                if text:
+                if text and not kit_digest.harness_text(text):  # a task notice is never `asked`
                     info["users"].append((n, text))
                 continue
             for b in content if isinstance(content, list) else []:
@@ -194,19 +191,19 @@ def _tool(info, n, ts, b):
         target, write = str(inp.get("file_path") or inp.get("notebook_path") or ""), name != "Read"
         if write and target and not SCRATCH_PATH.search(target):
             info["edits"].append((n, target))
+        notes = [(m.group(1), m.group(2).upper(), write) for m in NOTE_PATH.finditer(target)]
     elif name in SHELLS:
-        target = str(inp.get("command") or "")
-        write = bool(SHELL_WRITE.search(target))
+        notes = shell_notes(inp.get("command"))  # written only where the note is the target
     else:
         return
-    for m in NOTE_PATH.finditer(target):
-        v = info["buckets"].setdefault(m.group(1), {
+    for slug, note, write in notes:
+        v = info["buckets"].setdefault(slug, {
             "joined": ts, "joined_line": n, "wrote_state": False, "wrote_notes": False,
             "read": False, "state_ts": "", "state_content": None})
         v["last_line"], v["last_ts"] = n, ts
         if not write:
             v["read"] = True
-        elif m.group(2).upper() == "STATE":
+        elif note == "STATE":
             v["wrote_state"], v["state_ts"] = True, ts
             content = inp.get("content") if name == "Write" else None
             v["state_content"] = content if isinstance(content, str) else None
@@ -224,11 +221,18 @@ def owned(info, root):
     return {s: d for s in pick if (d := bucket_dir(root, s))}
 
 
+def _typed(text):
+    """A message in the user's own words: no slash command, or one given a sentence (`/continue
+    kya hum in numbers ko...` - a common way to resume WITH a request). `/continue alpha` or a bare
+    `/clear` is not; the 2026-10-10 session's asked came out as `/clear` before this."""
+    return not text.startswith("/") or len(text.split()) >= 4
+
+
 def _asked(users, upto, before=None):
     """The user's request: the first typed message (a bare slash command only when nothing else
     was typed); for a bucket the session moved to later, the last one typed before it did."""
-    msgs = [(n, t) for n, t in users if (upto is None or n <= upto) and not t.startswith("[Request interrupted")]
-    plain = [(n, t) for n, t in msgs if not t.startswith("/")]
+    msgs = [(n, t) for n, t in users if upto is None or n <= upto]
+    plain = [(n, t) for n, t in msgs if _typed(t)]
     if before is not None:
         prior = [t for n, t in plain if n <= before]
         if prior:

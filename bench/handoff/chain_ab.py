@@ -141,15 +141,17 @@ def copy_bucket(src, dst, notes_only=True):
             shutil.copy2(os.path.join(src, f), os.path.join(dst, f))
 
 
-def prep(chain):
+def prep(chain, arms=("new", "old")):
+    """Both sandboxes, or only `arms`: round 4 (2026-10-10) rebuilt the new arm alone with the
+    fixed kit and kept round 3's old arm, its answers and grades as the baseline."""
     root, slug, other = CHAINS[chain]
     ss = sessions(root, slug)
     so = sessions(root, other)
     if len(ss) < 4:
         return f"{chain}: only {len(ss)} sessions on disk, skipped"
-    shutil.rmtree(chain_dir(chain, "new"), ignore_errors=True)
-    shutil.rmtree(chain_dir(chain, "old"), ignore_errors=True)
-    for arm in ("new", "old"):
+    for arm in arms:
+        shutil.rmtree(chain_dir(chain, arm), ignore_errors=True)
+    for arm in arms:
         sb = chain_dir(chain, arm)
         os.makedirs(os.path.join(sb, ".claude", "scratch"))
         copy_bucket(bucket_src(root, slug), os.path.join(sb, ".claude", "scratch", slug))
@@ -158,10 +160,11 @@ def prep(chain):
             f.write("# sandbox\n")
     # new: every session's records, in both buckets, by the shipped code
     nb = chain_dir(chain, "new")
-    for _, sid, path in sorted(set(ss) | set(so)):
-        kc.finish(path, sid, nb, counts=False)
+    if "new" in arms:
+        for _, sid, path in sorted(set(ss) | set(so)):
+            kc.finish(path, sid, nb, counts=False)
     # old: the newest 5 digests per bucket, nothing else
-    for s, lst in ((slug, ss), (other, so)):
+    for s, lst in ((slug, ss), (other, so)) if "old" in arms else ():
         folder = os.path.join(chain_dir(chain, "old"), ".claude", "scratch", s, "digests")
         for _, sid, path in lst[-5:]:
             kd.write(path, os.path.join(folder, sid + ".md"), {"session": sid}, kd.cap_tokens(0, 1_000_000))
@@ -176,6 +179,10 @@ def prep(chain):
     meta = {"sessions": [s for _, s, _ in ss], "n": len(ss), "distractor_sessions": len(so),
             "sessions_md_tokens": len(open(os.path.join(bucket, "SESSIONS.md"), encoding="utf-8").read()) // 4
             if os.path.isfile(os.path.join(bucket, "SESSIONS.md")) else 0}
+    if "old" not in arms:  # the probes stay as they were; only say whether the material moved
+        with open(chain_dir(chain, "meta-new.json"), "w", encoding="utf-8") as f:
+            json.dump(meta, f, indent=1)
+        return f"{chain}: new arm rebuilt, {len(ss)} sessions, SESSIONS.md ~{meta['sessions_md_tokens']} tok"
     with open(chain_dir(chain, "meta.json"), "w", encoding="utf-8") as f:
         json.dump(meta, f, indent=1)
     with open(chain_dir(chain, "probe_input.md"), "w", encoding="utf-8") as f:
@@ -195,15 +202,31 @@ def probes(chain):
     return f"{chain}: {len(ps)} probes ({sum(1 for p in ps if p.get('kind') == 'earlier')} earlier)"
 
 
-def reader(chain, arm, k):
+def memory_index(root):
+    """The project's auto-memory index, MEMORY.md, as Claude Code loads it at every session start
+    (its first 200 lines / 25 KB); "" when the project has none."""
+    path = os.path.join(kc.project_folder(root), "memory", "MEMORY.md")
+    try:
+        with open(path, encoding="utf-8") as f:
+            return "".join(f.readlines()[:200])[:25_000]
+    except OSError:
+        return ""
+
+
+def reader(chain, arm, k, mem=False):
+    """One reader run. mem=True (round 5, 2026-10-10) also hands it the project's MEMORY.md index,
+    which every real session starts with and the sandbox otherwise lacks; saved as `<arm>m-<k>`."""
     root, slug, other = CHAINS[chain]
-    dst = chain_dir(chain, "answers", f"{arm}-{k}.json")
+    dst = chain_dir(chain, "answers", f"{arm}{'m' if mem else ''}-{k}.json")
     if os.path.exists(dst):
         return f"{chain}/{arm}-{k}: cached"
     ps = json.load(open(chain_dir(chain, "probes.json"), encoding="utf-8"))["probes"]
     q = "\n".join(f"{p['id']}: {p['question']}" for p in ps)
     prompt = (READER_PROMPT.replace("{SLUG}", slug).replace("{RULES}", rules(OLD_REF if arm == "old" else None))
               .replace("{Q}", q))
+    if mem and memory_index(root):
+        prompt = ("Claude Code loaded this project's auto memory index at session start (as it does in "
+                  "every session):\n=== MEMORY.md ===\n" + memory_index(root) + "\n=== END MEMORY.md ===\n\n" + prompt)
     # --max-turns 60 ended 3 of 16 round-1 runs (both arms) after 71-89 tool calls with no final
     # JSON: they scored 0. Now 150, and the prompt asks for answers after ~40 calls.
     r = subprocess.run([EXE, "-p", "--safe-mode", "--tools", "Read,Grep,Glob", "--allowedTools", "Read,Grep,Glob",
@@ -286,7 +309,7 @@ def report(chains):
         return f"{x[0] * 100 / max(x[1], 1):5.1f}%"
     print(f"{'arm':5} {'earlier':>8} {'any':>8} {'all':>8} {'wrong':>5} {'avg in tok':>10} {'avg $':>7} {'calls':>6} {'distractor':>10}  "
           + " ".join(f"{c:>8}" for c in chains))
-    for arm in ("old", "new"):
+    for arm in ("old", "new", "oldm", "newm"):  # m = with the project's MEMORY.md index (round 5)
         r = rows.get(arm)
         if not r:
             continue
@@ -304,16 +327,23 @@ def report(chains):
 def main(argv):
     cmd = argv[0]
     samples = int(argv[argv.index("--samples") + 1]) if "--samples" in argv else 2
+    arms = tuple(argv[argv.index("--arms") + 1].split(",")) if "--arms" in argv else ("old", "new")
     chains = [c for c in argv[1:] if c in CHAINS] or list(CHAINS)
     if cmd == "report":
         return report(chains)
     if cmd == "read":
-        jobs = [(c, arm, k) for c in chains for arm in ("old", "new") for k in range(samples)]
+        mem = "--memory" in argv
+        jobs = [(c, arm, k, mem) for c in chains for arm in arms for k in range(samples)]
         with cf.ThreadPoolExecutor(4) as ex:
             for line in ex.map(lambda j: reader(*j), jobs):
                 print(line, flush=True)
         return
-    fn = {"prep": prep, "probes": probes, "grade": grade}[cmd]
+    if cmd == "prep":
+        with cf.ThreadPoolExecutor(4) as ex:
+            for line in ex.map(lambda c: prep(c, arms), chains):
+                print(line, flush=True)
+        return
+    fn = {"probes": probes, "grade": grade}[cmd]
     with cf.ThreadPoolExecutor(4) as ex:
         for line in ex.map(fn, chains):
             print(line, flush=True)

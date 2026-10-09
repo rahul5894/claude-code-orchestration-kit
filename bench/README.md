@@ -288,7 +288,8 @@ variance.
 |---|---|
 | `chain_live.py [--arm old\|new]` | live, headless, only the hooks under test (`--setting-sources project --settings`): task alpha over 3 sessions + /clears, task beta in a parallel window that is KILLED; 10 checks on the records |
 | `dense_ab.py` | the 4 chains above, STATE.md rewritten "densest without loss" vs as written, same probes |
-| `chain_ab.py prep/probes/read/grade/report` | real 4-8-session tasks; 10 "earlier-session" + 6 "any" probes; Opus readers with Read/Grep/Glob in a sandbox (the task's bucket + another task's as a distractor), old rules + 5 newest digests vs new rules + every record + SESSIONS.md; blind grader |
+| `chain_ab.py prep/probes/read/grade/report` | real 4-8-session tasks; 10 "earlier-session" + 6 "any" probes; Opus readers with Read/Grep/Glob in a sandbox (the task's bucket + another task's as a distractor), old rules + 5 newest digests vs new rules + every record + SESSIONS.md; blind grader. `--arms new` (prep, read) rebuilds and re-reads one arm only, the other arm's answers kept as the baseline (round 4) |
+| `note_writes_scan.py` | every shell command in `~/.claude/projects` that names a bucket note, judged by the old any-`>` write test and by `kit_index.shell_notes`; counts and samples of every disagreement (2026-10-10: 4,337 commands) |
 
 | Test | Old kit | New kit |
 |---|---|---|
@@ -303,3 +304,23 @@ variance.
 Two harness traps on the way, both in `chain_ab.py`'s docstrings: `--max-turns 60` ended 3 of
 16 runs with no answers (both arms), and counting every session that merely READ the bucket
 gave the old arm another task's last session. Round 3 is the fair one.
+
+**Rounds 4-5 (2026-10-10), after the fixes round 3's misses pointed to** - an error line now names
+its command (the one wrong answer read "Exit code 49 Python was not found" with no command and
+guessed `python` for `python3`), an ssh MCP's command is shown (747 of one task's server
+commands were a bare tool name), a task notification is never the user's words, and a shell
+command files a session under a task only when it WRITES that task's notes (`2>/dev/null` beside
+a read had filed it under a closed one). Same 48 probes; 3 samples per arm. Round 5 also gives
+each reader the project's MEMORY.md index, as every real session starts with it.
+
+| Test | Old kit | New kit |
+|---|---|---|
+| r4 sandbox (old = r3): earlier / current-state / all | 63.3% / 98.6% / 76.6% | 95.6% / 98.1% / 96.5% |
+| r4 confident wrong answers | 0 of 96 | 0 of 144 |
+| r5 with MEMORY.md: earlier / current-state / all | 63.9% / 97.2% / 76.4% | 98.9% / 98.1% / 98.6% |
+| r5 confident wrong answers (of 144) | 1 (the python/python3 swap) | 0 |
+| r5 reader tokens / $ per run | 1.97M / $1.53 | 2.34M / $1.52 |
+
+The current-state points both kits still lose are one detail (`QB_ARMS fixroot`) left out of a
+short answer; it is in the current STATE.md. `note_writes_scan.py` holds the filing fix's own
+measure: of 642 note writes the old test saw, ~167 were reads, and it never saw 389 real ones.

@@ -193,6 +193,42 @@ try:
     ok(kd.extract(os.path.join(tmp, "nope.jsonl")) == [] and kd.write(
         os.path.join(tmp, "nope.jsonl"), os.path.join(out_dir, "z.md"), {}, 0) == -1,
        "a missing transcript -> nothing extracted, nothing written")
+
+    # 2026-10-10 (bucket handoff-timeline): an error names its call; an MCP tool shows its command;
+    # a task notification is the harness's, not the user's; an async launch receipt is noise.
+    notes = os.path.join(tmp, "notes.jsonl")
+    with open(notes, "w", encoding="utf-8") as f:
+        for ln in [
+            user("check the laptop python"),
+            asst(tool("e1", "Bash", {"command": "python3 - <<'PY'\nprint(1)\nPY"})),
+            result("e1", "Exit code 49\nPython was not found; run without arguments to install from the Microsoft Store", err=True),
+            asst(tool("e2", "mcp__ssh-mpc-server__execute-command", {"cmdString": "df -h / | tail -1"})),
+            result("e2", "/dev/sda1 100G 88G 12G 89% /"),
+            asst(tool("e3", "Agent", {"subagent_type": "researcher", "description": "dig", "run_in_background": True})),
+            result("e3", "Async agent launched successfully. agentId: abc (internal ID - do not mention to user.)"),
+            user("<task-notification>\n<task-id>abc</task-id>\n<status>completed</status>\n<summary>Agent \"dig\" "
+                 "finished</summary>\n<result>FOUND: the cap is 12 GB free</result>\n</task-notification>"),
+            asst(text("Both done.")),
+            # most notices arrive queued, while a turn runs (8 of 8 in one real session)
+            {"type": "attachment", "attachment": {"type": "queued_command", "prompt":
+                "<task-notification>\n<task-id>b9</task-id>\n<summary>Background command \"gate\" completed "
+                "(exit code 0)</summary>\n</task-notification>"}},
+        ]:
+            f.write(json.dumps(ln) + "\n")
+    nt = kd.render(kd.extract(notes), {"session": "n"}, 0)
+    ok("**Error:** Bash: python3 - <<'PY' print(1) PY -> Exit code 49 Python was not found" in nt,
+       "an error line names the call that failed (python3 - never left to a reader's guess)")
+    ok("- mcp__ssh-mpc-server__execute-command df -h / | tail -1" in nt,
+       "an MCP tool's command (cmdString) is shown, not just its name")
+    ok("**Background task done (line 8; the harness, not the user):**\nAgent \"dig\" finished\nFOUND: the cap is 12 GB free"
+       in nt and "<task-notification>" not in nt and "1 user messages" in nt
+       and "**Background task done (line 10; the harness, not the user):**\nBackground command \"gate\" completed" in nt,
+       "a task notification, typed or queued, is the harness's: summary and result kept, never the user's words")
+    ok("Async agent launched" not in nt and "do not mention" not in nt,
+       "an async agent's launch receipt is left out (its report comes as the notification)")
+    ok(kd.harness_text("  <task-notification>x") and kd.harness_text("[Request interrupted by user]")
+       and not kd.harness_text("please check <task-notification> handling"),
+       "harness_text: a notice or an interrupt marker at the start, never a user line that mentions one")
 finally:
     shutil.rmtree(tmp, ignore_errors=True)
 
