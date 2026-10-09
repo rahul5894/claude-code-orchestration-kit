@@ -15,9 +15,16 @@ repository on session open is the wrong shape, and the gate has to be MEASURED, 
 Parallel windows (bucket parallel-window-resume, D001): each open bucket is marked for THIS
 window - `(this window's task)` = the bucket the session before a /clear in this same window
 worked on (or, after a compaction/resume, this session's own); `(open in another window)` = a
-live window of this project works on it; `(newest handoff)` = the newest free one. The only
-file it writes is the window's record in the temp dir (kit_index.write_window), which the next
-/clear in this window and the other windows read.
+live window of this project works on it; `(newest handoff)` = the newest free one. Each row
+also carries the day its STATE.md was last written and its `Priority:` (task.md's STATE header),
+so with 2+ free tasks the model can recommend one with a reason, not just the newest. It writes
+the window's record in the temp dir (kit_index.write_window), which the next /clear in this
+window and the other windows read.
+
+Timeline upkeep (bucket handoff-timeline): kit_chain.maintain() finishes at most one session that
+ended with no SessionEnd (a killed or closed window fires none), prunes verbatim records 7 days
+after a bucket closes (once a day), and re-renders a stale SESSIONS.md - within ~2 s, never the
+previous session of this same window, whose own SessionEnd may still be running.
 
 Why it exists: without a named gate, an agent invents one and picks the slowest command it
 can find - measured once at two full pytest runs of 159 s each, for a project whose real fast
@@ -30,13 +37,14 @@ import json
 import os
 import re
 import sys
+import time
 
 # The hook's own folder, explicitly: under PYTHONSAFEPATH=1 (or python -P / -I) the script dir
 # is not on sys.path, the import fails and the hook exits 1 - which fails open (refuter-02).
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from kit_off import kit_off  # noqa: E402
-from kit_index import (busy_buckets, open_rows, read_window, session_bucket, window,  # noqa: E402
-                       window_bucket, write_window)
+from kit_index import (busy_buckets, open_rows, read_window, scratch_ok, session_bucket,  # noqa: E402
+                       window, window_bucket, write_window)
 
 GATE_RE = re.compile(r"FAST GATE", re.IGNORECASE)
 NOTICE = ("orchestration-kit: this project has no FAST GATE row in CLAUDE.md. "
@@ -51,9 +59,11 @@ RESUME = ("If the user says continue or /continue (or names a bucket), resume it
           "'Continue a bucket' step (`/task <slug>`). None named: the one marked (this window's "
           "task) is what this window worked on before - resume it without asking. One marked (open "
           "in another window) is being worked there: never resume it unless the user names it. "
-          "Otherwise one free bucket left: resume it; two or more: ask the user which in one "
-          "question, each with its next action, the (newest handoff) first. Say in one line which "
-          "you resumed and name the others.")
+          "Otherwise one free bucket left: resume it; two or more: RECOMMEND one, with a one-clause "
+          "reason - P1 first; then the one nearest done or with the most concrete next action; then "
+          "a BLOCKED one the user can unblock with one answer now; ties: the (newest handoff) - and "
+          "ask the user in one question, the recommended one first, each with its next action. Say "
+          "in one line which you resumed and name the others.")
 NEWEST = " (newest handoff)"
 MINE = " (this window's task)"
 BUSY = " (open in another window)"
@@ -74,6 +84,8 @@ MAX_STATUS = 20
 MAX_NEXT = 200
 # A slug is one path component, not a path (same rule as kit-subagent-start.py).
 SLUG_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
+PRIORITY_RE = re.compile(r"\bPriority\b[*:\s]{1,6}(P[1-3])\b", re.IGNORECASE)
+MAINTAIN_S = 2.0  # timeline upkeep budget inside the hook's 5 s
 
 
 def open_buckets(root):
@@ -121,6 +133,18 @@ def open_states(root, slugs):
     return [slug for _, slug in sorted(found, reverse=True) if state_text(root, slug) is not None]
 
 
+def row_facts(root, slug):
+    """` · last MM-DD` (STATE.md's mtime) and ` · P1` (its header's Priority), when known."""
+    out = ""
+    path = os.path.join(root, ".claude", "scratch", slug, "STATE.md")
+    try:
+        out += " · last " + time.strftime("%m-%d", time.localtime(os.path.getmtime(path)))
+    except (OSError, ValueError, OverflowError):
+        return out
+    m = PRIORITY_RE.search((state_text(root, slug) or "")[:1024])
+    return out + (" · " + m.group(1).upper() if m else "")
+
+
 def latest_state(root, slugs):
     """(slug, text) of the newest live STATE.md among `slugs`; (None, "") when there is none."""
     live = open_states(root, slugs)
@@ -153,6 +177,7 @@ def needs_init(root):
 
 
 def main():
+    t0 = time.time()
     data = {}
     if len(sys.argv) >= 3 and sys.argv[1] == "--check":
         root = scratch_root = sys.argv[2]
@@ -168,9 +193,10 @@ def main():
             data = {}
         # CLAUDE_PROJECT_DIR first: payload cwd follows the shell's `cd`, the launch root does not.
         root = os.environ.get("CLAUDE_PROJECT_DIR") or data.get("cwd") or os.getcwd()
-        # ...but a session launched in a parent dir has its buckets under cwd (D011).
+        # ...but a session launched in a parent dir has its buckets under cwd (D011). A .claude
+        # or scratch that is a link (a cloned repo can commit one) holds no buckets of ours.
         scratch_root = next((r for r in (os.environ.get("CLAUDE_PROJECT_DIR"), data.get("cwd"))
-                             if r and os.path.isdir(os.path.join(r, ".claude", "scratch"))), None)
+                             if r and scratch_ok(r)), None)
         if scratch_root and kit_off(scratch_root):
             scratch_root = None
     context = [NOTICE] if needs_init(root) else []
@@ -182,13 +208,20 @@ def main():
             if s in slugs and s != mine}
     free = open_states(scratch_root, [s for s in slugs if s != mine and s not in busy]) if buckets else []
     top = free[0] if free else None
+    prev = (_try(read_window, me) or {}) if me else {}
     if me and (scratch_root or root):
         # Read by this window's next /clear and by the other windows' session starts.
         _try(write_window, me, {"sid": str(data.get("session_id") or ""), "root": scratch_root or root,
                                 "transcript": str(data.get("transcript_path") or ""), "bucket": mine})
+    if scratch_root and len(sys.argv) < 3:
+        # Never the previous session of this window (its SessionEnd may still run, ~80 ms apart)
+        # nor this one.
+        _try(_maintain, scratch_root, {str(prev.get("sid") or ""), str(data.get("session_id") or "")},
+             t0 + MAINTAIN_S)
     if buckets:
-        rows = [f"- {slug} [{status}]: {nxt}" + (MINE if slug == mine else BUSY if slug in busy
-                                                  else NEWEST if slug == top else "")
+        rows = [f"- {slug} [{status}]: {nxt}"
+                + (MINE if slug == mine else BUSY if slug in busy else NEWEST if slug == top else "")
+                + (_try(row_facts, scratch_root, slug) or "")
                 for slug, status, nxt in buckets]
         if more:
             rows.append(f"(+{more} more in .claude/scratch/INDEX.md)")
@@ -216,6 +249,11 @@ def main():
         out["systemMessage"] = ("Open task(s): " + ", ".join(slugs) + " - type /continue" + then
                                 + (" Open in another window: " + ", ".join(sorted(busy)) + "." if busy else ""))
     sys.stdout.write(json.dumps(out))
+
+
+def _maintain(root, skip, deadline):
+    import kit_chain
+    kit_chain.maintain(root, skip=skip - {""}, deadline=deadline)
 
 
 def _try(fn, *args):

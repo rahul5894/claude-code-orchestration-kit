@@ -232,7 +232,7 @@ Copy-Item (Join-Path $kit 'core\hooks\*.py') (Join-Path $dest 'hooks') -Force
 # The wildcard copy is silent about a file missing from the clone, and the blocks below then
 # register a command pointing at nothing - every Read, session start and finished subagent
 # would spawn a python that dies. Fail the install instead.
-$missing = @('md-guard.py', 'kit-session-start.py', 'kit-subagent-report.py', 'kit-subagent-start.py', 'kit-context.py', 'kit_off.py', 'kit_index.py', 'kit_digest.py') |
+$missing = @('md-guard.py', 'kit-session-start.py', 'kit-subagent-report.py', 'kit-subagent-start.py', 'kit-context.py', 'kit-session-end.py', 'kit_off.py', 'kit_index.py', 'kit_digest.py', 'kit_chain.py') |
     Where-Object { -not (Test-Path (Join-Path $dest "hooks\$_")) }
 if ($missing) { throw "Hook script(s) missing from the kit checkout, nothing registered: $($missing -join ', ')" }
 $py = $null
@@ -244,7 +244,7 @@ foreach ($name in 'python3.13', 'python3.12', 'python', 'python3', 'py') {
 }
 if (-not $py) { Write-Warning "md-guard: no Python 3.12+ on PATH. Install the latest Python 3 (winget search Python.Python) and re-run."; }
 else {
-    # One read, five registrations, one write. The hooks section is written after step 3's
+    # One read, six registrations, one write. The hooks section is written after step 3's
     # write, so step 3's backup predates it: take our own - and only when something the user
     # could want back changes. On a fresh machine the file here is the one step 3 just wrote,
     # so a backup of it preserves nothing.
@@ -264,6 +264,11 @@ else {
     # 9. kit-context: at the end of a finished turn, measure context, write the session digest
     #    (kit_digest.py) and ask for the handoff.
     Register-Hook $set 'Stop' $null 'kit-context.py' 'kit-context'
+    # 10. kit-session-end: at /clear, exit or logout, the ending session's record in every task
+    #     bucket it worked on - entry, STATE snapshot, verbatim digest, SESSIONS.md - at any
+    #     context % (kit_chain.py). SessionEnd hooks get 1.5 s by default; Register-Hook's
+    #     5-second timeout raises this one's budget to 5 s (code.claude.com/docs/en/hooks).
+    Register-Hook $set 'SessionEnd' $null 'kit-session-end.py' 'kit-session-end'
     $out  = ($set | ConvertTo-Json -Depth 20) + "`n"
     $prev = Read-Text $sf
     if ($out.Replace("`r`n", "`n") -ne $prev.Replace("`r`n", "`n")) {
@@ -272,7 +277,7 @@ else {
     }
     foreach ($f in 'md-guard_test.py', 'kit-session-start_test.py', 'kit-subagent-report_test.py',
                    'kit-subagent-start_test.py', 'kit-context_test.py', 'kit_off_test.py',
-                   'kit_digest_test.py') {
+                   'kit_digest_test.py', 'kit_chain_test.py', 'kit-session-end_test.py') {
         $t = & $py (Join-Path $dest "hooks\$f") 2>&1 | Select-Object -Last 1
         $f.Replace('_test.py', '') + " self-check: $t"
     }

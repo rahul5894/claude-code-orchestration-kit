@@ -12,14 +12,23 @@ prose bullet must not become a bucket. Callers still validate the slug before an
 Below open_rows: which bucket a session works on (its own transcript says so) and which bucket
 each Claude Code WINDOW is on, so two windows that both hand off and /clear each resume their own
 task (bucket parallel-window-resume, D001). A window is the env `CLAUDE_PID`: measured on 2.1.294
-it is the same before and after /clear and differs per window; it is not documented, so without
-it there is simply no lineage and /continue asks when 2+ handoffs are free."""
+it is the same before and after /clear and differs per window; documented since (env-vars page:
+Claude Code's own process id in hook and shell subprocesses, v2.1.214+). Without it there is
+simply no lineage and /continue asks when 2+ handoffs are free.
+
+Also here, for every hook that writes into a bucket (kit-context, kit-session-end, kit_chain):
+scratch_root() picks the project whose .claude/scratch holds the buckets, scratch_ok() refuses
+a .claude or scratch that is a link or junction - a cloned repo could commit one pointing
+anywhere, and a realpath check against the link's own target passes it (bucket
+handoff-timeline, review) - and safe_dir() refuses a linked folder inside a bucket."""
 import glob
 import json
 import os
 import re
 import tempfile
 import time
+
+from kit_off import kit_off
 
 CELL_RE = re.compile(r"(?<!\\)\|")
 BULLET_RE = re.compile(r"[-*]\s+(\S+?)\s+[—–-]{1,2}\s+(.+?)(?:\s+[—–-]{1,2}\s+(.*))?")
@@ -75,6 +84,63 @@ MAX_TRANSCRIPT = 200_000_000
 STALE_S = 24 * 3600
 
 
+def linked(path):
+    """A symlink, or on Windows a junction (os.path.islink misses those)."""
+    try:
+        return os.path.islink(path) or bool(getattr(os.path, "isjunction", lambda p: False)(path))
+    except (OSError, TypeError, ValueError):
+        return True
+
+
+def scratch_ok(root):
+    """root/.claude/scratch is a real folder, and neither it nor .claude is a link."""
+    if not root:
+        return False
+    dot = os.path.join(root, ".claude")
+    scratch = os.path.join(dot, "scratch")
+    return not linked(dot) and not linked(scratch) and os.path.isdir(scratch)
+
+
+def scratch_root(data):
+    """The project root whose .claude/scratch holds the buckets: CLAUDE_PROJECT_DIR, else the
+    payload cwd, the first that has one (as kit-session-start.py picks it), is no link and is
+    not switched off; None when neither qualifies. Nothing here creates .claude/scratch."""
+    roots = [r for r in (os.environ.get("CLAUDE_PROJECT_DIR"), data.get("cwd")) if r]
+    return next((r for r in roots if scratch_ok(r) and not kit_off(r)), None)
+
+
+def safe_dir(bucket, name):
+    """bucket/name when it is absent or a real folder right inside the bucket; None when it is a
+    link or junction, or resolves elsewhere - a write or prune would follow it out (refuter 6)."""
+    path = os.path.join(bucket, name)
+    if not os.path.lexists(path):
+        return path
+    if linked(path) or not os.path.isdir(path):
+        return None
+    try:
+        inside = os.path.normcase(os.path.realpath(path)) == os.path.normcase(
+            os.path.join(os.path.realpath(bucket), name))
+    except (OSError, ValueError):
+        return None
+    return path if inside else None
+
+
+def bucket_dir(root, slug):
+    """root/.claude/scratch/<slug> when it is a real bucket folder right under a safe scratch;
+    None for a `_` kit folder, a link, or anything outside."""
+    if not slug or slug.startswith("_") or not scratch_ok(root):
+        return None
+    scratch = os.path.realpath(os.path.join(root, ".claude", "scratch"))
+    bucket = os.path.join(root, ".claude", "scratch", slug)
+    try:
+        if linked(bucket) or not os.path.isdir(bucket) or os.path.normcase(
+                os.path.dirname(os.path.realpath(bucket))) != os.path.normcase(scratch):
+            return None
+    except (OSError, ValueError):
+        return None
+    return bucket
+
+
 def session_bucket(transcript, root, reads=False):
     """The bucket of the STATE.md this session WROTE last - a Write/Edit target, or a shell
     command that writes it; with reads=True, a session that wrote none but read one (a
@@ -117,14 +183,7 @@ def session_bucket(transcript, root, reads=False):
                     else:
                         read = m.group(1)
     slug = wrote or (read if reads else None)
-    if not slug or slug.startswith("_"):
-        return None
-    scratch = os.path.realpath(os.path.join(root, ".claude", "scratch"))
-    bucket = os.path.join(scratch, slug)
-    if (os.path.islink(bucket) or not os.path.isdir(bucket)
-            or os.path.dirname(os.path.realpath(bucket)) != scratch):
-        return None
-    return bucket
+    return bucket_dir(root, slug)
 
 
 def window():

@@ -163,21 +163,33 @@ try:
        and kd.cap_tokens(75, 1_000_000) == 250_000 and kd.cap_tokens(85, 1_000_000) == 300_000,
        "the user's table: 45% 10%, 60-70% 18%, 70-80% 25%, 80%+ 30% of the window")
 
-    # write(): the folder ignores itself; only the newest KEEP digests are kept.
-    out_dir = os.path.join(tmp, "proj", ".claude", "scratch", "_sessions")
+    # write(): the folder ignores itself; nothing is pruned here (kit_chain prunes, 7 days after
+    # the bucket closes); a bucket that is gone is never created again.
+    bucket = os.path.join(tmp, "proj", ".claude", "scratch", "alpha")
+    os.makedirs(bucket)
+    out_dir = os.path.join(bucket, "digests")
     n = kd.write(path, os.path.join(out_dir, "s1.md"), {"session": "s1"}, 0)
     gi = open(os.path.join(out_dir, ".gitignore"), encoding="utf-8").read()
     ok(n > 0 and os.path.isfile(os.path.join(out_dir, "s1.md")) and gi.strip().endswith("*"),
        "write() makes the digest and a `*` .gitignore beside it")
-    for k in range(kd.KEEP + 3):
-        p = os.path.join(out_dir, f"old{k}.md")
-        with open(p, "w") as f:
-            f.write("x")
-        os.utime(p, (time.time() - 10_000 + k, time.time() - 10_000 + k))
-    kd.prune(out_dir)
+    for k in range(7):
+        kd.write(path, os.path.join(out_dir, f"s{k + 2}.md"), {"session": f"s{k + 2}"}, 0)
     left = [f for f in os.listdir(out_dir) if f.endswith(".md")]
-    ok(len(left) == kd.KEEP and "s1.md" in left and "old0.md" not in left,
-       f"prune keeps the newest {kd.KEEP} digests")
+    ok(len(left) == 8 and not hasattr(kd, "KEEP") and not hasattr(kd, "prune"),
+       "8 writes keep 8 digests: no count cap deletes session 1 of a long task")
+    ok(not [f for f in os.listdir(out_dir) if f.endswith(".tmp")],
+       "no tmp file is left behind")
+    gone = os.path.join(tmp, "proj", ".claude", "scratch", "moved-away", "digests")
+    ok(kd.write(path, os.path.join(gone, "s1.md"), {}, 0) == -1 and not os.path.exists(os.path.dirname(gone)),
+       "a bucket that was moved or renamed is not created again by a late write")
+    part = [dict(t) for t in turns[:2]]
+    kd.write(path, os.path.join(out_dir, "cut.md"), {"session": "cut"}, 0, turns=part)
+    cut = open(os.path.join(out_dir, "cut.md"), encoding="utf-8").read()
+    ok("please also check B2" in cut and "last question: what next?" not in cut,
+       "write(turns=...) writes only the turns it is given")
+    ok(kd.local_time("2026-10-07T08:15:00Z") == time.strftime(
+        "%H:%M", time.localtime(1791360900)) and kd.local_time("garbage-not-a-time") == "-a-ti",
+       "turn times are shown in local time; an unparsable stamp falls back to its raw slice")
     ok(kd.extract(os.path.join(tmp, "nope.jsonl")) == [] and kd.write(
         os.path.join(tmp, "nope.jsonl"), os.path.join(out_dir, "z.md"), {}, 0) == -1,
        "a missing transcript -> nothing extracted, nothing written")

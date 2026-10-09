@@ -312,6 +312,28 @@ try:
        and blocked(r80, 80) and "~120 lines" in r80[1].get("reason", ""),
        "STATE budget grows with the band: 70% -> ~100 lines, 80% -> ~120 lines")
 
+    # 46-48. the timeline entry (bucket handoff-timeline): every stop, whatever the %, headless or
+    # with an agent still running - a killed window fires no SessionEnd.
+    def entry(slug, sid):
+        p = os.path.join(tmp, ".claude", "scratch", slug, "digests", sid + ".json")
+        return json.load(open(p, encoding="utf-8")) if os.path.isfile(p) else None
+    s = session()
+    p = transcript(asst(30_000))
+    state("task-d", p)
+    ok(quiet(run(p, s)) and (entry("task-d", s) or {}).get("pct") == 15
+       and os.path.isfile(os.path.join(tmp, ".claude", "scratch", "task-d", "SESSIONS.md")),
+       "a stop at 15% that wrote STATE.md: silent, but its timeline entry (with its %) and SESSIONS.md exist")
+    s = session()
+    p = transcript(asst(30_000))
+    state("task-e", p)
+    ok(quiet(run(p, s, background=[{"type": "agent"}])) and entry("task-e", s),
+       "an agent still running: no notice, the entry is still written")
+    s = session()
+    p = transcript(asst(30_000))
+    state("task-f", p)
+    ok(quiet(run(p, s, env={"CLAUDE_CODE_SESSION_ATTENDED": "0"})) and entry("task-f", s),
+       "headless: no block, the entry is still written")
+
     # 12-13. fail open
     ok(quiet(run(os.path.join(tmp, "nope.jsonl"), session())), "missing transcript -> no output, exit 0")
     ok(quiet(run(None, session(), raw=b"{not json")), "non-JSON stdin -> no output, exit 0")

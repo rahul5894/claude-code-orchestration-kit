@@ -2,10 +2,13 @@
 
 kit-context.py writes it into the handoff's own bucket - <bucket>/digests/<session>.md, the
 bucket whose STATE.md this session wrote last - on every stop after its Stop block, so it is
-current to the last turn before /clear; /continue reads it whole when it is newer than STATE.md. STATE.md is the curated snapshot the model
+current to the last turn before /clear; kit_chain.py writes it for every other session that
+touched a bucket, at any context %, when the session ends (bucket handoff-timeline). /continue
+reads the newest whole. STATE.md is the curated snapshot the model
 writes; this is the deterministic record beside it: every user message verbatim, every answer
 the model gave, the tool trail, output excerpts, errors and refusals as seen, subagent reports.
-No model call.
+No model call. Nothing here deletes a digest: kit_chain.prune() does, 7 days after the bucket
+closes (the user's rule, 2026-10-09; the old keep-the-newest-5 cap lost S1-S4 of 9-session tasks).
 
 Why verbatim (bucket kit-2.1.292-optimize, F8 and F13): in four studies text copied word for
 word beat LLM-written summaries, and on 4 real handoffs STATE.md alone let a cold reader answer
@@ -28,7 +31,6 @@ from collections import Counter
 
 TAIL = 6                 # newest turns kept whole, whatever the cap
 CHARS_PER_TOKEN = 4      # estimate; the reader only needs an order of magnitude
-KEEP = 5                 # digests kept per bucket: the newest is read, older ones are grepped
 AGENT_CHARS = 6000       # a subagent report
 CUT_CHARS = 700          # an old answer or report, once the cap bites
 ERROR_CHARS = 400
@@ -68,6 +70,17 @@ KEYVAL = re.compile(r"(?i)((?:api[_-]?key|secret|password|passwd)[A-Za-z0-9_-]*"
 URL_CREDS = re.compile(r"(\b[a-z][a-z0-9+.-]*://[^\s:/@]+:)[^\s@/]+(?=@)", re.IGNORECASE)
 PRIVATE_KEY = re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----",
                          re.DOTALL)
+
+
+def local_time(ts, fmt="%H:%M"):
+    """A transcript timestamp (UTC ISO, `...Z`) in this machine's local time; the raw HH:MM when
+    it does not parse. The turn headers once showed UTC beside a local `Written:` line, 5h30 off
+    for an IST user (bucket handoff-timeline)."""
+    try:
+        from datetime import datetime
+        return datetime.fromisoformat(str(ts).replace("Z", "+00:00")).astimezone().strftime(fmt)
+    except (ValueError, OSError, OverflowError):
+        return str(ts)[11:16]
 
 
 def budget(pct):
@@ -158,7 +171,7 @@ def extract(path, upto_line=None):
 
     def turn(at, n):
         nonlocal cur
-        cur = {"at": at, "line": n, "items": [], "outs": {}}
+        cur = {"at": local_time(at), "line": n, "items": [], "outs": {}}
         turns.append(cur)
 
     def add_user(text, at, n, new):
@@ -186,7 +199,7 @@ def extract(path, upto_line=None):
                 continue
             if not isinstance(o, dict) or o.get("isSidechain"):
                 continue
-            at = str(o.get("timestamp") or "")[11:16]
+            at = str(o.get("timestamp") or "")  # made local only where a turn starts: cheap
             kind = o.get("type")
             msg = o.get("message") or {}
             if kind == "attachment":
@@ -341,41 +354,56 @@ def changed_files(turns):
     return out
 
 
-def write(transcript, out_path, meta, cap):
-    """Write the digest; its folder gets a `*` .gitignore so it is never committed, and keeps
-    the newest KEEP digests. Returns the estimated tokens written, or -1 when there was nothing
-    to write."""
-    turns = extract(transcript)
-    if not turns:
-        return -1
-    text = render(turns, dict(meta, transcript=transcript, written=time.strftime("%Y-%m-%d %H:%M")), cap)
-    folder = os.path.dirname(out_path)
-    os.makedirs(folder, exist_ok=True)
+def ensure_folder(folder):
+    """Create the digests folder - its last component only, inside a bucket that exists: a
+    writer must never bring back a bucket that was renamed or moved to _closed/ (an existing
+    folder makes an index row count as open). It gets a `*` .gitignore so nothing in it is ever
+    committed. False when the parent is gone."""
+    if not os.path.isdir(folder):
+        if not os.path.isdir(os.path.dirname(folder)):
+            return False
+        try:
+            os.mkdir(folder)
+        except FileExistsError:
+            pass
     ignore = os.path.join(folder, ".gitignore")
     if not os.path.lexists(ignore):  # a committed .gitignore symlink is never followed
         with open(ignore, "w", encoding="utf-8") as f:
             f.write("# Session digests hold the conversation verbatim: never commit them.\n*\n")
-    tmp = out_path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
+    return True
+
+
+def write_atomic(path, text):
+    """Whole file or the old one, never half: a tmp name of this process's own, then a rename.
+    Two hooks writing the same digest at once (a SessionEnd and a repair) each use their own
+    tmp; a rename that a reader's open handle blocks on Windows is retried once."""
+    tmp = f"{path}.{os.getpid()}.{time.monotonic_ns() % 10 ** 9}.tmp"
+    with open(tmp, "x", encoding="utf-8", newline="\n") as f:
         f.write(text)
-    os.replace(tmp, out_path)
-    prune(folder)
-    return len(text) // CHARS_PER_TOKEN
-
-
-def prune(folder):
-    """Delete all but the newest KEEP digests (regular *.md files only)."""
-    try:
-        files = sorted((os.path.getmtime(p), p) for f in os.listdir(folder)
-                       if f.endswith(".md") and os.path.isfile(p := os.path.join(folder, f))
-                       and not os.path.islink(p))
-    except OSError:
-        return
-    for _, p in files[:-KEEP]:
+    for attempt in (0, 1):
         try:
-            os.remove(p)
-        except OSError:
-            pass
+            os.replace(tmp, path)
+            return
+        except PermissionError:
+            if attempt:
+                try:
+                    os.remove(tmp)
+                except OSError:
+                    pass
+                raise
+            time.sleep(0.05)
+
+
+def write(transcript, out_path, meta, cap, turns=None):
+    """Write the digest of `turns` (default: the whole transcript). Returns the estimated
+    tokens written, or -1 when there was nothing to write or the bucket is gone."""
+    if turns is None:
+        turns = extract(transcript)
+    if not turns or not ensure_folder(os.path.dirname(out_path)):
+        return -1
+    text = render(turns, dict(meta, transcript=transcript, written=time.strftime("%Y-%m-%d %H:%M")), cap)
+    write_atomic(out_path, text)
+    return len(text) // CHARS_PER_TOKEN
 
 
 def main(argv):

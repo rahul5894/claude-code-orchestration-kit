@@ -281,3 +281,25 @@ window was dropped (bucket kit-digest-review D005): md-guard now guards shell re
 After the review rework (same probes, fresh readers): kit + full digest 93.4%, 0 wrong (v1
 94.7%, 2 wrong); digest alone 86.6% (v1 89.7%) - the content barely moved, the gap is reader
 variance.
+
+## Task timeline (2026-10-09, Claude Code 2.1.295, Opus 5.5; bucket handoff-timeline)
+
+| Script | What it does |
+|---|---|
+| `chain_live.py [--arm old\|new]` | live, headless, only the hooks under test (`--setting-sources project --settings`): task alpha over 3 sessions + /clears, task beta in a parallel window that is KILLED; 10 checks on the records |
+| `dense_ab.py` | the 4 chains above, STATE.md rewritten "densest without loss" vs as written, same probes |
+| `chain_ab.py prep/probes/read/grade/report` | real 4-8-session tasks; 10 "earlier-session" + 6 "any" probes; Opus readers with Read/Grep/Glob in a sandbox (the task's bucket + another task's as a distractor), old rules + 5 newest digests vs new rules + every record + SESSIONS.md; blind grader |
+
+| Test | Old kit | New kit |
+|---|---|---|
+| live chain test (checks passed) | 1/10 | 10/10 |
+| step-back A/B, earlier-session facts | 63.3% | 97.5% |
+| step-back A/B, all facts | 76.6% | 97.4% |
+| confident wrong answers (of 96) | 0 | 1 (a python/python3 misread) |
+| reader tokens per run | 3.28M | 3.54M |
+| SESSIONS.md on the default /continue path | - | 749-1745 tokens |
+| dense STATE rewrite: score / size | 62.8% / 100% | 63.8% / 97-103% (not adopted) |
+
+Two harness traps on the way, both in `chain_ab.py`'s docstrings: `--max-turns 60` ended 3 of
+16 runs with no answers (both arms), and counting every session that merely READ the bucket
+gave the old arm another task's last session. Round 3 is the fair one.

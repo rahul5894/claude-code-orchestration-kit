@@ -29,8 +29,13 @@ the last turn before /clear and /continue finds it beside the STATE.md it reads.
 alone let a cold reader answer 63.4% of 80 probes, STATE.md + digest 94.7%; Claude Code's own
 /compact 72.5% (bucket kit-2.1.292-optimize, F13).
 
-Exit 0 always. Any crash = silence (fail open, dev tool). Writes the temp-dir band marker and
-the digest only; a digest that fails to write never costs the block.
+Every stop - headless, or with an agent still running, too - first updates this session's entry
+in its bucket's timeline (kit_chain.touch: <bucket>/digests/<sid>.json, the STATE snapshot,
+SESSIONS.md; bucket handoff-timeline): a killed or closed window fires no SessionEnd, so the
+entry has to exist before the session ends.
+
+Exit 0 always. Any crash = silence (fail open, dev tool). Writes the temp-dir band marker, the
+timeline entry and the digest only; neither of the last two failing ever costs the block.
 Self-check: python kit-context_test.py
 """
 import json
@@ -43,7 +48,8 @@ import tempfile
 # is not on sys.path, the import fails and the hook exits 1 - which fails open (refuter-02).
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from kit_off import kit_off  # noqa: E402
-from kit_index import MAX_TRANSCRIPT, session_bucket  # noqa: E402
+from kit_index import MAX_TRANSCRIPT, scratch_root, session_bucket  # noqa: E402
+from kit_index import window as window_id  # noqa: E402
 
 THRESHOLD = 45
 BAND = 10
@@ -57,7 +63,9 @@ REASON = ("orchestration-kit: context is at {pct}% ({used}K of {window}K). Hand 
           "any new work. {where} It is the handoff: write it by the task "
           "skill's STATE rules, in at most ~{lines} lines (sized to how full this session is). "
           "The kit then saves this whole conversation word for word into that bucket's digests/ "
-          "and keeps it current each turn, so STATE.md is the curated snapshot, not a transcript"
+          "and keeps it current each turn, and lists the session in the bucket's SESSIONS.md "
+          "timeline (both written by the kit, never by you), so STATE.md is the curated "
+          "snapshot, not a transcript"
           "; Next action exact; under User said, the user's own words "
           "quoted - every approval, preference, way they want results reported, worry and open "
           "question that lives only in this chat; paths, commands and IDs copied exactly; traps "
@@ -162,18 +170,19 @@ def state_lines(pct):
         return 60
 
 
-def scratch_root(data):
-    """The project root whose .claude/scratch holds the buckets: CLAUDE_PROJECT_DIR, else the
-    payload cwd, the first that has one (as kit-session-start.py picks it) and is not switched
-    off; None when neither has one. The digest never creates .claude/scratch: a project that
-    has no bucket yet gets one from the handoff itself, and the next stop writes the digest."""
-    roots = [r for r in (os.environ.get("CLAUDE_PROJECT_DIR"), data.get("cwd")) if r]
-    return next((r for r in roots if os.path.isdir(os.path.join(r, ".claude", "scratch"))
-                 and not kit_off(r)), None)
+# scratch_root, session_bucket and MAX_TRANSCRIPT live in kit_index.py: kit-session-start and
+# kit-session-end use them too. The digest never creates .claude/scratch: a project with no
+# bucket yet gets one from the handoff itself, and the next stop writes the digest.
 
 
-# session_bucket and MAX_TRANSCRIPT live in kit_index.py: kit-session-start uses them too, to
-# tell which bucket each window works on.
+def chain_touch(data, sid, pct, size):
+    """This session's entry in each bucket it works on, after EVERY turn (kit_chain.touch):
+    SessionEnd never fires for a killed or closed window, so the entry must already be there."""
+    root = scratch_root(data)
+    if root and sid:
+        import kit_chain
+        kit_chain.touch(data.get("transcript_path") or "", sid, root, pid=window_id(), pct=pct,
+                        window_k=size // 1000)
 
 
 def where(data):
@@ -216,6 +225,12 @@ def main():
         data = json.loads(sys.stdin.buffer.read().decode("utf-8"))
     except Exception:
         return
+    sid = str(data.get("session_id") or "")
+    used, size = usage(data.get("transcript_path") or "", sid)
+    pct = used * 100 // size
+    # The timeline entry first: a headless session or one with an agent still running is still
+    # a session that worked on its bucket (bucket handoff-timeline).
+    _try(chain_touch, data, sid, pct, size)
     if os.environ.get("CLAUDE_CODE_SESSION_ATTENDED") == "0":
         return
     # A running shell (a dev server, a watcher) does not mean the task is unfinished; anything
@@ -223,9 +238,6 @@ def main():
     if any(not isinstance(t, dict) or t.get("type") != "shell"
            for t in data.get("background_tasks") or []):
         return
-    sid = str(data.get("session_id") or "")
-    used, size = usage(data.get("transcript_path") or "", sid)
-    pct = used * 100 // size
     marker = os.path.join(tempfile.gettempdir(), "kit-context-" + UNSAFE.sub("_", sid or "unknown"))
     if pct < THRESHOLD:
         try:

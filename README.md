@@ -74,7 +74,7 @@ New machine? Follow [SETUP-NEW-MACHINE.md](SETUP-NEW-MACHINE.md) first: prerequi
 Just using it? [docs/GUIDE.md](docs/GUIDE.md) is the one-page version: install, the two modes, `/kit-off` per project, uninstall. Every command on one page, with what it does: [COMMANDS.md](COMMANDS.md).
 
 It copies the six agents, the six commands (`/task`, `/continue`, `/kit-init`, `/kit-off`,
-`/kit-on`, `/kit-uninstall`), both output styles, the skills and the hooks (five registered),
+`/kit-on`, `/kit-uninstall`), both output styles, the skills and the hooks (six registered),
 publishes the `/kit-init` template and scripts to `~/.claude/kit/`, writes the shared rules to
 `~/.claude/rules/orchestration-kit.md` (your own `~/.claude/CLAUDE.md` is left alone, and an
 old kit block in it is removed), and deep-merges
@@ -89,7 +89,7 @@ file loaded → `/tasks` while a subagent runs shows its model.
 | `core/agents/` | The six agents, one file each: Explore `haiku`, researcher `opus`, builder `opus`, refuter `opus`, verifier `opus`, debugger `inherit`. Each file pins the model, the **effort**, and the tools. |
 | `core/commands/` | `/task` shows every open task; `/task <sentence>` continues one or starts a new one. `/continue` resumes the open task after `/clear`. `/kit-init` sets up a project; `/kit-off`, `/kit-on` and `/kit-uninstall` switch the kit per project. |
 | `core/output-styles/` | `orchestrator` and `kit-lean`, both opt-in. |
-| `core/hooks/` | The five registered hooks (md-guard, kit-session-start, kit-subagent-start, kit-subagent-report, kit-context), the shared `kit_off.py`, `kit_index.py` and `kit_digest.py` (the handoff's verbatim session digest), and a self-test for each. |
+| `core/hooks/` | The six registered hooks (md-guard, kit-session-start, kit-subagent-start, kit-subagent-report, kit-context, kit-session-end), the shared `kit_off.py`, `kit_index.py`, `kit_digest.py` (the handoff's verbatim session digest) and `kit_chain.py` (every task's session timeline, SESSIONS.md), and a self-test for each. |
 | `core/skills/` | `review-precision` (preloaded on the verifier only) and `simple-english` (slash-only). |
 | `core/plugins.json` | Plugins whose hooks fire in every session: `disable` is applied by the installer, `allow` is checked by `verify_live.py`. |
 | `core/settings.user.json` | The user-settings fragment the installer merges: per-model `modelSettings` effort (fable `high`, opus `high`), `env` (`CLAUDE_CODE_SUBAGENT_MODEL=opus` for off-roster agents, `CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH=1`, `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=0`), `subagentPromptCacheTtl: 1h`, `worktree.baseRef: head`, ask rules for push / reset --hard / clean and the read-only flag, and a deny on spawning any agent on Fable. It sets no `outputStyle`. |
@@ -179,7 +179,7 @@ about a project go in that project's repo.**
 | `commands/*.md` | `/task` (the dashboard for every bucket), `/continue`, `/kit-init`, `/kit-off`, `/kit-on`, `/kit-uninstall`. |
 | `output-styles/`, `skills/` | The two opt-in styles; `review-precision` and `simple-english`. |
 | `kit/` | What `/kit-init` and the per-project switch run: the project template, `audit_project.py`, `scan_project.py`, `kit_switch.py`. |
-| `hooks/*.py` | Five registered hooks. md-guard (PreToolUse, Bash/PowerShell) keeps a big markdown doc from being dumped raw into a shell (Read pages big files by itself) and stops read-only agents' shell writes; kit-session-start (SessionStart) names the missing gate and the open buckets, and re-injects `STATE.md` after a compaction; kit-subagent-start and kit-subagent-report hand `DECISIONS.md` to agents and file their reports; kit-context (Stop) asks for the handoff at 45%+ context, then keeps a verbatim session digest in that bucket's `digests/`, and tells you: /clear, then type /continue. |
+| `hooks/*.py` | Six registered hooks. md-guard (PreToolUse, Bash/PowerShell) keeps a big markdown doc from being dumped raw into a shell (Read pages big files by itself) and stops read-only agents' shell writes; kit-session-start (SessionStart) names the missing gate and the open buckets, and re-injects `STATE.md` after a compaction; kit-subagent-start and kit-subagent-report hand `DECISIONS.md` to agents and file their reports; kit-context (Stop) asks for the handoff at 45%+ context, then keeps a verbatim session digest in that bucket's `digests/`, and tells you: /clear, then type /continue; kit-session-end (SessionEnd) records every session that worked on a task - at any context % - in the bucket's SESSIONS.md timeline, with its digest and STATE snapshot, kept until 7 days after the task closes. |
 
 These files describe how *you* like to work. They say nothing about any codebase, so they
 do not belong in a repo.

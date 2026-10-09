@@ -72,13 +72,16 @@ kit-session-start: registered in settings.json
 kit-subagent-report: registered in settings.json
 kit-subagent-start: registered in settings.json
 kit-context: registered in settings.json
+kit-session-end: registered in settings.json
 md-guard self-check: 177/177 passed
-kit-session-start self-check: 36/36 passed
+kit-session-start self-check: 39/39 passed
 kit-subagent-report self-check: 12/12 passed
 kit-subagent-start self-check: 19/19 passed
-kit-context self-check: 45/45 passed
+kit-context self-check: 48/48 passed
 kit_off self-check: 11/11 passed
-kit_digest self-check: 26/26 passed
+kit_digest self-check: 30/30 passed
+kit_chain self-check: 41/41 passed
+kit-session-end self-check: 8/8 passed
 kit-switch self-check: 12/12 passed
 scan-project self-check: 38/38 passed
 done. ...
@@ -89,8 +92,8 @@ What the installer does. It copies `core/agents/*.md` and `core/commands/*.md` i
 their own so `/kit-off` can drop them from one project, and leaves `~/.claude/CLAUDE.md` to you
 (an old kit block between marker comments there is removed, with a backup). It deep-merges `core/settings.user.json` into
 `~/.claude/settings.json` and writes a backup first. It copies `core/hooks/*.py` into
-`~/.claude/hooks/` and registers five hooks once each (md-guard, kit-session-start,
-kit-subagent-report, kit-subagent-start, kit-context). It also copies the commands, both output
+`~/.claude/hooks/` and registers six hooks once each (md-guard, kit-session-start,
+kit-subagent-report, kit-subagent-start, kit-context, kit-session-end). It also copies the commands, both output
 styles and the skills, and publishes the `/kit-init` template and scripts to `~/.claude/kit/`. It is safe to run again after
 every kit change. A second run prints `unchanged` and `already registered`.
 
@@ -273,7 +276,7 @@ Check: `python ~/.claude/hooks/kit-subagent-start_test.py` prints `19/19 passed`
 written a bucket's `STATE.md` after that ask, every later stop writes the session digest
 (`kit_digest.py`, no model call) beside it: every user message and answer verbatim, the tool
 trail, output excerpts, secrets redacted, in `<bucket>/digests/<session>.md` (a folder with its
-own `*` `.gitignore`, newest 5 kept), current to the last turn before `/clear`; `/continue`
+own `*` `.gitignore`), current to the last turn before `/clear`; `/continue`
 reads it whole. Measured on 4 real handoffs: `STATE.md` alone answered 63% of what the next session
 needed, `STATE.md` + digest 95%, Claude Code's own `/compact` 73%. It stays silent while a
 background agent runs and never blocks a headless `claude -p` run. The window is 1M unless the
@@ -282,7 +285,20 @@ Bedrock/Vertex/Foundry id without `[1m]`); `CLAUDE_CODE_DISABLE_1M_CONTEXT=1` ma
 `CLAUDE_CODE_MAX_CONTEXT_TOKENS` counts together with `DISABLE_COMPACT`. The `[1m]` marker never
 reaches the transcript, so the model id alone cannot say 1M. Only lines of the current
 session count, so a new session starts from 0.
-Check: `python ~/.claude/hooks/kit-context_test.py` prints `45/45 passed`.
+Check: `python ~/.claude/hooks/kit-context_test.py` prints `48/48 passed`.
+
+The task timeline (`kit_chain.py`): every session that works on a bucket - at any context %,
+not only past 45% - leaves `<bucket>/digests/<sid>.json` (its entry), `<sid>.state.md` (STATE.md
+as it left it) and `<sid>.md` (the verbatim digest), and the bucket's `SESSIONS.md` lists those
+sessions oldest first, ~3 lines each. kit-context updates the entry after every turn;
+`~/.claude/hooks/kit-session-end.py`, a `SessionEnd` hook (on `/clear`, exit, logout; 5 s budget
+from its `timeout`), writes the digest; kit-session-start finishes a session whose window was
+killed with no SessionEnd and prunes. Records stay while the task is open and are deleted 7 days
+after `Status: CLOSED <date>`; entries, SESSIONS.md, STATE, DECISIONS and FINDINGS stay.
+`python ~/.claude/hooks/kit_chain.py --backfill <repo>` builds the records of open tasks from
+the transcripts still on disk (Claude Code keeps them 30 days).
+Check: `python ~/.claude/hooks/kit_chain_test.py` prints `41/41 passed` and
+`python ~/.claude/hooks/kit-session-end_test.py` prints `8/8 passed`.
 
 Known gaps, on purpose:
 
@@ -428,12 +444,14 @@ report format. The skill is worth keeping, so the kit ships its own copy at
 ## 7. Final checklist
 
 - [ ] `pwsh install.ps1` printed `md-guard self-check: 177/177 passed`
-- [ ] the same run printed `kit-session-start self-check: 36/36 passed`
+- [ ] the same run printed `kit-session-start self-check: 39/39 passed`
 - [ ] the same run printed `kit-subagent-report self-check: 12/12 passed`
 - [ ] the same run printed `kit-subagent-start self-check: 19/19 passed`
-- [ ] the same run printed `kit-context self-check: 45/45 passed`
+- [ ] the same run printed `kit-context self-check: 48/48 passed`
 - [ ] the same run printed `kit_off self-check: 11/11 passed`
-- [ ] the same run printed `kit_digest self-check: 26/26 passed`
+- [ ] the same run printed `kit_digest self-check: 30/30 passed`
+- [ ] the same run printed `kit_chain self-check: 41/41 passed`
+- [ ] the same run printed `kit-session-end self-check: 8/8 passed`
 - [ ] the same run printed `kit-switch self-check: 12/12 passed`
 - [ ] the same run printed `scan-project self-check: 38/38 passed`
 - [ ] `verify_live.py` C6 lists no unreviewed plugin

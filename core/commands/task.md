@@ -51,6 +51,8 @@ Compare the sentence to the OPEN and BLOCKED buckets.
   DECISIONS.md    append-only — what changed and WHY
   briefs/         orders given to agents; written once, never edited
   reports/        one per brief
+  SESSIONS.md     the kit writes it: every session on this task, oldest first (never edit)
+  digests/        the kit writes it: per session <sid>.md (verbatim) + <sid>.state.md (its STATE)
 ```
 
 3. Seed the three files with exactly these headings and nothing else:
@@ -58,8 +60,9 @@ Compare the sentence to the OPEN and BLOCKED buckets.
 **STATE.md**
 ```markdown
 # STATE — <slug>
-<!-- REPLACED, never appended. History lives in FINDINGS/DECISIONS and git. -->
-Updated: <date>   Status: OPEN
+<!-- REPLACED, never appended. History lives in FINDINGS/DECISIONS, SESSIONS.md and git. -->
+Updated: <date>   Status: OPEN   Priority: P2
+<!-- Priority: P1 now / P2 normal / P3 later - the session-start list shows it; /continue recommends by it -->
 ## Objective
 ## Repo
 branch <x> @ <sha>, tree clean|N dirty
@@ -99,10 +102,13 @@ nothing from this conversation, in as few tokens as that takes:
 - Done work that no next step depends on is dropped; FINDINGS, DECISIONS and git keep it.
 - **At most ~60 lines** for a 45% handoff; the Stop hook's note sizes a fuller session's (80
   lines at 60%, 100 at 70%, 120 at 80%+). Longer means history crept in: move it to FINDINGS.
-- **A handoff the Stop hook asked for gets a session digest** in the bucket's `digests/`: the
-  whole conversation, every user message and answer verbatim, written by the kit (not by you)
-  once you have written this STATE.md. So STATE.md stays the curated snapshot - decisions,
-  requirements and the next action are still yours to state; a long quote need not be.
+- **Every session that works on the bucket gets a record, written by the kit (not by you)**, at
+  any context %: a session digest in the bucket's `digests/` (the whole conversation, every user
+  message and answer verbatim), this STATE.md as that session left it (`<sid>.state.md`), and
+  its lines in SESSIONS.md, the task's timeline. Nothing of an earlier session is overwritten;
+  the records go 7 days after the task closes. So STATE.md stays the curated snapshot of NOW -
+  decisions, requirements and the next action are still yours to state; a long quote need not
+  be, and history need not be kept here.
 - Before `/clear`, check it answers alone: what is the goal · what is done and how was it
   proven · the exact next action · what must not be retried · what the user decided or still
   has to decide. A gap is a line to add; a line that answers none of them is a line to cut.
@@ -135,14 +141,25 @@ going on: two windows writing one `STATE.md` lose each other's lines.
    the wide cap keeps an entry's evidence, which `cut -c1-300` would drop);
    `[gotcha]`, `[dead-end]` and untagged older lines are always read. It is append-only, so
    a cited line number never moves.
-   Then the **session digest** - the newest file in the bucket's `digests/` - **whole**, if
-   it was written after STATE.md (`ls -t <bucket>/STATE.md <bucket>/digests/*.md | head -1`
-   names it): it is the previous conversation word for word. Read it in `offset`/`limit`
-   windows of ~300 lines to its end before you act (Read refuses a file over 256 KB whole). An
-   older digest is an earlier session's record, not the last one: grep it when you need it.
-   Measured on 4 real handoffs: STATE.md alone answered 63% of what the next session needed,
-   STATE.md + digest 95%. Where the two disagree, the later turn wins; where the repo
-   disagrees with either, the repo wins.
+   Then **SESSIONS.md whole** (if the bucket has one): the task's timeline, one block per
+   session, oldest first, each naming its sid. Then the **session digest** of its LAST session
+   - `digests/<sid>.md` - **whole**, and whole too the digest of any later session there marked
+   `no STATE write` (it worked after the last handoff): that is the previous conversation word
+   for word. Read it in `offset`/`limit` windows of ~300 lines to its end before you act (Read
+   refuses a file over 256 KB whole). No SESSIONS.md yet: the newest `digests/*.md` that is not
+   a `.state.md`. Measured on 4 real handoffs: STATE.md alone answered 63% of what the next
+   session needed, STATE.md + digest 95%. Where the two disagree, the later turn wins; where
+   the repo disagrees with either, the repo wins.
+   **Step back only on a gap** - a decision, requirement, trap or literal that STATE.md and the
+   last digest do not explain: pick the session from SESSIONS.md by its `asked`/`next then`
+   lines, FINDINGS range and decision ids; read its `digests/<sid>.state.md` (small) first,
+   then grep its `digests/<sid>.md`, last the raw transcript named in that digest's header. Say
+   which session you opened and why. **An earlier session is history**: take from it only what
+   no later record says. Where it and a later session, STATE.md or DECISIONS.md disagree, the
+   later one is true - an old snapshot's Next action is never yours. Never say a thing "was not
+   decided" or "is not there" about a session you did not read: say you do not know.
+   Never read another bucket's records for this task: a similar task's notes are the likeliest
+   wrong answer.
 2. **Verify before trusting.** Check the recorded branch and HEAD against
    `git rev-parse --abbrev-ref HEAD`, `git rev-parse --short HEAD`, `git status --short`.
    Where the file and the repo disagree, **the repo is right**: correct the file and say
@@ -176,11 +193,13 @@ going on: two windows writing one `STATE.md` lose each other's lines.
 When the objective is met (its checks pass; if a review ran, the refuter returned no
 candidates or the verifier marked every forwarded item FIXED; and nothing is open in `STATE.md`), or I say the task is abandoned:
 
-1. Set `STATE.md` status to `CLOSED <date>` with a two-line outcome summary.
+1. Set `STATE.md` status to `CLOSED <date>` with a two-line outcome summary. That line IS the
+   close: the hooks stop offering the bucket, and the kit deletes its verbatim records
+   (`digests/*.md`) 7 days later; SESSIONS.md, STATE, DECISIONS and FINDINGS stay.
 2. Write anything that outlives the task into the project's handoff note and backlog
    (see the project `CLAUDE.md`). Recording a follow-up never authorizes doing it.
-3. Move `.claude/scratch/<slug>/` to `.claude/scratch/_closed/<slug>/`. Never delete a
-   bucket.
+3. Optionally move `.claude/scratch/<slug>/` to `.claude/scratch/_closed/<slug>/` (a Windows
+   file lock or a deny rule often refuses it; leave it in place then). Never delete a bucket.
 4. Mark the bucket DONE in the index. Tell me in one line.
 
 Do not close if any brief has no report, or if the agent count in `STATE.md` does not

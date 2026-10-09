@@ -921,7 +921,11 @@ for p, why in [('core/hooks/kit-session-start.py', 'the SessionStart notice'),
                ('core/hooks/kit-subagent-start.py', 'the SubagentStart decisions injector'),
                ('core/hooks/kit-subagent-start_test.py', 'its self-test'),
                ('core/hooks/kit-context.py', 'the Stop hook that asks for the handoff'),
-               ('core/hooks/kit-context_test.py', 'its self-test')]:
+               ('core/hooks/kit-context_test.py', 'its self-test'),
+               ('core/hooks/kit-session-end.py', 'the SessionEnd hook that records every session'),
+               ('core/hooks/kit-session-end_test.py', 'its self-test'),
+               ('core/hooks/kit_chain.py', "the task timeline: entries, snapshots, SESSIONS.md, retention"),
+               ('core/hooks/kit_chain_test.py', 'its self-test')]:
     chk(os.path.isfile(p), f'{p} exists ({why})')
 _inst = open('install.ps1', encoding='utf-8').read() if os.path.isfile('install.ps1') else ''
 for frag, label in [('kit-session-start.py', 'installer registers the SessionStart hook'),
@@ -937,6 +941,11 @@ for frag, label in [('kit-session-start.py', 'installer registers the SessionSta
                     ('kit-context.py', 'installer registers the Stop hook'),
                     ("'Stop'", 'the handoff hook is hung on the Stop event'),
                     ('kit-context_test.py', 'installer runs the context hook self-test'),
+                    ('kit-session-end.py', 'installer registers the SessionEnd hook'),
+                    ("'SessionEnd'", 'the timeline hook is hung on the SessionEnd event'),
+                    ('kit-session-end_test.py', 'installer runs the SessionEnd hook self-test'),
+                    ("'kit_chain.py'", 'installer requires the timeline library'),
+                    ('kit_chain_test.py', 'installer runs the timeline self-test'),
                     ("kit\\project-template.md", 'installer publishes the project template to ~/.claude/kit'),
                     ("kit\\audit_project.py", 'installer publishes audit_project.py to ~/.claude/kit'),
                     ('kit_off_test.py', 'installer runs the per-project off-switch self-test'),
@@ -948,8 +957,9 @@ for frag, label in [('kit-session-start.py', 'installer registers the SessionSta
 chk(os.path.isfile('core/hooks/kit_off.py') and os.path.isfile('core/hooks/kit_off_test.py'),
     'core/hooks/kit_off.py and its self-test exist')
 for _h in sorted(glob.glob('core/hooks/*.py')):
-    # kit_off.py, kit_index.py and kit_digest.py are libraries the hooks import, not hooks
-    if _h.endswith('_test.py') or os.path.basename(_h) in ('kit_off.py', 'kit_index.py', 'kit_digest.py'):
+    # kit_off.py, kit_index.py, kit_digest.py and kit_chain.py are libraries the hooks import, not hooks
+    if _h.endswith('_test.py') or os.path.basename(_h) in ('kit_off.py', 'kit_index.py', 'kit_digest.py',
+                                                            'kit_chain.py'):
         continue
     _src = open(_h, encoding='utf-8').read()
     chk('from kit_off import kit_off' in _src and 'kit_off(' in _src,
@@ -1001,6 +1011,29 @@ chk('SECRET' in _kd and 'redact(' in _kd and 'sk-' in _kd,
 chk(os.path.isfile('core/hooks/kit_digest_test.py') and "'kit_digest.py'" in _inst
     and "'kit_digest_test.py'" in _inst,
     'kit_digest.py ships with a self-test; the installer requires it and runs the test')
+# The task timeline (2026-10-09, bucket handoff-timeline): 55% of buckets span 2+ sessions (max
+# 9), yet STATE.md was replaced each handoff, only 5 digests were kept and 39% of sessions that
+# handed off had no digest. Each clause is one a rewrite could drop silently.
+_kh = open('core/hooks/kit_chain.py', encoding='utf-8').read() if os.path.isfile('core/hooks/kit_chain.py') else ''
+_ke = open('core/hooks/kit-session-end.py', encoding='utf-8').read() if os.path.isfile('core/hooks/kit-session-end.py') else ''
+chk('KEEP =' not in _kd and 'def prune' not in _kd and 'KEEP_DAYS = 7' in _kh and 'def prune' in _kh
+    and '_closed' in _kh,
+    'no count cap deletes digests; kit_chain prunes verbatim records 7 days after a bucket closes (the user\'s rule)')
+_headless = 'os.environ.get("CLAUDE_CODE_SESSION_ATTENDED") == "0"'
+chk('_try(chain_touch' in _kc and _headless in _kc and 'background_tasks") or []' in _kc
+    and _kc.index('_try(chain_touch') < _kc.index(_headless)
+    and _kc.index('_try(chain_touch') < _kc.index('background_tasks") or []'),
+    'kit-context writes the timeline entry every stop, before the headless and running-agent returns')
+chk('kit_chain.finish(' in _ke and 'scratch_root(' in _ke and "5-second timeout raises this one's budget" in _inst,
+    'kit-session-end finishes every session; the installer says its timeout lifts the 1.5 s SessionEnd default')
+chk('_try(_maintain' in _ks and 'prev.get("sid")' in _ks and 'scratch_ok(r)' in _ks,
+    "kit-session-start repairs a dead window's session, never this window's previous one; skips linked scratch")
+chk('def scratch_ok' in _ki and 'def bucket_dir' in _ki and 'scratch_ok(root)' in _ki
+    and 'return bucket_dir(root, slug)' in _ki and 'def _transcript_ok' in _kh and '"projects"' in _kh,
+    'kit_index refuses a linked .claude/scratch; a repair reads only transcripts under projects/')
+chk('SESSIONS.md whole' in _tk and 'Step back only on a gap' in _tk and "Never read another bucket's records" in _tk
+    and 'Priority: P2' in _tk and 'recommend one' in _ct and 'RECOMMEND one' in _ks,
+    'task.md: /continue reads SESSIONS.md, steps back by session, never another task; 2+ free tasks -> recommend one')
 # No style set = plain Opus + hooks + handoff (2026-09-24). An agent description is shown to
 # the main session in every mode, so "Use for every change" there made a styleless session
 # delegate; so did a bucket's old briefs read as a pattern by /continue.

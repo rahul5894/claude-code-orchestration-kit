@@ -68,13 +68,13 @@ PRIVATE_TMP = os.path.join(tmp, "_tmp")  # window records land here, never in th
 os.makedirs(PRIVATE_TMP)
 
 
-def run(how, root, project_dir=None, source="startup", pid=None, sid=None, transcript=None):
+def run(how, root, project_dir=None, source="startup", pid=None, sid=None, transcript=None, extra=None):
     """Parsed stdout: {} when silent, {"_bad": text} when it is not JSON. `pid` plays the
     window (env CLAUDE_PID); without it the run has none, whatever window runs the test."""
     # The hook prefers CLAUDE_PROJECT_DIR; a caller inside Claude Code has it set, so every run
     # starts from an env without it and only the case that tests it puts it back.
     env = {k: v for k, v in os.environ.items() if k not in ("CLAUDE_PROJECT_DIR", "CLAUDE_PID")}
-    env.update(TEMP=PRIVATE_TMP, TMP=PRIVATE_TMP, TMPDIR=PRIVATE_TMP)
+    env.update(TEMP=PRIVATE_TMP, TMP=PRIVATE_TMP, TMPDIR=PRIVATE_TMP, **(extra or {}))
     if project_dir:
         env["CLAUDE_PROJECT_DIR"] = project_dir
     if pid:
@@ -236,14 +236,56 @@ for i, (slug, body) in enumerate((("older", "Status: OPEN\n"), ("newer", "Status
         f.write(body)
     os.utime(p, (1_700_000_000 + i, 1_700_000_000 + i))
 o = run("stdin", NEW)
-extra.append(("newer [OPEN]: b (newest handoff)" in context(o) and "older [OPEN]: a\n" in context(o)
-              and "shut [OPEN]: c\n" in context(o) and "ask the user which" in context(o)
+extra.append(("newer [OPEN]: b (newest handoff) · last " in context(o) and "older [OPEN]: a · last " in context(o)
+              and "shut [OPEN]: c · last " in context(o) and "RECOMMEND one" in context(o)
               and o.get("systemMessage", "").endswith("it asks which (newest: newer)."),
-              "3 open, newest STATE.md says CLOSED -> 2 free handoffs: newest marked, /continue asks"))
+              "3 open, newest STATE.md says CLOSED -> 2 free handoffs: newest marked, /continue recommends + asks"))
+with open(os.path.join(NEW, ".claude", "scratch", "older", "STATE.md"), "w", encoding="utf-8") as f:
+    f.write("# STATE\nUpdated: x   Status: OPEN   Priority: P1\n")
+o = run("stdin", NEW)
+extra.append(("older [OPEN]: a (newest handoff) · last " in context(o)
+              and context(o).split("older [OPEN]: a")[1].split("\n")[0].endswith(" · P1"),
+              "a STATE.md header's Priority: P1 shows on its row, for the recommendation"))
 os.remove(os.path.join(NEW, ".claude", "scratch", "older", "STATE.md"))
 o = run("stdin", NEW)
 extra.append((o.get("systemMessage", "").endswith("resume newer."),
               "one free handoff left -> /continue resumes it unasked"))
+
+# Timeline upkeep (bucket handoff-timeline): a session whose window died with no SessionEnd is
+# finished at the next start; the previous session of THIS window is never touched (its own
+# SessionEnd may still be running).
+REP = bucket_project("repair", True, [("alpha", "OPEN", "go")])
+CFG = os.path.join(tmp, "cfg")
+os.makedirs(os.path.join(CFG, "projects", "p"))
+gone = subprocess.Popen([sys.executable, "-c", "pass"])
+gone.wait()
+old = __import__("time").time() - 600
+for rsid in ("eeeeeeee-0000-4000-8000-000000000001", "eeeeeeee-0000-4000-8000-000000000002"):
+    tpath = os.path.join(CFG, "projects", "p", rsid + ".jsonl")
+    target = os.path.join(REP, ".claude", "scratch", "alpha", "STATE.md")
+    with open(tpath, "w", encoding="utf-8") as f:
+        f.write(json.dumps({"type": "user", "sessionId": rsid, "timestamp": "2026-10-09T05:00:00Z",
+                            "message": {"content": "words of " + rsid}}) + "\n")
+        f.write(json.dumps({"type": "assistant", "sessionId": rsid, "timestamp": "2026-10-09T05:01:00Z",
+                            "message": {"content": [{"type": "tool_use", "id": "w", "name": "Write",
+                                                     "input": {"file_path": target, "content": "# STATE\n"}}]}}) + "\n")
+    d = os.path.join(REP, ".claude", "scratch", "alpha", "digests")
+    os.makedirs(d, exist_ok=True)
+    with open(os.path.join(d, rsid + ".json"), "w", encoding="utf-8") as f:
+        json.dump({"sid": rsid, "joined": "2026-10-09T05:01:00Z", "last": "2026-10-09T05:01:00Z", "end": None,
+                   "pid": str(gone.pid), "transcript": tpath, "wrote_state": True}, f)
+    os.utime(os.path.join(d, rsid + ".json"), (old, old))
+with open(os.path.join(PRIVATE_TMP, f"kit-window-{os.getpid()}.json"), "w", encoding="utf-8") as f:
+    json.dump({"sid": "eeeeeeee-0000-4000-8000-000000000002", "root": REP}, f)  # this window's previous session
+run("stdin", REP, source="clear", pid=os.getpid(), sid="fresh-session", transcript=os.path.join(tmp, "fresh.jsonl"),
+    extra={"CLAUDE_CONFIG_DIR": CFG})
+dg = os.path.join(REP, ".claude", "scratch", "alpha", "digests")
+extra.append((os.path.isfile(os.path.join(dg, "eeeeeeee-0000-4000-8000-000000000001.md"))
+              and json.load(open(os.path.join(dg, "eeeeeeee-0000-4000-8000-000000000001.json")))["end"]
+              and "eeeeeeee-0000-4000-8000-000000000001" in open(os.path.join(REP, ".claude", "scratch", "alpha", "SESSIONS.md"), encoding="utf-8").read(),
+              "a session whose window died with no SessionEnd is finished at the next start: end, digest, timeline"))
+extra.append((not os.path.isfile(os.path.join(dg, "eeeeeeee-0000-4000-8000-000000000002.md")),
+              "this window's previous session is left to its own SessionEnd"))
 
 # Parallel windows (D001): two windows each hand off and /clear; each gets ITS task back, not the
 # one newest handoff. A window is env CLAUDE_PID; both must be live processes.

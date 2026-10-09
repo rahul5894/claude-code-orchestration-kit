@@ -576,6 +576,12 @@ ok(any(e.get('matcher') == 'builder|refuter|verifier|debugger|researcher'
        if 'kit-subagent-start.py' in h.get('command', '')),
    'SubagentStart injector matcher = builder|refuter|verifier|debugger|researcher',
    str([e.get('matcher') for e in _ss])[:200])
+# The timeline (bucket handoff-timeline): a session under 45% gets its record only from the
+# SessionEnd hook, and its 1.5 s default budget is raised only by the entry's own timeout.
+_se = (s.get('hooks', {}) or {}).get('SessionEnd', []) or []
+ok(any('kit-session-end.py' in h.get('command', '') and (h.get('timeout') or 0) >= 5
+       for e in _se for h in (e.get('hooks', []) or [])),
+   'SessionEnd timeline hook registered live with timeout >= 5 s', str(_se)[:200])
 
 print("\n=== E. roster table matches every agent file ===")
 orch = (HOME / 'output-styles' / 'orchestrator.md').read_text(encoding='utf-8')
@@ -613,8 +619,8 @@ for _st in ('kit_off self-check: 11/11 passed', 'kit-switch self-check: 12/12 pa
     ok(_st in r2.stdout, _st, [l for l in r2.stdout.splitlines() if _st.split(':')[0] in l])
 # The "fully global" pieces: the SessionStart notice and the two files /kit-init reads from
 # ~/.claude/kit. Without them a new project starts with no gate and nothing says so.
-ok('kit-session-start self-check: 36/36 passed' in r2.stdout,
-   'kit-session-start self-check 36/36',
+ok('kit-session-start self-check: 39/39 passed' in r2.stdout,
+   'kit-session-start self-check 39/39',
    [l for l in r2.stdout.splitlines() if 'kit-session-start' in l])
 for _kf in ('project-template.md', 'audit_project.py', 'scan_project.py', 'kit_switch.py'):
     ok((HOME / 'kit' / _kf).exists(), f'~/.claude/kit/{_kf} published for /kit-init')
@@ -656,12 +662,18 @@ ok('kit-subagent-report self-check: 12/12 passed' in r2.stdout,
 ok('kit-subagent-start self-check: 19/19 passed' in r2.stdout,
    'kit-subagent-start self-check 19/19',
    [l for l in r2.stdout.splitlines() if 'kit-subagent-start' in l])
-ok('kit-context self-check: 45/45 passed' in r2.stdout,
-   'kit-context self-check 45/45',
+ok('kit-context self-check: 48/48 passed' in r2.stdout,
+   'kit-context self-check 48/48',
    [l for l in r2.stdout.splitlines() if 'kit-context' in l])
-ok('kit_digest self-check: 26/26 passed' in r2.stdout,
-   'kit_digest self-check 26/26',
+ok('kit_digest self-check: 30/30 passed' in r2.stdout,
+   'kit_digest self-check 30/30',
    [l for l in r2.stdout.splitlines() if 'kit_digest' in l])
+ok('kit_chain self-check: 41/41 passed' in r2.stdout,
+   'kit_chain self-check 41/41',
+   [l for l in r2.stdout.splitlines() if 'kit_chain' in l])
+ok('kit-session-end self-check: 8/8 passed' in r2.stdout,
+   'kit-session-end self-check 8/8',
+   [l for l in r2.stdout.splitlines() if 'kit-session-end' in l])
 ok('scan-project self-check: 38/38 passed' in r2.stdout,
    'scan-project self-check 38/38',
    [l for l in r2.stdout.splitlines() if 'scan-project' in l])

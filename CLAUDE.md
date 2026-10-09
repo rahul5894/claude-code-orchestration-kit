@@ -16,7 +16,7 @@ repo unusual.
 |---|---|---|
 | **FAST GATE — agents run this** | `python validate_kit.py` | **0.6 s** |
 | Live-state check (**I run this**) | `python verify_live.py` | **161 s** (once, 2026-09-29) — installs twice, runs every self-test |
-| Install into `~/.claude` | `pwsh -File install.ps1` | ~11 s — runs eight self-tests |
+| Install into `~/.claude` | `pwsh -File install.ps1` | ~11 s — runs eleven self-tests |
 | Scoreboard from transcripts | `python agent_stats.py --since <YYYY-MM-DD>` | ~1 s |
 
 `validate_kit.py` reads this repository only and is the diff-scoped gate: ~600 checks, no test
@@ -36,7 +36,7 @@ shells out to `claude plugin validate` and `qartez doctor` — which is why it i
 
 There is no server and no database, so the general list mostly does not apply. What does:
 
-- `install.ps1` — writes into `~/.claude`, merges `settings.json`, registers five hooks. A defect
+- `install.ps1` — writes into `~/.claude`, merges `settings.json`, registers six hooks. A defect
   here corrupts the user's own config. Every change gets the state probe in `verify_live.py`
   section C3 (nothing installed / empty CLAUDE.md / empty settings / corrupt settings / a
   settings.json that enables a disabled plugin).
