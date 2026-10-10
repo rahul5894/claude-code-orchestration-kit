@@ -24,6 +24,10 @@ If it says the kit is off in this project (the default): tell the user, offer `/
 - A card marked `(this window's task)`: what this window worked on before `/clear` - resume it
   without asking, and name the other open tasks in one line so the user can switch.
 - A card marked `(open in another window)` is being worked there: never take it unless named.
+- None open in a project-records project (the note's `orchestration-kit + project-records`
+  line): take up the project's next item as that skill's next item does - its steps 0-2: file
+  what is unfiled, orient, offer up to three, the recommended first, in one question - and the
+  picked item opens its task (step 5, `new: B-NNN <its title>`), worked from that skill's step 3.
 - Of the rest: none open - say so and ask what to work on; one - resume it; two or more -
   **recommend one** with a one-clause reason: `P1` first; never an idle one (` · idle Nd` on its
   row: untouched over 14 days) over a fresh one unless it is P1; then the one nearest done or

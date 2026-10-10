@@ -3,15 +3,17 @@ description: Turn the orchestration kit OFF in this project - hooks silent, the 
 allowed-tools: Bash
 ---
 
-Run exactly `python ~/.claude/kit/kit_switch.py off "<root>"` and paste its output line.
+Run exactly `python ~/.claude/kit/kit_switch.py off "<root>"` and paste its output.
 
 `<root>` is the absolute **primary working directory** from your environment - the dir
 Claude Code was launched in, where the hooks look for the switch. Never `.`: the shell may
 have `cd`'d elsewhere, and the Bash tool does not set CLAUDE_PROJECT_DIR (measured 2026-09-23).
 
 It deletes `.claude/rules/orchestration-kit.md` - the kit's rules copy, which is also the switch
-every kit hook looks for - and resets a kit output style (`kit-lean` or `orchestrator`) in force
-here to `default`. Your own `~/.claude/CLAUDE.md`, this project's `CLAUDE.md` and
+every kit hook looks for - resets a kit output style (`kit-lean` or `orchestrator`) in force
+here to `default`, and takes out the `false` `/kit-on` set for a journal plugin (remember) in
+`.claude/settings.local.json`, so it runs here again from the next session. Your own
+`~/.claude/CLAUDE.md`, this project's `CLAUDE.md` and
 `.claude/scratch/` stay. md-guard still stops a read-only agent's writes. Nothing is deleted
 but the kit's own copy; `/kit-uninstall` is the one that deletes task files.
 

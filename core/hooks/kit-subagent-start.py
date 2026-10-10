@@ -9,6 +9,12 @@ Only OPEN and BLOCKED buckets (the status column of `.claude/scratch/INDEX.md`) 
 their DECISIONS.md: the agent files carry their own reminders. Capped at 6000 characters -
 hooks.md allows 10,000, and a spawn pays this on every agent.
 
+In a project-records project (kit_index.records_project: docs/ is the record, bucket
+kit-records-integration D001) the agent also gets the rule that docs/ is the one home, and the
+docs/DECISIONS.md heading of every D-NNN the open buckets' DECISIONS.md and STATE.md cite - so a
+bucket cites a project decision by its id and never has to restate it for its agents to see it
+(measured 2026-10-11: a bucket restated a docs decision's whole build plan for exactly that).
+
 Exit 0 always. Any crash = silence (fail open, dev tool). Never writes a file.
     python kit-subagent-start.py --check <dir>     # same decision, for tests and verification
 """
@@ -28,11 +34,17 @@ if __name__ == "__main__" and not READONLY and kit_off():
 import json  # noqa: E402
 import re  # noqa: E402
 
-from kit_index import open_rows  # noqa: E402
+from kit_index import open_rows, record_heads, records_project  # noqa: E402
 
 MAX_CHARS = 6000
 LEAD = ("orchestration-kit: decisions already made for the open bucket(s) below. A change "
         "that would reverse one means stop and report; never re-decide.")
+RECORDS_LEAD = ("project-records: docs/ is this project's record; a bucket is working notes. An "
+                "entry already in docs/ (D-/F-/L-/Q-/B-NNN) is cited by its id, never restated; a new "
+                "decision, finding or lesson goes in your report for the main session to file there. "
+                "A docs decision binds like a bucket one: reversing it means stop and report.")
+RECORDS_HEADS = ("Project decisions the open bucket(s) cite, as docs/DECISIONS.md heads them (the whole "
+                 "entry: node scripts/trace.mjs <id>):")
 CUT = "\n... (truncated {} chars: read the files above for the rest)"
 # A slug is one path component, not a path (DECISIONS 10).
 SLUG_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
@@ -45,8 +57,8 @@ def open_slugs(index_path):
     return [slug for slug, _, _ in open_rows(index_path)]
 
 
-def sections(scratch):
-    """(relative path, section) per open bucket whose DECISIONS.md has content."""
+def notes(scratch, name):
+    """(slug, text) of note `name` in every open bucket that has one, in INDEX order."""
     out = []
     root = os.path.realpath(scratch) + os.sep
     for slug in open_slugs(os.path.join(scratch, "INDEX.md")):
@@ -54,14 +66,21 @@ def sections(scratch):
         # own; the resolved path has to stay under .claude/scratch/.
         if slug in (".", "..") or not SLUG_RE.fullmatch(slug):
             continue
-        path = os.path.join(scratch, slug, "DECISIONS.md")
+        path = os.path.join(scratch, slug, name)
         if not os.path.realpath(path).startswith(root):
             continue
         try:
             with open(path, encoding="utf-8", errors="replace") as f:
-                body = f.read()
+                out.append((slug, f.read()))
         except OSError:
             continue
+    return out
+
+
+def sections(scratch):
+    """(relative path, section) per open bucket whose DECISIONS.md has content."""
+    out = []
+    for slug, body in notes(scratch, "DECISIONS.md"):
         if not body.strip():
             continue
         rel = f".claude/scratch/{slug}/DECISIONS.md"
@@ -92,12 +111,21 @@ def main():
     if not os.path.isfile(os.path.join(scratch, "INDEX.md")):
         return
     found = sections(scratch)
-    if not found:
+    records = records_project(root)
+    if not found and not records:
         return
-    # The file list goes in the lead, before anything that can be cut: a truncated payload
-    # still names every bucket it was carrying.
-    text = (LEAD + "\nFiles: " + ", ".join(rel for rel, _ in found) + "\n\n"
-            + "\n\n".join(body for _, body in found))
+    # The file list and the records rule go first, before anything that can be cut: a truncated
+    # payload still names every bucket it was carrying and where the project's record is. The
+    # docs headings go last - the first thing cut, and `trace` gives any of them back.
+    parts = [LEAD + "\nFiles: " + ", ".join(rel for rel, _ in found)] if found else []
+    if records:
+        parts.append(RECORDS_LEAD)
+    parts += [body for _, body in found]
+    if records:
+        heads = record_heads(root, [t for _, t in notes(scratch, "DECISIONS.md") + notes(scratch, "STATE.md")])
+        if heads:
+            parts.append(RECORDS_HEADS + "\n" + "\n".join(heads))
+    text = "\n\n".join(parts)
     if len(text) > MAX_CHARS:
         cut = CUT.format(len(text) - MAX_CHARS)
         cut = CUT.format(len(text) - MAX_CHARS + len(cut))  # the marker costs budget too

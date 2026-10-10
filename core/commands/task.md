@@ -143,6 +143,21 @@ nothing from this conversation, in as few tokens as that takes:
 <!-- Each: chose · rejected · WHY · reverses D0NN (an earlier decision's number) or nothing · files touched -->
 ```
 
+**In a project-records project** (the session note's `orchestration-kit + project-records` line:
+docs/TIMELINE.md beside `.claude/skills/project-records/`), docs/ is the record and the bucket
+only its working notes - one home per fact:
+- The work item comes first. A request on no record is filed as a numbered B-NNN, the user's
+  words as its Source (the project-records skill, as that project's `CLAUDE.md` says), and the
+  slug starts with its id: `b012-csv-export`.
+- A decision, finding, lesson or question goes to docs/ under its id through that skill when it
+  happens; the bucket cites the id, never restates the entry. DECISIONS.md lists the ids that
+  bind this task, one line each with why, and the task's own working choices as `W01`, `W02` -
+  never `D001` beside a `D-005`. FINDINGS.md keeps the working notes; a line whose finding or
+  lesson was filed cites its F-/L-NNN.
+- STATE.md is the task's resume and names ids; the project's PROGRESS.md entry and **Now:** line
+  at session end are the record's, as its standing orders say. A docs entry the task needs is
+  read by `node scripts/trace.mjs <id>` or its heading line - never the whole docs file.
+
 4. Add one line for the bucket to the index.
 5. Tell me in one line: "Opened bucket <slug>." Then show the objective and the proposed
    scope in and out. **Wait for me to confirm the scope** before starting the work - unless

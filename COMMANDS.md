@@ -6,8 +6,8 @@ Type these in the Claude Code chat, inside the project you mean.
 
 | Command | What happens | Note |
 |---|---|---|
-| `/kit-on` | Turns the kit on **in this project**. The kit is **off in every project** until you do: it copies the kit's rules into `.claude/rules/orchestration-kit.md`, and that file is also the switch. | Stays on until `/kit-off`. Kit updates (`install.ps1`) keep the copy current. |
-| `/kit-off` | Turns the kit off in this project: deletes that copy. Kit hooks go silent and the kit's rules stop loading. Task notes stay. | Stays off until `/kit-on`. |
+| `/kit-on` | Turns the kit on **in this project**. The kit is **off in every project** until you do: it copies the kit's rules into `.claude/rules/orchestration-kit.md`, and that file is also the switch. It also turns the remember plugin off here (in `.claude/settings.local.json`), because the kit's task timeline already keeps each session. If this machine has project-records and the project does not, it asks once whether to add it (you type `/records-install`). | Stays on until `/kit-off`. Kit updates (`install.ps1`) keep the copy current. |
+| `/kit-off` | Turns the kit off in this project: deletes that copy and turns remember back on. Kit hooks go silent and the kit's rules stop loading. Task notes stay. | Stays off until `/kit-on`. |
 | `/kit-uninstall` | Removes the kit from **this project only**. It asks before deleting anything, zips the task notes to `~/.claude/kit-backups/`, can remove the kit-written parts of `CLAUDE.md`, then turns the kit off here. | The kit stays installed for every other project. `/kit-on` still brings it back here. |
 | `/kit-init` | Sets up a new project: turns the kit on, finds and times its fast check, writes `CLAUDE.md`, then audits the project. | Once per project. |
 | `/task` | With no words: lists every task and its next step. With a sentence: continues a task or opens a new one. | |
@@ -35,6 +35,11 @@ Run these in PowerShell, in the kit folder.
 - **Never committed:** `/kit-on` lists the file in the repo's own `.git/info/exclude`, so
   `git status` does not show it. It is this machine's copy (the kit keeps it current), so do not
   commit it; turn the kit on in each clone instead.
+- **With project-records (one home per fact):** in a project that keeps the project-records
+  record in `docs/`, a decision, finding, lesson, question or work item is written there once,
+  with its id (`D-005`). A task's notes only name that id; agents get its one-line heading from
+  the project's docs/DECISIONS.md. The session start shows one "next": the open task's next step, or, with no
+  task open, the first open line of the project's roadmap, which `/continue` takes up.
 - **Off costs nothing:** in a project with the kit off, each kit hook exits right after Python
   starts (~25 ms), and the kit's rules take no room in the chat.
 - **One guard stays on even when the kit is off:** the review agents (refuter, debugger) still

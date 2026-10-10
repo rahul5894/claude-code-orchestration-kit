@@ -74,15 +74,15 @@ kit-subagent-start: registered in settings.json
 kit-context: registered in settings.json
 kit-session-end: registered in settings.json
 md-guard self-check: 179/179 passed
-kit-session-start self-check: 56/56 passed
+kit-session-start self-check: 59/59 passed
 kit-subagent-report self-check: 12/12 passed
-kit-subagent-start self-check: 19/19 passed
+kit-subagent-start self-check: 23/23 passed
 kit-context self-check: 50/50 passed
 kit_off self-check: 13/13 passed
 kit_digest self-check: 35/35 passed
 kit_chain self-check: 48/48 passed
 kit-session-end self-check: 8/8 passed
-kit-switch self-check: 15/15 passed
+kit-switch self-check: 18/18 passed
 scan-project self-check: 38/38 passed
 done. ...
 ```
@@ -268,7 +268,12 @@ it for you.
 `~/.claude/hooks/kit-subagent-start.py` is the other half of the same idea: a `SubagentStart`
 hook that injects the `DECISIONS.md` of every open bucket in `.claude/scratch/INDEX.md` (table or bullet list) into
 each spawned builder, refuter, verifier, debugger and researcher, capped at 6000 characters.
-Check: `python ~/.claude/hooks/kit-subagent-start_test.py` prints `19/19 passed`.
+In a project that keeps the project-records record in its docs/ folder, the agent also gets
+the rule that docs/ is the one home of a decision, finding or lesson, and the one-line heading
+from the project's docs/DECISIONS.md of every `D-NNN` the open buckets cite - so a bucket names a
+project decision by its id instead of copying it. The session-start note says the same once and,
+with no task open, names the first open line of the project's roadmap as the next item.
+Check: `python ~/.claude/hooks/kit-subagent-start_test.py` prints `23/23 passed`.
 
 `~/.claude/hooks/kit-context.py` is a `Stop` hook. At 45%+ context, the first stop in each
 10-point band asks the model to write the handoff into the bucket's `STATE.md` (60 lines at
@@ -319,6 +324,14 @@ two maps of plugin id to reason:
 - `disable` — `install.ps1` writes `enabledPlugins[<id>] = false` into your `settings.json`
   for every id in this map that your settings already mention.
 - `allow` — reviewed and kept. The installer ignores it; it only keeps C6 quiet.
+
+One plugin is kept but not everywhere: **remember** writes a session journal of its own and
+puts it into every session start (a median 6-8K characters, measured 2026-10-11). Where the kit
+is on, the kit's task timeline already keeps that record, so `/kit-on` writes
+`"remember@claude-plugins-official": false` under `enabledPlugins` in that project's
+`.claude/settings.local.json`, and `/kit-off` takes it out again. In a project with the kit off
+it runs as before. `python verify_live.py` section C5 names a kit-ON project where it is still
+on: run `/kit-on` there.
 
 `python verify_live.py` section C6 reads the manifest of every plugin enabled in the user's
 `settings.json` or `settings.local.json`, handles inline, path, list and side-file hook
@@ -445,15 +458,15 @@ report format. The skill is worth keeping, so the kit ships its own copy at
 ## 7. Final checklist
 
 - [ ] `pwsh install.ps1` printed `md-guard self-check: 179/179 passed`
-- [ ] the same run printed `kit-session-start self-check: 56/56 passed`
+- [ ] the same run printed `kit-session-start self-check: 59/59 passed`
 - [ ] the same run printed `kit-subagent-report self-check: 12/12 passed`
-- [ ] the same run printed `kit-subagent-start self-check: 19/19 passed`
+- [ ] the same run printed `kit-subagent-start self-check: 23/23 passed`
 - [ ] the same run printed `kit-context self-check: 50/50 passed`
 - [ ] the same run printed `kit_off self-check: 13/13 passed`
 - [ ] the same run printed `kit_digest self-check: 35/35 passed`
 - [ ] the same run printed `kit_chain self-check: 48/48 passed`
 - [ ] the same run printed `kit-session-end self-check: 8/8 passed`
-- [ ] the same run printed `kit-switch self-check: 15/15 passed`
+- [ ] the same run printed `kit-switch self-check: 18/18 passed`
 - [ ] the same run printed `scan-project self-check: 38/38 passed`
 - [ ] `verify_live.py` C6 lists no unreviewed plugin
 - [ ] In a new Claude Code session, asking Claude to read a 300+ line `.md` whole is

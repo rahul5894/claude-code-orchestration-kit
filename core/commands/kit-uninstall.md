@@ -37,7 +37,8 @@ headless `claude -p` run): stop here and report step 1 - delete nothing.
 - CLAUDE.md: edit out exactly the sections picked, nothing else.
 - Always, last: `python ~/.claude/kit/kit_switch.py off "<root>"`, which deletes the kit's rules
   copy (`.claude/rules/orchestration-kit.md`, also the switch the hooks look for), so the kit's
-  hooks and rules (and a kit style, if one was on) no longer run here. If it exits non-zero, show
+  hooks and rules (and a kit style, if one was on) no longer run here, and a journal plugin the
+  kit switched off here (remember) runs again from the next session. If it exits non-zero, show
   its message and stop.
 
 ## 4. Report

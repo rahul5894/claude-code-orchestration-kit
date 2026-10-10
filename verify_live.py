@@ -419,6 +419,29 @@ for _proj in sorted(pathlib.Path(r'D:\Projects').glob('*')) if pathlib.Path(r'D:
                            for _p, _v in _ep.items() if _v is True and _p in _dis_ids]
 ok(not _offenders, f'none of the {_scanned} project settings files overrides the kit',
    '; '.join(_offenders[:4]))
+# Where the kit is on, a plugin with a session journal of its own (remember) is off: /kit-on
+# writes its `false` into settings.local.json (bucket kit-records-integration, D002). A project
+# switched on before that, or one whose settings.local.json lost the key, gets that journal
+# injected beside the kit's again. The same rule /kit-on applies: kit_switch.quiet_journals.
+_stale, _kit_on = [], 0
+try:
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+    from kit_switch import local_settings as _ks_local, peek as _ks_peek, quiet_journals as _ks_quiet
+    for _proj in sorted(pathlib.Path(r'D:\Projects').glob('*')) if pathlib.Path(r'D:\Projects').is_dir() else []:
+        _copy = _proj / '.claude' / 'rules' / 'orchestration-kit.md'
+        try:
+            if not _copy.read_bytes().startswith(b'<!-- orchestration-kit'):
+                continue
+        except OSError:
+            continue
+        _kit_on += 1
+        _left = _ks_quiet(str(_proj), _ks_peek(_ks_local(str(_proj))))
+        if _left:
+            _stale.append(f'{_proj.name}: {", ".join(_left)} still on - run /kit-on there')
+    ok(not _stale, f'the {_kit_on} kit-ON projects under D:\\Projects keep the journal plugins off',
+       '; '.join(_stale[:4]))
+except Exception as e:  # noqa: BLE001 - a crash here must read as a failure, never as a pass
+    ok(False, 'journal plugins off in kit-ON projects: the check ran', f'{type(e).__name__}: {e}')
 
 print("\n=== C6. plugins ===")
 # Claude Code has no per-plugin hook switch (hooks.md offers only `disableAllHooks`), so a
@@ -617,12 +640,12 @@ ok(_rules.is_file() and norm(_rules.read_text(encoding='utf-8')).endswith(
 ok('<!-- orchestration-kit' not in ((HOME / 'CLAUDE.md').read_text(encoding='utf-8')
                                     if (HOME / 'CLAUDE.md').is_file() else ''),
    '~/.claude/CLAUDE.md holds no old kit block (it would load in every project)')
-for _st in ('kit_off self-check: 13/13 passed', 'kit-switch self-check: 15/15 passed'):
+for _st in ('kit_off self-check: 13/13 passed', 'kit-switch self-check: 18/18 passed'):
     ok(_st in r2.stdout, _st, [l for l in r2.stdout.splitlines() if _st.split(':')[0] in l])
 # The "fully global" pieces: the SessionStart notice and the two files /kit-init reads from
 # ~/.claude/kit. Without them a new project starts with no gate and nothing says so.
-ok('kit-session-start self-check: 56/56 passed' in r2.stdout,
-   'kit-session-start self-check 56/56',
+ok('kit-session-start self-check: 59/59 passed' in r2.stdout,
+   'kit-session-start self-check 59/59',
    [l for l in r2.stdout.splitlines() if 'kit-session-start' in l])
 for _kf in ('project-template.md', 'audit_project.py', 'scan_project.py', 'kit_switch.py'):
     ok((HOME / 'kit' / _kf).exists(), f'~/.claude/kit/{_kf} published for /kit-init')
@@ -661,8 +684,8 @@ ok('md-guard self-check: 179/179 passed' in r2.stdout, 'md-guard self-check 179/
 ok('kit-subagent-report self-check: 12/12 passed' in r2.stdout,
    'kit-subagent-report self-check 12/12',
    [l for l in r2.stdout.splitlines() if 'kit-subagent-report' in l])
-ok('kit-subagent-start self-check: 19/19 passed' in r2.stdout,
-   'kit-subagent-start self-check 19/19',
+ok('kit-subagent-start self-check: 23/23 passed' in r2.stdout,
+   'kit-subagent-start self-check 23/23',
    [l for l in r2.stdout.splitlines() if 'kit-subagent-start' in l])
 ok('kit-context self-check: 50/50 passed' in r2.stdout,
    'kit-context self-check 50/50',

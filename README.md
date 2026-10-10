@@ -76,6 +76,9 @@ Just using it? [docs/GUIDE.md](docs/GUIDE.md) is the one-page version: install, 
 **The kit is off in every project until `/kit-on` (or `/kit-init`) there.** It copies the kit's
 rules into that project's `.claude/rules/orchestration-kit.md`, which is also the switch every
 hook looks for; elsewhere each hook exits right after Python starts and the rules cost nothing.
+Where it is on, it switches the remember plugin off for that project (the kit's task timeline
+keeps each session), and in a project that keeps the project-records record in its docs/ folder
+it keeps one home per fact: a task's notes cite a docs entry's id and never copy it.
 
 It copies the six agents, the six commands (`/task`, `/continue`, `/kit-init`, `/kit-off`,
 `/kit-on`, `/kit-uninstall`), both output styles, the skills and the hooks (six registered),

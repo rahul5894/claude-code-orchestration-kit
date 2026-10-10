@@ -75,6 +75,41 @@ BULLETS = project("bullets", [], {"mu": "1. use X\n", "nu": "1. use Z\n"})
 with open(os.path.join(BULLETS, ".claude", "scratch", "INDEX.md"), "w", encoding="utf-8") as f:
     f.write("# Buckets\n- mu — IN PROGRESS — next\n- nu — DONE — in _closed/\n")
 
+
+# project-records (bucket kit-records-integration, D001): docs/ is the record; the agent gets the
+# one-home rule and the docs/DECISIONS.md heading of each D-NNN the open buckets cite, in their
+# DECISIONS.md or STATE.md - an id with no heading there is left out, a closed bucket's are not read.
+def records(root, decisions="### D-005 — Webhook retries: at most 5 (2026-10-11) · DECIDED\nbody of D-005\n"
+                            "### D-007 — Rates in minor units (2026-10-09) · DECIDED · REPLACED by D-009\n"
+                            "### D-008 — Closed bucket's decision (2026-10-09) · DECIDED\n"):
+    os.makedirs(os.path.join(root, "docs"), exist_ok=True)
+    os.makedirs(os.path.join(root, ".claude", "skills", "project-records"), exist_ok=True)
+    for rel, text in (("docs/TIMELINE.md", "# Timeline\n"), ("docs/DECISIONS.md", decisions),
+                      (".claude/skills/project-records/SKILL.md", "---\nname: project-records\n---\n")):
+        with open(os.path.join(root, rel), "w", encoding="utf-8") as f:
+            f.write(text)
+    return root
+
+
+REC = records(project("rec", [("w1", "OPEN"), ("w2", "DONE")],
+                      {"w1": "- W01 · chose a DRAFT spec · cites D-005 · reverses nothing\n",
+                       "w2": "- W01 · cites D-008\n"}))
+with open(os.path.join(REC, ".claude", "scratch", "w1", "STATE.md"), "w", encoding="utf-8") as f:
+    f.write("# STATE - w1\nNext action: apply D-007; D-999 is not filed\n")
+# A records project whose open buckets have no decisions yet: the rule alone, no heading list.
+REC_EMPTY = records(project("rec-empty", [("v1", "OPEN")], {}))
+# docs/ as a link (a cloned repo can commit one pointing anywhere): no records project, nothing read.
+REC_LINK = project("rec-link", [("u1", "OPEN")], {"u1": "1. use X, cites D-005\n"})
+try:
+    os.symlink(records(os.path.join(tmp, "rec-target")) + os.sep + "docs", os.path.join(REC_LINK, "docs"),
+               target_is_directory=True)
+    os.makedirs(os.path.join(REC_LINK, ".claude", "skills", "project-records"))
+    with open(os.path.join(REC_LINK, ".claude", "skills", "project-records", "SKILL.md"), "w", encoding="utf-8") as f:
+        f.write("x\n")
+    CAN_LINK = True
+except OSError:
+    CAN_LINK = False
+
 CASES = [
     # (want, how, root, substrings the injected text must contain)
     ("QUIET",   "stdin", NOSCRATCH, []),
@@ -99,7 +134,15 @@ CASES = [
     # Launched in a parent dir, then cd into the repo: the launch root has no scratch, cwd does.
     ("CONTEXT", "fallback", ONE, ["alpha", "use X"]),
     ("CONTEXT", "stdin", BULLETS, ["mu", "use X"]),
-]
+    # project-records: the rule, the bucket's own choices, then the cited docs headings; never one
+    # of an id with no heading, nor of a closed bucket. A project without records gets none of it.
+    ("CONTEXT", "stdin", REC, ["docs/ is this project's record", "W01 · chose a DRAFT spec",
+                               "### D-005 — Webhook retries: at most 5 (2026-10-11) · DECIDED",
+                               "### D-007 — Rates in minor units (2026-10-09) · DECIDED · REPLACED by D-009",
+                               "node scripts/trace.mjs"], ["D-999", "D-008", "body of D-005"]),
+    ("CONTEXT", "check", REC_EMPTY, ["docs/ is this project's record"], ["Files:", "as docs/DECISIONS.md heads"]),
+    ("CONTEXT", "stdin", ONE, ["alpha"], ["project-records", "docs/DECISIONS.md"]),
+] + ([("CONTEXT", "stdin", REC_LINK, ["u1", "use X"], ["project-records", "### D-005"])] if CAN_LINK else [])
 
 contract_bad = []
 
@@ -141,14 +184,18 @@ def run(how, root):
 
 
 fails = 0
-for want, how, root, needles in CASES:
+if not CAN_LINK:
+    print("SKIP docs/ as a link (this machine cannot create symlinks); total drops by one")
+for want, how, root, needles, *absent in CASES:
     got, text = run(how, root)
     missing = [n for n in needles if n not in text]
-    bad = got != want or missing
+    present = [n for n in (absent[0] if absent else []) if n in text]
+    bad = got != want or missing or present
     if bad:
         fails += 1
     print(f"{'BAD' if bad else 'ok '} want={want:7} got={got:7} {how:8} "
-          f"{os.path.basename(root)}{' missing ' + str(missing) if missing else ''}")
+          f"{os.path.basename(root)}{' missing ' + str(missing) if missing else ''}"
+          f"{' unwanted ' + str(present) if present else ''}")
 if contract_bad:
     fails += 1
 print(f"{'BAD' if contract_bad else 'ok '} every CONTEXT payload is SubagentStart JSON "

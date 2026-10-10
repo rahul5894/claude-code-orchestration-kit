@@ -160,6 +160,60 @@ def scratch_root(data):
     return next((r for r in roots if scratch_ok(r) and not kit_off(r)), None)
 
 
+# project-records (bucket kit-records-integration, D001): a project whose permanent record is its
+# docs/ folder, kept by the user's project-records skill (copied in by the typed /records-install).
+# There a decision, finding, lesson, question or work item has ONE home, its docs/ entry with its
+# id (D-/F-/L-/Q-/B-NNN), and a bucket is working notes that cite the id. Measured 2026-10-11: with
+# both on, a bucket restated docs entries and numbered its own decisions D001 beside docs' D-005.
+# The sign is the one records-hook.mjs keys on, docs/TIMELINE.md, plus the skill itself; none of
+# it may be a link (a cloned repo could commit one pointing anywhere).
+RECORDS_SIGNS = (os.path.join("docs", "TIMELINE.md"), os.path.join(".claude", "skills", "project-records", "SKILL.md"))
+RECORD_ID_RE = re.compile(r"(?<![\w-])D-\d{3}(?!\d)")
+RECORD_HEAD_RE = re.compile(r"^###[ \t]+(D-\d{3})\b[^\n]*", re.MULTILINE)
+ROADMAP_OPEN_RE = re.compile(r"^\s*- \[ \] (.+)$", re.MULTILINE)  # records-hook.mjs's own pattern
+RECORD_HEAD_CHARS = 240
+RECORDS_READ_MAX = 2_000_000  # a docs file past this is not read: hooks have seconds
+
+
+def records_project(root):
+    """True when root keeps the project-records record: docs/TIMELINE.md and the skill, no link on the way."""
+    if not root:
+        return False
+    if any(linked(os.path.join(root, d)) for d in ("docs", ".claude")):
+        return False
+    return all(os.path.isfile(os.path.join(root, p)) and not linked(os.path.join(root, p)) for p in RECORDS_SIGNS)
+
+
+def _record_text(root, name):
+    path = os.path.join(root, "docs", name)
+    try:
+        if linked(path) or os.path.getsize(path) > RECORDS_READ_MAX:
+            return ""
+        with open(path, encoding="utf-8", errors="replace") as f:
+            return f.read()
+    except OSError:
+        return ""
+
+
+def record_heads(root, texts):
+    """The docs/DECISIONS.md heading of every decision id the texts cite, in the order first cited:
+    the entry's title, date and status as the record writes them (`### D-005 — ... · DECIDED`, a
+    replaced one says so). An id with no heading there is left out."""
+    ids = list(dict.fromkeys(i for t in texts for i in RECORD_ID_RE.findall(t or "")))
+    if not ids:
+        return []
+    heads = {}
+    for m in RECORD_HEAD_RE.finditer(_record_text(root, "DECISIONS.md")):
+        heads.setdefault(m.group(1), m.group(0).strip()[:RECORD_HEAD_CHARS])
+    return [heads[i] for i in ids if i in heads]
+
+
+def roadmap_next(root):
+    """The first open line of docs/ROADMAP.md (what records-hook.mjs names at session start), or ""."""
+    m = ROADMAP_OPEN_RE.search(_record_text(root, "ROADMAP.md"))
+    return m.group(1).strip()[:RECORD_HEAD_CHARS] if m else ""
+
+
 def safe_dir(bucket, name):
     """bucket/name when it is absent or a real folder right inside the bucket; None when it is a
     link or junction, or resolves elsewhere - a write or prune would follow it out (refuter 6)."""

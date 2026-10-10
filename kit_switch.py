@@ -11,9 +11,17 @@ on   copies the installed rules (orchestration-kit.md beside this script, ~/.cla
      outputStyle "default" in .claude/settings.local.json - the user's rule, 2026-10-10), and
      clears what the old default-on kit left: .claude/kit-off and the claudeMdExcludes entry
      that would hide the copy.
-off  deletes the copy - only when its first line is the kit's header - and resets a kit style
-     in force to "default". The hooks go quiet at their next event; the rules leave with the
-     next new chat (/clear or a new window).
+     It also switches off, in that same settings.local.json, a plugin that keeps a session journal
+     of its own (remember): where the kit is on, its SESSIONS.md and digests - and in a
+     project-records project, docs/ - already keep that record (bucket kit-records-integration,
+     D002; measured 2026-10-11: remember put a median 6-8K characters into every session start
+     and ran Haiku in the background every ~2 minutes). Only a plugin enabled for this project is
+     switched off, and a value of its own in settings.local.json is the user's and stays.
+off  deletes the copy - only when its first line is the kit's header - resets a kit style in
+     force to "default", and takes such a plugin's `false` out again, so it runs as before. (A
+     `false` the user had set there by hand before /kit-on cannot be told from the kit's and goes
+     too.) The hooks go quiet at their next event; the rules leave with the next new chat (/clear
+     or a new window); a plugin follows its settings from the next session.
 An unreadable settings.local.json stops the script before anything is written.
 /kit-on, /kit-off, /kit-init and /kit-uninstall call this."""
 import json
@@ -34,6 +42,9 @@ LEGACY_MARKER = os.path.join(".claude", "kit-off")
 EXCLUDE = "**/.claude/rules/orchestration-kit.md"
 KIT_STYLES = ("kit-lean", "orchestrator")
 USER_SETTINGS = os.path.join(os.path.expanduser("~"), ".claude", "settings.json")
+# Plugins that keep a session journal of their own, by enabledPlugins key prefix (D002).
+JOURNAL_PLUGINS = ("remember@",)
+LOCAL_REL = ".claude/settings.local.json"
 
 
 def local_settings(root):
@@ -91,6 +102,54 @@ def default_style(root, data):
     return False
 
 
+def quiet_journals(root, data):
+    """`false` into `data`'s enabledPlugins for each journal plugin enabled for this project (its
+    shared settings.json, else the user's, decides - settings.local.json would beat both, so a key
+    already there is the user's own and stays). The keys switched off, [] for none."""
+    ep = data.get("enabledPlugins")
+    if ep is not None and not isinstance(ep, dict):
+        return []  # a shape this script does not know is left as it is
+    shared = peek(os.path.join(root, ".claude", "settings.json")).get("enabledPlugins")
+    user = peek(USER_SETTINGS).get("enabledPlugins")
+    shared, user = (d if isinstance(d, dict) else {} for d in (shared, user))
+    keys = [k for k in dict.fromkeys(list(shared) + list(user)) if k.startswith(JOURNAL_PLUGINS)]
+    quiet = [k for k in keys if k not in (ep or {}) and (shared[k] if k in shared else user[k]) is True]
+    if quiet:
+        data["enabledPlugins"] = {**(ep or {}), **{k: False for k in quiet}}
+    return quiet
+
+
+def wake_journals(data):
+    """The journal plugins' `false` out of `data`'s enabledPlugins (the key itself when emptied):
+    they run as the user's and the project's shared settings say. The keys taken out."""
+    ep = data.get("enabledPlugins")
+    if not isinstance(ep, dict):
+        return []
+    woken = [k for k, v in ep.items() if v is False and k.startswith(JOURNAL_PLUGINS)]
+    for k in woken:
+        del ep[k]
+    if woken and not ep:
+        del data["enabledPlugins"]
+    return woken
+
+
+def tracked(root, rel):
+    """True when git tracks root/rel: a change to it then shows in `git status` and can be committed."""
+    try:
+        return subprocess.run(["git", "-C", root, "ls-files", "--error-unmatch", "--", rel],
+                              capture_output=True, timeout=15).returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
+def plugins_line(keys, quieted, root):
+    note = (f" Note: git tracks {LOCAL_REL} in this repo, so the change shows in `git status`."
+            if tracked(root, LOCAL_REL) else "")
+    how = (f"off here from the next session ({LOCAL_REL}; the kit keeps the session record)" if quieted
+           else f"on again here from the next session (its `false` left {LOCAL_REL})")
+    return f"{', '.join(keys)}: {how}.{note}"
+
+
 def exclude_from_git(root):
     """The copy into the repo's own .git/info/exclude - local, never committed - so `git add -A`
     cannot publish it; a project in a subfolder of its repo is listed by its path from the top.
@@ -138,7 +197,8 @@ def on(root, source=SOURCE):
         if not data["claudeMdExcludes"]:
             del data["claudeMdExcludes"]
         changed = True
-    if changed:
+    quieted = quiet_journals(root, data)
+    if changed or quieted:
         save(sf, data)
     # The copy is the switch, so it is written last and whole: a crash before this line leaves the
     # kit off, never half on.
@@ -151,6 +211,8 @@ def on(root, source=SOURCE):
     state = ("already ON, rules refreshed" if written else "already ON") if was_on else "ON"
     print(f"kit {state} in {root}, style {style_in_force(root, data) or 'default'}. Hooks run from "
           "their next event; the kit rules load in the next new chat here (/clear).")
+    if quieted:
+        print(plugins_line(quieted, True, root))
 
 
 def off(root):
@@ -161,7 +223,10 @@ def off(root):
     if present and kit_off(root):
         sys.exit(f"{copy} is not the kit's (its first line is no `<!-- orchestration-kit` header), "
                  "so it was left as it is. Nothing was changed.")
-    if default_style(root, data):
+    styled = default_style(root, data)
+    # Only a project the kit was on in: a `false` in a project it never touched is the user's.
+    woken = wake_journals(data) if present else []
+    if styled or woken:
         save(sf, data)
     if present:
         os.remove(copy)
@@ -171,6 +236,8 @@ def off(root):
             pass
     print(f"kit {'OFF' if present else 'already OFF'} in {root}. The hooks are silent from their "
           "next event; the kit rules leave with the next new chat here (/clear).")
+    if woken:
+        print(plugins_line(woken, False, root))
 
 
 def _selftest():
@@ -270,8 +337,48 @@ def _selftest():
             f.write('{"outputStyle": "kit-lean"}')
         off(root)
         ok(load(local_settings(root)) == {"outputStyle": "default"}, "off resets a kit style in force to default")
+        # A journal plugin (D002): off in settings.local.json where the kit is on, back at off -
+        # only one enabled for this project, never over the user's own value.
+        with open(USER_SETTINGS, "w", encoding="utf-8") as f:
+            f.write('{"enabledPlugins": {"remember@claude-plugins-official": true, "other@m": true}}')
+        mine = {"permissions": {"allow": ["Bash(ls)"]}}
+        quiet = {**mine, "enabledPlugins": {"remember@claude-plugins-official": False}}
+        root = project(json.dumps(mine))
+        on(root, src)
+        quiet_ok = load(local_settings(root)) == quiet
+        on(root, src)
+        again_ok = load(local_settings(root)) == quiet
+        off(root)
+        ok(quiet_ok and again_ok and load(local_settings(root)) == mine,
+           "on switches an enabled journal plugin (remember) off in settings.local.json, another plugin and the "
+           "user's keys untouched; twice is idempotent; off takes the false out again")
+        root = project('{"enabledPlugins": {"remember@claude-plugins-official": true}}')
+        on(root, src)
+        own_true = load(local_settings(root)) == {"enabledPlugins": {"remember@claude-plugins-official": True}}
+        root = project(shared='{"enabledPlugins": {"remember@claude-plugins-official": false}}')
+        on(root, src)
+        shared_off = not os.path.exists(local_settings(root))
+        root = project('{"enabledPlugins": {"remember@claude-plugins-official": false}}')  # the kit never on here
+        off(root)
+        never_on = load(local_settings(root)) == {"enabledPlugins": {"remember@claude-plugins-official": False}}
+        ok(own_true and shared_off and never_on,
+           "the user's own value in settings.local.json stays; a plugin the project's shared settings turn off "
+           "gets no local key; off in a project the kit was never on in keeps the user's false")
         root = project()
         git = subprocess.run(["git", "init", "-q", root], capture_output=True).returncode == 0
+        if git:
+            import contextlib
+            import io
+            tr = project(json.dumps(mine))
+            subprocess.run(["git", "init", "-q", tr], capture_output=True)
+            subprocess.run(["git", "-C", tr, "add", "-f", LOCAL_REL], capture_output=True)
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                on(tr, src)
+            ok("git tracks .claude/settings.local.json" in buf.getvalue() and "remember@claude-plugins-official: off" in buf.getvalue(),
+               "on says which plugin it switched off, and warns when git tracks settings.local.json")
+        with open(USER_SETTINGS, "w", encoding="utf-8") as f:
+            f.write("{}")
         if git:
             on(root, src)
             on(root, src)
@@ -332,7 +439,7 @@ def _selftest():
                 os.environ["CLAUDE_CONFIG_DIR"] = saved
     finally:
         shutil.rmtree(base, ignore_errors=True)
-    total = 15 - (0 if git else 1)
+    total = 18 - (0 if git else 2)
     print(f"{total - len(fails)}/{total} passed")
     return 1 if fails else 0
 

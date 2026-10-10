@@ -1113,6 +1113,31 @@ chk(_RULES_REL in _koff and 'HEADER = b"<!-- orchestration-kit"' in _koff and 'f
     "the kit is off by default: on exactly where /kit-on wrote its rules copy, the kit's header first; "
     'kit_switch.py and the session-start refresh share one guard (home folder, links, a project file '
     'of that name); install writes the rules to ~/.claude/kit/ and removes the global rules/ copy')
+# The kit and project-records, joined, not merged (2026-10-11, bucket kit-records-integration
+# D001-D003). Measured with both on: a bucket restated docs entries so its agents would see them,
+# numbered its own decisions D001 beside docs' D-005, the session start gave two "next" answers,
+# and remember injected a median 6-8K characters of a third session journal into every start.
+# Each clause is one a rewrite could drop silently: the one-home rule and the docs headings for
+# agents, the one "next", remember off where the kit is on (and back at off, never over the
+# user's own value), the one records question at /kit-on, and verify_live naming a drifted project.
+_ksa = open('core/hooks/kit-subagent-start.py', encoding='utf-8').read() if os.path.isfile('core/hooks/kit-subagent-start.py') else ''
+_kini = open('core/commands/kit-init.md', encoding='utf-8').read() if os.path.isfile('core/commands/kit-init.md') else ''
+_vl = open('verify_live.py', encoding='utf-8').read() if os.path.isfile('verify_live.py') else ''
+chk('def records_project' in _ki and 'def record_heads' in _ki and 'def roadmap_next' in _ki
+    and 'RECORDS_SIGNS = ' in _ki and 'linked(os.path.join(root, d))' in _ki
+    and 'RECORDS_LEAD' in _ksa and 'record_heads(root, ' in _ksa and 'records = records_project(root)' in _ksa
+    and 'RECORDS_NOTE' in _ks and 'def records_next' in _ks and '_try(records_project, scratch_root or root)' in _ks
+    and 'W01' in _tk and 'never restates the entry' in _tk and 'new: B-NNN' in _ct,
+    'project-records: docs/ is the one home - agents get the cited D-NNN headings, the session note '
+    'says so once and gives one next, a bucket cites ids and numbers its own choices W01')
+chk('JOURNAL_PLUGINS = ("remember@",)' in _ksw and 'quieted = quiet_journals(root, data)' in _ksw
+    and 'woken = wake_journals(data) if present else []' in _ksw and 'k not in (ep or {})' in _ksw
+    and '_ks_quiet(' in _vl and 'remember' in _kon,
+    '/kit-on switches remember off in settings.local.json (never over the user\'s own value), /kit-off '
+    'only where the kit was on turns it back, verify_live names a kit-ON project where it still runs')
+chk('AskUserQuestion' in _kon.split('---', 2)[1] and '/records-install' in _kon and 'Never run it' in _kon
+    and 'records-install.md' in _kon and 'Records: one question' in _kini and 'AskUserQuestion' in _kini.split('---', 2)[1],
+    '/kit-on and /kit-init ask once whether the project keeps project-records; the user types /records-install')
 # One whole-file writer (review 2026-10-10: a fixed `<copy>.tmp` name let a cloned repo's link
 # truncate any file of the user's; /simplify: three writers had grown apart). kit_index.write_atomic:
 # a tmp name of the process's own created new, a rename that never follows a link, the Windows retry.

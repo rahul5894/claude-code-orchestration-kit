@@ -1,7 +1,7 @@
 ---
 description: Set up the orchestration kit in THIS project - switches the kit on here, detects the fast gate, times it, writes CLAUDE.md from the global template, then audits the project. Run once per new repo, or whenever the session-start notice says the FAST GATE row is missing.
 argument-hint: [optional: the gate command, if you already know it]
-allowed-tools: Bash, Read, Write, Edit
+allowed-tools: Bash, Read, Write, Edit, AskUserQuestion
 ---
 
 Set up this project for the orchestration kit. The kit is installed globally but OFF in every
@@ -13,9 +13,11 @@ Argument (optional, the gate command if the user knows it): **$ARGUMENTS**
 ## 0. Switch the kit on here
 
 Run exactly `python ~/.claude/kit/kit_switch.py on "<root>"` (`<root>` = the absolute primary
-working directory, never `.`) and paste its output line. If it exits non-zero, show its message
+working directory, never `.`) and paste its output. If it exits non-zero, show its message
 and stop. Then Read `~/.claude/kit/orchestration-kit.md` whole and follow it from now on: the
-copy it just made loads by itself only from the next new chat.
+copy it just made loads by itself only from the next new chat. Last of all, after the report
+(step 3), ask the one records question `~/.claude/commands/kit-on.md` describes under
+"Records: one question", by its rules.
 
 ## 1. Never guess the gate — detect, then measure
 

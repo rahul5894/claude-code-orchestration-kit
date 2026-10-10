@@ -4,7 +4,7 @@
     "simple-english@simple-english": "SessionStart injects ~700 tokens of reply rules, PostToolUse lints every .md edit, Stop nags 'five sentences or fewer' after replies; all three fight the orchestrator's report rules. The skill ships in core/skills/simple-english as slash-only."
   },
   "allow": {
-    "remember@claude-plugins-official": "memory hooks only, no reply-style rules",
+    "remember@claude-plugins-official": "memory hooks only, no reply-style rules; kept where the kit is off, switched off per project by /kit-on (settings.local.json), where the kit's task timeline keeps the session record (kit-records-integration D002)",
     "watch@claude-video": "SessionStart prints a one-line setup notice",
     "last30days@last30days-skill": "SessionStart prints a one-line source notice",
     "ponytail@ponytail": "the user's own choice: the kit neither installs nor disables it, and works the same with or without it"

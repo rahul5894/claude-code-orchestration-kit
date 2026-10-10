@@ -41,6 +41,12 @@ after a bucket closes (once a day), and re-renders a stale SESSIONS.md - within 
 previous session of this same window, whose own SessionEnd may still be running. Then
 kit-context markers older than 30 days are deleted (kit_index.sweep_context_markers).
 
+project-records (bucket kit-records-integration, D001): where the user's project-records skill
+keeps the project's record in docs/ (kit_index.records_project), the note says once that docs/ is
+the one home and a bucket only cites its ids, and - with no task open - names the project's next
+item, the first open line of docs/ROADMAP.md. records-hook.mjs leaves that line to the kit while
+the kit is on, so a session start has one "next" (measured 2026-10-11: two, B-003 vs Q-008).
+
 Why it exists: without a named gate, an agent invents one and picks the slowest command it
 can find - measured once at two full pytest runs of 159 s each, for a project whose real fast
 gate took 7.7 s.
@@ -67,9 +73,9 @@ import json  # noqa: E402
 import re  # noqa: E402
 import time  # noqa: E402
 
-from kit_index import (busy_buckets, installed_rules, linked, open_rows, read_window, rules_blocker,  # noqa: E402
-                       scratch_ok, session_bucket, sweep_context_markers, sync_rules, window, window_bucket,
-                       write_window)
+from kit_index import (busy_buckets, installed_rules, linked, open_rows, read_window, records_project,  # noqa: E402
+                       roadmap_next, rules_blocker, scratch_ok, session_bucket, sweep_context_markers,
+                       sync_rules, window, window_bucket, write_window)
 from kit_index import scratch_root as find_scratch_root  # noqa: E402
 
 GATE_RE = re.compile(r"FAST GATE", re.IGNORECASE)
@@ -100,6 +106,13 @@ ROUTE = ("Choose from the cards: open no bucket file before the user has picked 
          "question. A first request that plainly belongs to one task, with no /continue: say "
          "which and offer to continue it there. After the pick, the task skill's 'Continue a "
          "bucket' step (`/task <slug>`) reads that task's whole history; the others stay as they are.")
+RECORDS_NOTE = ("orchestration-kit + project-records: docs/ is this project's record, a bucket is working "
+                "notes. A decision, finding, lesson, question or work item is filed in docs/ under its id "
+                "(D-/F-/L-/Q-/B-NNN); a bucket cites that id and never restates the entry, and numbers its "
+                "own working choices W01, W02 - never D001 beside a D-005. A task for a work item is named "
+                "after it (b012-csv-export).")
+RECORDS_NEXT = ("No open task. The project's next item, the first open line of docs/ROADMAP.md: {item} - "
+                "/continue takes it up.")
 NEWEST = " (newest handoff)"
 MINE = " (this window's task)"
 BUSY = " (open in another window)"
@@ -389,6 +402,12 @@ def refresh_rules(root):
             sync_rules(root, rules)
 
 
+def records_next(root):
+    """RECORDS_NEXT for a project-records project whose docs/ROADMAP.md has an open line, else ""."""
+    item = roadmap_next(root) if records_project(root) else ""
+    return RECORDS_NEXT.format(item=item) if item else ""
+
+
 def needs_init(root):
     path = os.path.join(root, "CLAUDE.md")
     try:
@@ -412,7 +431,8 @@ def main():
             sys.stdout.write("The kit is off in this project (the default): no task cards. /kit-on turns it on.\n")
             return
         if cards_mode and not scratch_ok(root):
-            sys.stdout.write("No task buckets here (.claude/scratch is missing).\n")
+            nxt = _try(records_next, root) or ""
+            sys.stdout.write("No task buckets here (.claude/scratch is missing).\n" + (nxt + "\n" if nxt else ""))
             return
     else:
         try:
@@ -432,6 +452,12 @@ def main():
     # Every open task counts for the marks below (a hidden row once lost this window's own task
     # after /clear); pick_rows then chooses the rows shown.
     buckets = open_buckets(scratch_root) if scratch_root else []
+    # project-records (D001): the one-home rule first, where the cap never cuts it; with no task
+    # open, the project's next item - records-hook.mjs leaves that line to the kit while it is on.
+    records = bool(_try(records_project, scratch_root or root))
+    rec_next = (_try(records_next, scratch_root or root) or "") if records and not buckets else ""
+    if records and not cards_mode:
+        context += [RECORDS_NOTE] + ([rec_next] if rec_next else [])
     slugs = [s for s, _, _ in buckets]
     me = window() if cards_mode or not READONLY else ""
     mine = _try(my_bucket, data, scratch_root, me, slugs) if buckets else None
@@ -485,7 +511,7 @@ def main():
         lines = fit(([CARDS] if buckets else []) + rows + ([] if cards_mode else [ROUTE]),
                     (CARDS_CAP if cards_mode else CONTEXT_CAP) - len("\n\n".join(context)) - 2)
         if cards_mode:
-            sys.stdout.write("\n".join(lines) + "\n")
+            sys.stdout.write("\n".join(lines + ([rec_next] if rec_next else [])) + "\n")
             return
         context.append("\n".join(lines))
         # Claude Code adds a compact-matching SessionStart hook's output to the compacted context.
@@ -498,7 +524,7 @@ def main():
                 st = st[:max(0, room)] + "\n[... cut to fit the hook's 10,000-character cap; read the file for the rest]"
             context.append(STATE_AFTER_COMPACT.format(slug=mine or top) + st)
     if cards_mode:
-        sys.stdout.write("No open tasks, and none closed in the last 14 days.\n")
+        sys.stdout.write("No open tasks, and none closed in the last 14 days.\n" + (rec_next + "\n" if rec_next else ""))
         return
     if not context:
         return

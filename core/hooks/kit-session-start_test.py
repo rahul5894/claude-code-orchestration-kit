@@ -424,6 +424,39 @@ extra.append((row_of(c, "stale").endswith(" · idle 20d") and "idle" not in row_
               "STATE.md untouched 20 days -> ` · idle 20d` on its row (14.5 days, 1 day: none); "
               "the note: idle never beats fresh unless P1"))
 
+# project-records (bucket kit-records-integration, D001): where docs/ is the record, the note says
+# once that it is the one home; with no task open it names the project's next item (records-hook
+# leaves that line to the kit while the kit is on), --cards too. A project without it gets neither.
+def records(root, roadmap="# Roadmap\n- [x] B-001 Record system set up\n- [ ] B-003 Agree the API scope\n"):
+    os.makedirs(os.path.join(root, "docs"), exist_ok=True)
+    os.makedirs(os.path.join(root, ".claude", "skills", "project-records"), exist_ok=True)
+    for rel, text in (("docs/TIMELINE.md", "# Timeline\n"), ("docs/ROADMAP.md", roadmap),
+                      (".claude/skills/project-records/SKILL.md", "---\nname: project-records\n---\n")):
+        with open(os.path.join(root, rel), "w", encoding="utf-8") as f:
+            f.write(text)
+    return root
+
+
+REC_OPEN = records(bucket_project("rec-open", True, [("b007-retries-spec", "OPEN", "fill spec §3")]))
+REC_IDLE = records(bucket_project("rec-idle", True, [("b001-setup", "DONE", "nothing")]))
+REC_NOSCRATCH = os.path.join(tmp, "rec-noscratch")
+os.makedirs(REC_NOSCRATCH)
+kit_on(REC_NOSCRATCH)
+records(REC_NOSCRATCH)
+c_open, c_idle = context(run("stdin", REC_OPEN)), context(run("stdin", REC_IDLE))
+extra.append((c_open.startswith("orchestration-kit + project-records: docs/ is this project's record")
+              and "W01, W02" in c_open and "b007-retries-spec [OPEN]" in c_open and "No open task" not in c_open
+              and "B-003" not in c_open,
+              "records project, a task open -> the one-home note first, the task's card; no roadmap line"))
+extra.append(("No open task. The project's next item, the first open line of docs/ROADMAP.md: B-003 Agree the API "
+              "scope - /continue takes it up." in c_idle and "B-001" not in c_idle
+              and "No open task. The project's next item" in run("cards", REC_IDLE)["_text"]
+              and "B-003" in run("cards", REC_NOSCRATCH)["_text"],
+              "records project, no task open -> the first open roadmap line is the one next, in the note and "
+              "in --cards (also with no .claude/scratch)"))
+extra.append(("project-records" not in context(run("stdin", BUCKETS)) and "No open task" not in run("cards", BUCKETS)["_text"],
+              "a project without project-records gets no records note and no roadmap line"))
+
 # Off is the default (bucket kit-default-off-optimize, D002): a project /kit-on never touched gets
 # nothing - no gate notice, no cards, no window record, no upkeep - and --cards says why.
 OFFP = bucket_project("off-by-default", False, [("o1", "OPEN", "x")], on=False)
