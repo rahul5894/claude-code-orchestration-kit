@@ -12,7 +12,7 @@ Inside .claude/scratch/<slug>/:
 Who calls what: kit-context (Stop) -> touch() after every turn; kit-session-end (SessionEnd) ->
 finish() = touch + digest; kit-session-start -> maintain(): finish one session that never got a
 SessionEnd (a killed or closed window fires none, and the next window has another CLAUDE_PID),
-prune, sweep stale temp markers, re-render a stale view.
+prune, re-render a stale view.
 
 Why: measured 2026-10-09 over 393 sessions - 55% of buckets span 2+ sessions (max 9, over 8
 days); STATE.md is replaced at each handoff and only 5 digests were kept, so S1-S4 of a
@@ -27,12 +27,10 @@ come from line counts taken at each turn, D ids from the DECISIONS lines in that
 
     python kit_chain.py --backfill <project-root> [--transcripts <dir>] [--days 30]
 """
-import hashlib
 import json
 import os
 import re
 import sys
-import tempfile
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -67,10 +65,7 @@ REPAIR_IDLE = 1800           # no window id: a transcript idle this long is a de
 REPAIR_MIN_AGE = 60          # an entry touched this recently may still be mid-SessionEnd
 REPAIR_MAX = 60_000_000      # bigger transcripts are repaired without a digest
 TMP_STALE = 3600
-# The hooks' own markers in the temp dir, (prefix, age after which one is stale): a prune marker
-# only answers "pruned today?", a context marker lives as long as its session. Measured
-# 2026-10-10: 62 + 41 of them had piled up, nothing ever deleted one.
-TEMP_MARKERS = (("kit-chain-prune-", 2 * 86400), ("kit-context-", KEEP_DAYS * 86400))
+PRUNE_MARKER = ".kit-pruned"
 
 
 def _try(fn, *args, **kw):
@@ -617,40 +612,19 @@ def prune(root, now=None):
     return gone
 
 
-def sweep_markers(now=None):
-    """Delete the TEMP_MARKERS files past their age. Plain files only, never a link or a folder
-    (a test's kit-context-test-* dir). One deleted early costs a re-run prune or a repeated
-    context notice, nothing more. Returns how many it deleted."""
-    now = now or time.time()
-    gone = 0
-    try:
-        with os.scandir(tempfile.gettempdir()) as it:
-            for e in it:
-                age = next((a for prefix, a in TEMP_MARKERS if e.name.startswith(prefix)), None)
-                try:
-                    if age and e.is_file(follow_symlinks=False) and now - e.stat(follow_symlinks=False).st_mtime > age:
-                        os.remove(e.path)
-                        gone += 1
-                except OSError:
-                    pass
-    except OSError:
-        pass
-    return gone
-
-
 def maintain(root, skip=(), deadline=None):
-    """SessionStart upkeep within `deadline`: repair one unfinished session, prune and sweep the
-    stale markers once a day per project, re-render a SESSIONS.md older than its entries."""
+    """SessionStart upkeep within `deadline`: repair one unfinished session, prune once a day
+    per project, re-render a SESSIONS.md older than its entries."""
     if not scratch_ok(root):
         return
     deadline = deadline or time.time() + 2
     _try(repair, root, skip, deadline)
-    key = hashlib.sha1(os.path.normcase(os.path.realpath(root)).encode("utf-8", "replace")).hexdigest()[:12]
-    marker = os.path.join(tempfile.gettempdir(), f"kit-chain-prune-{key}")
+    # The project's own "pruned today" flag, in its gitignored scratch: it goes with the project
+    # (or a test fixture). One per root in the temp dir piled up - 77 by 2026-10-10.
+    marker = os.path.join(root, ".claude", "scratch", PRUNE_MARKER)
     today = time.strftime("%Y-%m-%d")
     if _read(marker, 64) != today and time.time() < deadline:
         _try(prune, root)
-        _try(sweep_markers)
         _try(kit_digest.write_atomic, marker, today)
     for bucket in _buckets(root):
         if time.time() > deadline:

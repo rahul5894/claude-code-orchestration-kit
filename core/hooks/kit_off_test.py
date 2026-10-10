@@ -11,6 +11,10 @@ import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 tmp = tempfile.mkdtemp(prefix="kit-off-test-")
+# The hooks' temp-dir writes (window record, context marker) land here, never in the real temp
+# dir - where a run under CLAUDE_PID would overwrite the calling window's own record.
+PRIVATE_TMP = os.path.join(tmp, "_tmp")
+os.makedirs(PRIVATE_TMP)
 fails = []
 
 
@@ -44,8 +48,9 @@ def project(off):
 
 
 def run(hook, root, payload):
-    env = dict(os.environ, CLAUDE_PROJECT_DIR=root)
-    env.pop("CLAUDE_CODE_SESSION_ATTENDED", None)
+    env = dict(os.environ, CLAUDE_PROJECT_DIR=root, TEMP=PRIVATE_TMP, TMP=PRIVATE_TMP, TMPDIR=PRIVATE_TMP)
+    for k in ("CLAUDE_CODE_SESSION_ATTENDED", "CLAUDE_PID"):
+        env.pop(k, None)
     before = sorted(os.path.join(d, n) for d, _, ns in os.walk(root) for n in ns)
     p = subprocess.run([sys.executable, os.path.join(HERE, hook)], cwd=root, env=env,
                        input=json.dumps(dict(payload, cwd=root)).encode("utf-8"), capture_output=True)
@@ -80,9 +85,6 @@ try:
     ok('"deny"' in out, "md-guard: .claude/kit-off does NOT lift the read-only write guard")
 finally:
     shutil.rmtree(tmp, ignore_errors=True)
-    for f in os.listdir(tempfile.gettempdir()):
-        if f.startswith("kit-context-kit-off-"):
-            os.remove(os.path.join(tempfile.gettempdir(), f))
 
 print(f"{2 * len(CASES) + 1 - len(fails)}/{2 * len(CASES) + 1} passed")
 sys.exit(1 if fails else 0)

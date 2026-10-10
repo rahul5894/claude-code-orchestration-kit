@@ -42,13 +42,12 @@ import json
 import os
 import re
 import sys
-import tempfile
 
 # The hook's own folder, explicitly: under PYTHONSAFEPATH=1 (or python -P / -I) the script dir
 # is not on sys.path, the import fails and the hook exits 1 - which fails open (refuter-02).
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from kit_off import kit_off  # noqa: E402
-from kit_index import MAX_TRANSCRIPT, scratch_root, session_bucket  # noqa: E402
+from kit_index import MAX_TRANSCRIPT, context_marker, scratch_root, session_bucket  # noqa: E402
 from kit_index import window as window_id  # noqa: E402
 
 THRESHOLD = 45
@@ -238,7 +237,7 @@ def main():
     if any(not isinstance(t, dict) or t.get("type") != "shell"
            for t in data.get("background_tasks") or []):
         return
-    marker = os.path.join(tempfile.gettempdir(), "kit-context-" + UNSAFE.sub("_", sid or "unknown"))
+    marker = context_marker(sid)
     if pct < THRESHOLD:
         try:
             os.remove(marker)

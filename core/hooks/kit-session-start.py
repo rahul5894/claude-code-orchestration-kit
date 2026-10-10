@@ -24,7 +24,8 @@ window and the other windows read.
 Timeline upkeep (bucket handoff-timeline): kit_chain.maintain() finishes at most one session that
 ended with no SessionEnd (a killed or closed window fires none), prunes verbatim records 7 days
 after a bucket closes (once a day), and re-renders a stale SESSIONS.md - within ~2 s, never the
-previous session of this same window, whose own SessionEnd may still be running.
+previous session of this same window, whose own SessionEnd may still be running. Then, in any
+project, kit-context markers older than 30 days are deleted (kit_index.sweep_context_markers).
 
 Why it exists: without a named gate, an agent invents one and picks the slowest command it
 can find - measured once at two full pytest runs of 159 s each, for a project whose real fast
@@ -44,7 +45,7 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from kit_off import kit_off  # noqa: E402
 from kit_index import (busy_buckets, open_rows, read_window, scratch_ok, session_bucket,  # noqa: E402
-                       window, window_bucket, write_window)
+                       sweep_context_markers, window, window_bucket, write_window)
 
 GATE_RE = re.compile(r"FAST GATE", re.IGNORECASE)
 NOTICE = ("orchestration-kit: this project has no FAST GATE row in CLAUDE.md. "
@@ -218,6 +219,8 @@ def main():
         # nor this one.
         _try(_maintain, scratch_root, {str(prev.get("sid") or ""), str(data.get("session_id") or "")},
              t0 + MAINTAIN_S)
+    if len(sys.argv) < 3 and time.time() < t0 + MAINTAIN_S:
+        _try(sweep_context_markers)
     if buckets:
         rows = [f"- {slug} [{status}]: {nxt}"
                 + (MINE if slug == mine else BUSY if slug in busy else NEWEST if slug == top else "")

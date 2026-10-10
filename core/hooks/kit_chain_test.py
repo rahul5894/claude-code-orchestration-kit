@@ -363,18 +363,22 @@ try:
        "a bucket moved to _closed/ is pruned too; no close date = STATE.md's mtime")
     ok(not os.path.exists(oldtmp) and os.path.exists(newtmp), "a tmp file older than an hour goes, a new one stays")
     ok("no verbatim record" in view(root6, "old"), "a pruned bucket's view says the record is gone")
-    # The hooks' temp markers: a stale one goes; a fresh one, a folder and another tool's file stay.
+    # The prune flag lives in the project's scratch, never the temp dir; a stale context marker
+    # goes, a fresh one, a folder and another tool's file stay.
     t = tempfile.gettempdir()
-    aged = {"kit-chain-prune-old": 3 * day, "kit-chain-prune-new": 0, "kit-context-old-sid": 8 * day,
-            "kit-context-new-sid": 6 * day, "other-tool-file": 30 * day, "kit-context-test-dir": 30 * day}
+    kc.maintain(root6, deadline=time.time() + 5)
+    aged = {"kit-context-old-sid": 31 * day, "kit-context-new-sid": 29 * day,
+            "other-tool-file": 60 * day, "kit-context-test-dir": 60 * day}
     for name, age in aged.items():
         p = os.path.join(t, name)
         os.makedirs(p) if name.endswith("-dir") else open(p, "w").close()
         os.utime(p, (time.time() - age, time.time() - age))
-    swept = kc.sweep_markers()
-    ok(swept == 2 and sorted(n for n in os.listdir(t) if n in aged)
-       == ["kit-chain-prune-new", "kit-context-new-sid", "kit-context-test-dir", "other-tool-file"],
-       "a prune marker 3 days old and a context marker 8 days old go; fresh ones, a folder, a stranger stay")
+    swept = ki.sweep_context_markers()
+    ok(os.path.isfile(os.path.join(root6, ".claude", "scratch", ".kit-pruned"))
+       and not [n for n in os.listdir(t) if "prune" in n]
+       and swept == 1 and sorted(n for n in os.listdir(t) if n in aged)
+       == ["kit-context-new-sid", "kit-context-test-dir", "other-tool-file"],
+       "prune flag in scratch, none in temp; a context marker 31 days old goes, the rest stay")
 
     # 13. A torn entry is skipped, never a crash.
     with open(note(root, "alpha", os.path.join("digests", "torn.json")), "w", encoding="utf-8") as f:

@@ -401,6 +401,36 @@ def _window_file(pid):
     return os.path.join(tempfile.gettempdir(), f"kit-window-{pid}.json")
 
 
+# kit-context's per-session band marker. A session that ends above the threshold (the usual
+# handoff + /clear) leaves it behind; measured 2026-10-10: 41 had piled up. Stale after 30 days:
+# Claude Code deletes a transcript after cleanupPeriodDays (default 30), so no older session can
+# be resumed and re-blocked for a band it already handled.
+CONTEXT_MARKER = "kit-context-"
+CONTEXT_MARKER_AGE = 30 * 86400
+
+
+def context_marker(sid):
+    return os.path.join(tempfile.gettempdir(), CONTEXT_MARKER + re.sub(r"[^A-Za-z0-9._-]", "_", sid or "unknown"))
+
+
+def sweep_context_markers():
+    """Delete context markers older than CONTEXT_MARKER_AGE: plain files only, never a link or a
+    folder. ~9 ms over 20,741 temp entries (2026-10-10). Returns how many it deleted."""
+    now, gone = time.time(), 0
+    with os.scandir(tempfile.gettempdir()) as it:
+        for e in it:
+            if not e.name.startswith(CONTEXT_MARKER):
+                continue
+            try:
+                if (e.is_file(follow_symlinks=False) and not linked(e.path)
+                        and now - e.stat(follow_symlinks=False).st_mtime > CONTEXT_MARKER_AGE):
+                    os.remove(e.path)
+                    gone += 1
+            except OSError:
+                pass
+    return gone
+
+
 def alive(pid):
     """Whether process `pid` runs. Never signal 0 on Windows: there os.kill TERMINATES it."""
     pid = int(pid)
