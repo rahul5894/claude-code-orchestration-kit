@@ -80,7 +80,7 @@ kit-subagent-start self-check: 19/19 passed
 kit-context self-check: 48/48 passed
 kit_off self-check: 11/11 passed
 kit_digest self-check: 35/35 passed
-kit_chain self-check: 45/45 passed
+kit_chain self-check: 46/46 passed
 kit-session-end self-check: 8/8 passed
 kit-switch self-check: 12/12 passed
 scan-project self-check: 38/38 passed
@@ -297,7 +297,7 @@ killed with no SessionEnd and prunes. Records stay while the task is open and ar
 after `Status: CLOSED <date>`; entries, SESSIONS.md, STATE, DECISIONS and FINDINGS stay.
 `python ~/.claude/hooks/kit_chain.py --backfill <repo>` builds the records of open tasks from
 the transcripts still on disk (Claude Code keeps them 30 days).
-Check: `python ~/.claude/hooks/kit_chain_test.py` prints `45/45 passed` and
+Check: `python ~/.claude/hooks/kit_chain_test.py` prints `46/46 passed` and
 `python ~/.claude/hooks/kit-session-end_test.py` prints `8/8 passed`.
 
 Known gaps, on purpose:
@@ -450,7 +450,7 @@ report format. The skill is worth keeping, so the kit ships its own copy at
 - [ ] the same run printed `kit-context self-check: 48/48 passed`
 - [ ] the same run printed `kit_off self-check: 11/11 passed`
 - [ ] the same run printed `kit_digest self-check: 35/35 passed`
-- [ ] the same run printed `kit_chain self-check: 45/45 passed`
+- [ ] the same run printed `kit_chain self-check: 46/46 passed`
 - [ ] the same run printed `kit-session-end self-check: 8/8 passed`
 - [ ] the same run printed `kit-switch self-check: 12/12 passed`
 - [ ] the same run printed `scan-project self-check: 38/38 passed`

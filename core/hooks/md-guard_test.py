@@ -1,7 +1,9 @@
 """Self-contained check for md-guard.py. Run from anywhere: python md-guard_test.py
 Builds its own fixtures (one 400-line .md, one 10-line .md) in a temp dir."""
+import atexit
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -14,6 +16,7 @@ except (AttributeError, OSError):
 HOOK = os.path.join(os.path.dirname(os.path.abspath(__file__)), "md-guard.py")
 
 tmp = tempfile.mkdtemp(prefix="md-guard-")
+atexit.register(shutil.rmtree, tmp, True)
 BIG = os.path.join(tmp, "big.md").replace("\\", "/")
 SMALL = os.path.join(tmp, "small.md").replace("\\", "/")
 BIG_WIN = BIG.replace("/", "\\")

@@ -1019,6 +1019,15 @@ _ke = open('core/hooks/kit-session-end.py', encoding='utf-8').read() if os.path.
 chk('KEEP =' not in _kd and 'def prune' not in _kd and 'KEEP_DAYS = 7' in _kh and 'def prune' in _kh
     and '_closed' in _kh,
     'no count cap deletes digests; kit_chain prunes verbatim records 7 days after a bucket closes (the user\'s rule)')
+# 2026-10-10: ~2,000 kit leftovers (35 MB) had piled up in the temp dir - three self-tests never
+# deleted their fixtures (install.ps1 runs every one on each install) and no hook ever deleted
+# its own markers.
+_leaky = [f for f in sorted(glob.glob('core/hooks/*_test.py'))
+          if 'mkdtemp(' in open(f, encoding='utf-8').read() and 'shutil.rmtree' not in open(f, encoding='utf-8').read()]
+chk(not _leaky and 'def sweep_markers' in _kh and '_try(sweep_markers)' in _kh
+    and '"kit-chain-prune-"' in _kh and '"kit-context-"' in _kh,
+    'every hook self-test deletes its temp fixtures; maintain() sweeps the stale kit-chain-prune / kit-context markers',
+    ', '.join(_leaky))
 _headless = 'os.environ.get("CLAUDE_CODE_SESSION_ATTENDED") == "0"'
 chk('_try(chain_touch' in _kc and _headless in _kc and 'background_tasks") or []' in _kc
     and _kc.index('_try(chain_touch') < _kc.index(_headless)

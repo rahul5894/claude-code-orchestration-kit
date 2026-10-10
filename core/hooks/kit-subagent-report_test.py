@@ -1,18 +1,22 @@
 """Self-contained check for kit-subagent-report.py. Run from anywhere:
 python kit-subagent-report_test.py
 Builds its own fixture repos (one with .claude/scratch/, one without) in a temp dir."""
+import atexit
 import datetime
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
 
 HOOK = os.path.join(os.path.dirname(os.path.abspath(__file__)), "kit-subagent-report.py")
+tmp = tempfile.mkdtemp(prefix="kit-subagent-report-test-")
+atexit.register(shutil.rmtree, tmp, True)
 
 
 def repo(with_scratch=True):
-    d = tempfile.mkdtemp(prefix="kit-subagent-report-")
+    d = tempfile.mkdtemp(dir=tmp)
     if with_scratch:
         os.makedirs(os.path.join(d, ".claude", "scratch"))
     return d

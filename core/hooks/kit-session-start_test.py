@@ -2,8 +2,10 @@
 Builds its own fixtures in a temp dir: a project with a FAST GATE row, one without, one with
 no CLAUDE.md at all. Feeds the hook both ways it is invoked - stdin JSON as Claude Code does,
 and `--check <dir>` as verify_live.py does."""
+import atexit
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -11,6 +13,7 @@ import tempfile
 HOOK = os.path.join(os.path.dirname(os.path.abspath(__file__)), "kit-session-start.py")
 
 tmp = tempfile.mkdtemp(prefix="kit-start-")
+atexit.register(shutil.rmtree, tmp, True)
 WITH = os.path.join(tmp, "with")
 WITHOUT = os.path.join(tmp, "without")
 NONE = os.path.join(tmp, "none")

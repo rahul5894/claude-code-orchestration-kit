@@ -4,8 +4,10 @@ buckets, a 20,000-char DECISIONS.md, and a project under a non-ASCII path. Feeds
 ways it is invoked - stdin JSON as Claude Code does, and `--check <dir>` as verify_live.py
 does. The last case is the output contract: every CONTEXT payload must parse as the documented
 SubagentStart JSON."""
+import atexit
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -19,6 +21,7 @@ HOOK = os.path.join(os.path.dirname(os.path.abspath(__file__)), "kit-subagent-st
 MAX_CHARS = 6000
 
 tmp = tempfile.mkdtemp(prefix="kit-substart-")
+atexit.register(shutil.rmtree, tmp, True)
 
 
 def project(name, rows, decisions):
