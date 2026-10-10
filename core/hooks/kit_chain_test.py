@@ -500,6 +500,26 @@ try:
     ok(entry(root9, "mine", sid9) and entry(root9, "closed", sid9) is None
        and ki.session_bucket(t9, root9) == ki.bucket_dir(root9, "mine"),
        "a read with `2>/dev/null` of another task's STATE.md files nothing there, and /clear stays on this task")
+    # 18b. A copy of a task outside the project (a sandbox, another project) is not that task:
+    # 2026-10-10 a `sed -i` on `$T/.claude/scratch/<closed>/STATE.md` filed a session there.
+    elsewhere = os.path.join(tmp, "elsewhere", ".claude", "scratch", "closed", "STATE.md")
+    sid9b = "99999999-0000-4000-8000-00000000009b"
+    t9b = transcript(sid9b, [
+        u(sid9b, "2026-10-10T03:00:00Z", "sandbox test"),
+        a(sid9b, "2026-10-10T03:01:00Z", call("Bash", command=f'T=$(mktemp -d); cp -r .claude/scratch "$T/.claude/"; '
+                                                              f'sed -i s/a/b/ "$T/{S}closed/STATE.md"')),
+        a(sid9b, "2026-10-10T03:02:00Z", call("Write", file_path=elsewhere, content=state("closed", "c"))),
+        a(sid9b, "2026-10-10T03:03:00Z", call("Bash", command=f'echo x >> "$CLAUDE_PROJECT_DIR/{S}mine/FINDINGS.md"')),
+    ])
+    kc.touch(t9b, sid9b, root9)
+    home = os.path.expanduser("~")
+    ok(entry(root9, "closed", sid9b) is None and (entry(root9, "mine", sid9b) or {}).get("sid") == sid9b
+       and ki.session_bucket(t9b, root9) is None
+       and ki.note_here("~/", home) and ki.note_here(root9.replace("\\", "/") + "/", root9)
+       and not ki.note_here("/tmp/x/", root9)
+       and ki.shell_notes(f"$r='{root9}'; Add-Content \"$r\\.claude\\scratch\\mine\\FINDINGS.md\" x", root9)
+       == [("mine", "FINDINGS", True)],
+       "a sandbox ($T) or another folder's copy of a task files nothing; $CLAUDE_PROJECT_DIR, ~ and a name set to the root do")
 
     # 19. A background task's notice is never what the user asked.
     sid10 = "aaaaaaaa-0000-4000-8000-00000000000a"

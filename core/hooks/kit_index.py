@@ -283,7 +283,51 @@ def _written(shell, masked, spans, c0, end):
     return bool(COPIER.match(stage)) and re.match(r"[ \t]*(?:$|[;&|)\n`])", after) is not None
 
 
-def shell_notes(cmd):
+# Whose bucket a note path names is judged by what stands before `.claude/scratch/` (2026-10-10):
+# a copy elsewhere - a sandbox `$T/.claude/scratch/a/STATE.md` with T=$(mktemp -d), another
+# project's absolute path - is not this project's task. Over 805 real transcripts that filed 1
+# session in a closed task; every real write (~1,530) was relative, under the root, behind
+# $CLAUDE_PROJECT_DIR, or behind a name the same command set to the root.
+PREFIX_STOP = " \t\n\"'<>|;&=`"
+PREFIX_VAR = re.compile(r"(?:\$\{?(?:env:)?(\w+)\}?|\$\((\w+)\)|%(\w+)%)(.*)$", re.IGNORECASE)
+
+
+def path_prefix(text, at):
+    """The word part before position `at` (where `.claude` starts) in a shell command."""
+    i = at
+    while i > 0 and text[i - 1] not in PREFIX_STOP:
+        i -= 1
+    return text[i:at]
+
+
+def note_here(prefix, root, cmd=""):
+    """Whether a note path whose text before `.claude` is `prefix` lies in `root`'s scratch: a
+    relative path does (the session works in its root), an absolute one only when it is the
+    root, `$CLAUDE_PROJECT_DIR` / `$PWD` / `$(pwd)` do, and another name only when `cmd` itself
+    sets it to such a path. No root to judge by: yes, as before."""
+    head = prefix.rstrip("/\\")
+    if root is None or not re.match(r"[A-Za-z]:|[/\\$%~]", prefix):
+        return True
+    if head[:1] in "$%":
+        m = PREFIX_VAR.match(head)
+        if not m:
+            return False
+        name, rest = next(g for g in m.groups()[:3] if g), m.group(4)
+        if name.upper() in ("CLAUDE_PROJECT_DIR", "PWD"):
+            return True
+        a = re.search(r"(?:^|[;&|\n\s(])\$?" + re.escape(name) + r"\s*=\s*([\"']?)([^\"'\s;&|$()]+)\1(?=[\s;&|)]|$)", cmd)
+        if not a:
+            return False  # T=$(mktemp -d), or a name this command never set
+        head = a.group(2) + rest
+        if not re.match(r"[A-Za-z]:|[/\\~]", head):
+            return True
+    head = os.path.expanduser(head)
+    if os.name == "nt":
+        head = re.sub(r"^[/\\]([A-Za-z])(?=[/\\]|$)", r"\1:", head)  # Git Bash /d/x = d:/x
+    return same_dir(head or os.sep, root)
+
+
+def shell_notes(cmd, root=None):
     """[(slug, NOTE, written)] for each bucket note a shell command names, in order; NOTE is
     STATE, FINDINGS or DECISIONS. `written` only when that very path is the write target (see
     REDIRECT_END and the patterns below it). A note named in a data heredoc's body is text being
@@ -322,26 +366,29 @@ def shell_notes(cmd):
                 q = max(work.rfind("'", a, c), work.rfind('"', a, c))  # the literal's opening quote
                 if c not in named and not (q >= 0 and READ_CALL.search(work, a, q + 1)):
                     code.add(c)
-    found = []
+    found = []  # (where the note is named, where its `.claude` starts, slug, NOTE, written)
     for m in NOTE_PATH.finditer(work):
         c0 = m.start() + m.group(0).lower().index(".claude")
         coded = any(a <= c0 < b for a, b in in_code)
-        found.append((c0, m.group(1), m.group(2).upper(),
+        found.append((c0, c0, m.group(1), m.group(2).upper(),
                       c0 in code or (not coded and _written(shell, masked, spans, c0, m.end()))))
     stops = [m.start() for m in CD_ANY.finditer(shell)]
     for cd in CD_INTO.finditer(shell):
         until = next((s for s in stops if s > cd.start()), len(shell))
+        at = cd.start() + cd.group(0).lower().index(".claude")
         for m in BARE_NOTE.finditer(shell, cd.end(), until):
-            found.append((m.start(), cd.group(1), m.group(1).upper(), _written(shell, masked, spans, m.start(), m.end())))
+            found.append((m.start(), at, cd.group(1), m.group(1).upper(), _written(shell, masked, spans, m.start(), m.end())))
     for v in SHELL_VAR.finditer(shell):
         if any(a < v.start(1) < b for a, b in spans):
             continue  # `echo "F=..."`: an assignment inside a quoted string is text
         name, slug, note = re.escape(v.group(1)), v.group(4), (v.group(5) or "").upper()
+        at = v.start(3) + v.group(3).lower().index(".claude")
         use = re.compile(r"\$\{?" + name + r"\}?" + (r"(?![\w/\\])" if note else
                                                      r"[/\\](STATE|FINDINGS|DECISIONS)\.md(?![\w-]|\.\w)"), re.IGNORECASE)
         for m in use.finditer(shell, v.end()):
-            found.append((m.start(), slug, note or m.group(1).upper(), _written(shell, masked, spans, m.start(), m.end())))
-    return [(slug, note, w) for _, slug, note, w in sorted(found)]
+            found.append((m.start(), at, slug, note or m.group(1).upper(), _written(shell, masked, spans, m.start(), m.end())))
+    return [(slug, note, w) for _, at, slug, note, w in sorted(found)
+            if note_here(path_prefix(cmd, at), root, cmd)]
 
 
 def session_bucket(transcript, root, reads=False):
@@ -375,9 +422,10 @@ def session_bucket(transcript, root, reads=False):
                 name = b.get("name")
                 if name in WRITERS or name == "Read":
                     path = str(inp.get("file_path") or "")
-                    notes = [(m.group(1), m.group(2).upper(), name != "Read") for m in NOTE_PATH.finditer(path)]
+                    notes = [(m.group(1), m.group(2).upper(), name != "Read") for m in NOTE_PATH.finditer(path)
+                             if note_here(path[:m.start() + m.group(0).lower().index(".claude")], root)]
                 elif name in SHELLS:
-                    notes = shell_notes(inp.get("command"))
+                    notes = shell_notes(inp.get("command"), root)
                 else:
                     continue
                 for slug, note, written in notes:

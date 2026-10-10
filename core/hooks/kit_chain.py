@@ -36,7 +36,7 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import kit_digest  # noqa: E402
 from kit_index import (MAX_TRANSCRIPT, NOTE_PATH, SHELLS, WRITERS, alive, bucket_dir,  # noqa: E402
-                       linked, read_window, safe_dir, scratch_ok, shell_notes)
+                       linked, note_here, read_window, safe_dir, scratch_ok, shell_notes)
 
 SCRATCH_PATH = re.compile(r"\.claude[/\\]scratch[/\\]", re.IGNORECASE)
 SLUG_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
@@ -131,9 +131,10 @@ def _write_if_changed(path, text):
 
 # ---------------------------------------------------------------- reading the session's transcript
 
-def scan(transcript, sid=""):
+def scan(transcript, sid="", root=None):
     """One pass over the session's own main-chain lines (sidechains and lines of another
-    sessionId - a fork's copied history - are skipped). Returns {first, last, users: [(line,
+    sessionId - a fork's copied history - are skipped); with `root`, a note path that lies
+    outside root's scratch (a sandbox copy, another project) names no bucket. Returns {first, last, users: [(line,
     text)], texts: [(line, text)], edits: [(line, path)], buckets: {slug: {joined, joined_line,
     last_line, last_ts, wrote_state, wrote_notes, read, state_ts, state_content}}}, or None when
     the transcript is unreadable or too big. Only lines that can matter are parsed: tool output
@@ -179,20 +180,21 @@ def scan(transcript, sid=""):
                 if b.get("type") == "text" and (b.get("text") or "").strip():
                     info["texts"].append((n, b["text"].strip()[:2000]))
                 elif b.get("type") == "tool_use":
-                    _tool(info, n, ts, b)
+                    _tool(info, n, ts, b, root)
     return info
 
 
-def _tool(info, n, ts, b):
+def _tool(info, n, ts, b, root=None):
     name = b.get("name") or ""
     inp = b.get("input") if isinstance(b.get("input"), dict) else {}
     if name in WRITERS or name in ("Read", "NotebookEdit"):
         target, write = str(inp.get("file_path") or inp.get("notebook_path") or ""), name != "Read"
         if write and target and not SCRATCH_PATH.search(target):
             info["edits"].append((n, target))
-        notes = [(m.group(1), m.group(2).upper(), write) for m in NOTE_PATH.finditer(target)]
+        notes = [(m.group(1), m.group(2).upper(), write) for m in NOTE_PATH.finditer(target)
+                 if note_here(target[:m.start() + m.group(0).lower().index(".claude")], root)]
     elif name in SHELLS:
-        notes = shell_notes(inp.get("command"))  # written only where the note is the target
+        notes = shell_notes(inp.get("command"), root)  # written only where the note is the target
     else:
         return
     for slug, note, write in notes:
@@ -293,7 +295,7 @@ def touch(transcript, sid, root, pid="", pct=None, window_k=None, end=False, cou
     sid = UNSAFE.sub("_", str(sid or ""))
     if not (sid and transcript and scratch_ok(root)):
         return {}
-    info = scan(transcript, sid)
+    info = scan(transcript, sid, root)
     if not info or not info["buckets"]:
         return {}
     mine = owned(info, root)
@@ -672,7 +674,7 @@ def backfill(root, transcripts=None, days=30, quiet_s=600):
         if mt < since or time.time() - mt < quiet_s:
             continue
         sid = name[:-len(".jsonl")]
-        info = scan(path, sid)
+        info = scan(path, sid, root)
         if info and owned(info, root):
             finish(path, sid, root, counts=False)
             done += 1

@@ -15,6 +15,7 @@ tmp = tempfile.mkdtemp(prefix="kit-off-test-")
 # dir - where a run under CLAUDE_PID would overwrite the calling window's own record.
 PRIVATE_TMP = os.path.join(tmp, "_tmp")
 os.makedirs(PRIVATE_TMP)
+SID = "0ff0ff00-0000-4000-8000-000000000001"
 fails = []
 
 
@@ -41,6 +42,13 @@ def project(off):
     with open(os.path.join(root, "t.jsonl"), "w", encoding="utf-8") as f:
         f.write(json.dumps({"type": "assistant", "isSidechain": False,
                             "message": {"model": "claude-haiku-4-5-20251001", "usage": usage}}) + "\n")
+    with open(os.path.join(root, SID + ".jsonl"), "w", encoding="utf-8") as f:
+        f.write(json.dumps({"type": "user", "sessionId": SID, "timestamp": "2026-10-10T08:00:00Z",
+                            "message": {"role": "user", "content": "work on alpha"}}) + "\n")
+        f.write(json.dumps({"type": "assistant", "sessionId": SID, "timestamp": "2026-10-10T08:01:00Z",
+                            "message": {"role": "assistant", "content": [{"type": "tool_use", "id": "t1", "name": "Write",
+                                        "input": {"file_path": os.path.join(scratch, "alpha", "STATE.md"),
+                                                  "content": "# STATE\nStatus: OPEN\n"}}]}}) + "\n")
     if off:
         with open(os.path.join(root, ".claude", "kit-off"), "w", encoding="utf-8") as f:
             f.write("")
@@ -51,10 +59,11 @@ def run(hook, root, payload):
     env = dict(os.environ, CLAUDE_PROJECT_DIR=root, TEMP=PRIVATE_TMP, TMP=PRIVATE_TMP, TMPDIR=PRIVATE_TMP)
     for k in ("CLAUDE_CODE_SESSION_ATTENDED", "CLAUDE_PID"):
         env.pop(k, None)
-    before = sorted(os.path.join(d, n) for d, _, ns in os.walk(root) for n in ns)
+    # The project tree and the temp dir both: off means the hook writes nothing anywhere.
+    before = sorted(os.path.join(d, n) for t in (root, PRIVATE_TMP) for d, _, ns in os.walk(t) for n in ns)
     p = subprocess.run([sys.executable, os.path.join(HERE, hook)], cwd=root, env=env,
                        input=json.dumps(dict(payload, cwd=root)).encode("utf-8"), capture_output=True)
-    after = sorted(os.path.join(d, n) for d, _, ns in os.walk(root) for n in ns)
+    after = sorted(os.path.join(d, n) for t in (root, PRIVATE_TMP) for d, _, ns in os.walk(t) for n in ns)
     return p.returncode, p.stdout.decode("utf-8", "replace").strip(), after != before
 
 
@@ -69,6 +78,9 @@ CASES = [
     ("kit-context.py", lambda r: {"session_id": "kit-off-" + os.path.basename(r),
                                   "transcript_path": os.path.join(r, "t.jsonl"),
                                   "hook_event_name": "Stop", "stop_hook_active": False}),
+    # a session that wrote alpha's STATE.md ends: on, its record lands in alpha/digests/
+    ("kit-session-end.py", lambda r: {"session_id": SID, "transcript_path": os.path.join(r, SID + ".jsonl"),
+                                      "hook_event_name": "SessionEnd", "reason": "clear"}),
 ]
 try:
     for hook, payload in CASES:

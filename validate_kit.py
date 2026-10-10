@@ -1056,9 +1056,14 @@ chk('SESSIONS.md whole' in _tk and 'Step back only on a gap' in _tk and "Never r
 # Which task a session is filed under (2026-10-10, D008): a note counts as written only when the
 # shell command's write TARGETS it. The test it replaced - any `>` anywhere, so `2>/dev/null`
 # beside a read - filed sessions under closed tasks and could point /clear at the wrong one.
+# And only a note of THIS project counts (2026-10-10): a sandbox copy `$T/.claude/scratch/<slug>/`
+# or another project's absolute path filed a session in a closed task; note_here() judges the
+# path's prefix in both readers, Write/Edit targets and shell commands alike.
 chk('def shell_notes' in _ki and 'SHELL_WRITE' not in _ki and 'SHELL_WRITE' not in _kh
-    and 'shell_notes(inp.get("command"))' in _kh and 'notes = shell_notes(' in _ki,
-    'kit_index.shell_notes judges a shell note write by its target; kit_chain and session_bucket both use it')
+    and 'shell_notes(inp.get("command"), root)' in _kh and 'shell_notes(inp.get("command"), root)' in _ki
+    and _kh.count('note_here(') >= 1 and _ki.count('note_here(path[:') == 1 and 'scan(transcript, sid, root)' in _kh,
+    'kit_index.shell_notes judges a shell note write by its target, and only a path in this project counts; '
+    'kit_chain and session_bucket both use it')
 # The digest (2026-10-10, D009): round 3's one wrong answer came from an error line with no command;
 # 577 task notifications read as the user's words; 747 server commands were a bare tool name.
 chk('def harness_text' in _kd and 'kit_digest.harness_text(' in _kh and '"cmdString"' in _kd
