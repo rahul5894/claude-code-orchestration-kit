@@ -8,9 +8,10 @@ project's CLAUDE.md has no `FAST GATE` row, and the open rows (kit_index.py) of
 After a compaction (`source` "compact") the newest open bucket's STATE.md follows, capped.
 The INDEX is read from the first of CLAUDE_PROJECT_DIR and payload `cwd` that has a
 .claude/scratch/ dir (a session launched in a parent dir, then cd'd into the repo). Nothing to
-say = prints nothing. It never writes into the repository: creating files in someone's
-repository on session open is the wrong shape, and the gate has to be MEASURED, which only
-`/kit-init` does.
+say = prints nothing. An off project (the default, kit_off.py) gets nothing at all: the hook exits
+before its imports. It creates no file in the repository - the gate has to be MEASURED, which only
+`/kit-init` does - and only keeps the kit's own files current: the timeline in .claude/scratch and
+the rules copy, rewritten when the installed rules changed (refresh_rules).
 
 Parallel windows (bucket parallel-window-resume, D001): each open bucket is marked for THIS
 window - `(this window's task)` = the bucket the session before a /clear in this same window
@@ -37,29 +38,39 @@ task untouched more than 14 days says ` · idle Nd` on its row.
 Timeline upkeep (bucket handoff-timeline): kit_chain.maintain() finishes at most one session that
 ended with no SessionEnd (a killed or closed window fires none), prunes verbatim records 7 days
 after a bucket closes (once a day), and re-renders a stale SESSIONS.md - within ~2 s, never the
-previous session of this same window, whose own SessionEnd may still be running. Then, in any
-project, kit-context markers older than 30 days are deleted (kit_index.sweep_context_markers).
+previous session of this same window, whose own SessionEnd may still be running. Then
+kit-context markers older than 30 days are deleted (kit_index.sweep_context_markers).
 
 Why it exists: without a named gate, an agent invents one and picks the slowest command it
 can find - measured once at two full pytest runs of 159 s each, for a project whose real fast
 gate took 7.7 s.
 
 Exit 0 always. Any crash = silence (fail open, dev tool).
-    python kit-session-start.py --check <dir>     # same decision, for tests and verification
+    python kit-session-start.py --check <dir>     # the note for a dir, on or off: tests, verification
     python kit-session-start.py --cards <dir>     # the task cards as text, for /continue
 """
-import json
 import os
-import re
 import sys
-import time
 
 # The hook's own folder, explicitly: under PYTHONSAFEPATH=1 (or python -P / -I) the script dir
 # is not on sys.path, the import fails and the hook exits 1 - which fails open (refuter-02).
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from kit_off import kit_off  # noqa: E402
-from kit_index import (busy_buckets, linked, open_rows, read_window, scratch_ok, session_bucket,  # noqa: E402
-                       sweep_context_markers, window, window_bucket, write_window)
+from kit_off import HEADER, RULES, kit_off, launch_root  # noqa: E402
+
+# --check <dir> / --cards <dir>: read-only modes for tests, verify_live and /continue - on or off.
+READONLY = len(sys.argv) >= 3 and sys.argv[1] in ("--check", "--cards")
+if __name__ == "__main__" and not READONLY and kit_off():
+    sys.exit(0)  # off here, the default: out before the imports below (kit-default-off-optimize D003)
+
+import functools  # noqa: E402
+import json  # noqa: E402
+import re  # noqa: E402
+import time  # noqa: E402
+
+from kit_index import (busy_buckets, installed_rules, linked, open_rows, read_window, rules_blocker,  # noqa: E402
+                       scratch_ok, session_bucket, sweep_context_markers, sync_rules, window, window_bucket,
+                       write_window)
+from kit_index import scratch_root as find_scratch_root  # noqa: E402
 
 GATE_RE = re.compile(r"FAST GATE", re.IGNORECASE)
 NOTICE = ("orchestration-kit: this project has no FAST GATE row in CLAUDE.md. "
@@ -172,10 +183,12 @@ def pick_rows(root, buckets, mine, busy, limit):
     return [buckets[i] for i in shown], [buckets[i] for i in order if i not in keep]
 
 
+@functools.lru_cache(maxsize=None)
 def state_text(root, slug):
     """The bucket's STATE.md, capped at MAX_STATE bytes; None when it is unreadable or says it
     is CLOSED. Only a regular file that really sits under .claude/scratch is read: a cloned repo
-    could otherwise commit STATE.md as a symlink to any file the user can read (refuter)."""
+    could otherwise commit STATE.md as a symlink to any file the user can read (refuter). Read
+    once per run: pick_rows, the marks and the cards asked for each one up to five times."""
     scratch = os.path.realpath(os.path.join(root, ".claude", "scratch"))
     path = os.path.join(root, ".claude", "scratch", slug, "STATE.md")
     try:
@@ -364,6 +377,18 @@ def my_bucket(data, root, me, slugs):
     return slug if slug in slugs and state_text(root, slug) is not None else None
 
 
+def refresh_rules(root):
+    """The ON project's rules copy made equal to the installed rules when they changed: install.ps1
+    updates ~/.claude/kit/ only, and the copy is what the next session and every subagent load
+    here. Only the kit's own copy, never created here (that is /kit-on's), never past
+    rules_blocker() - the same rule /kit-on follows."""
+    if rules_blocker(root) is None and os.path.isfile(os.path.join(root, RULES)):
+        with open(installed_rules(), "rb") as f:
+            rules = f.read()
+        if rules.startswith(HEADER):
+            sync_rules(root, rules)
+
+
 def needs_init(root):
     path = os.path.join(root, "CLAUDE.md")
     try:
@@ -379,16 +404,16 @@ def main():
     # --check <dir>: the hook's JSON for a dir, for tests and verify_live. --cards <dir>: the task
     # cards as plain text, for /continue when the note is missing or stale - with this window's
     # marks (the Bash tool carries CLAUDE_PID) and the closed tasks even when none is open.
-    # Both only read: no window record, no upkeep.
-    readonly = len(sys.argv) >= 3 and sys.argv[1] in ("--check", "--cards")
-    cards_mode = readonly and sys.argv[1] == "--cards"
-    if readonly:
+    # Both only read: no window record, no upkeep. (Hook mode got here ON: the fast path is above.)
+    cards_mode = READONLY and sys.argv[1] == "--cards"
+    if READONLY:
         root = scratch_root = sys.argv[2]
-        if cards_mode and (not scratch_ok(root) or kit_off(root)):
-            sys.stdout.write("No task buckets here (.claude/scratch is missing, or the kit is off).\n")
+        if cards_mode and kit_off(root):
+            sys.stdout.write("The kit is off in this project (the default): no task cards. /kit-on turns it on.\n")
             return
-    elif kit_off():
-        return
+        if cards_mode and not scratch_ok(root):
+            sys.stdout.write("No task buckets here (.claude/scratch is missing).\n")
+            return
     else:
         try:
             # Explicit UTF-8: sys.stdin uses the locale codec (cp1252 on Windows) and the
@@ -399,18 +424,16 @@ def main():
             data = {}
         # CLAUDE_PROJECT_DIR first: payload cwd follows the shell's `cd`, the launch root does not.
         root = os.environ.get("CLAUDE_PROJECT_DIR") or data.get("cwd") or os.getcwd()
-        # ...but a session launched in a parent dir has its buckets under cwd (D011). A .claude
-        # or scratch that is a link (a cloned repo can commit one) holds no buckets of ours.
-        scratch_root = next((r for r in (os.environ.get("CLAUDE_PROJECT_DIR"), data.get("cwd"))
-                             if r and scratch_ok(r)), None)
-        if scratch_root and kit_off(scratch_root):
-            scratch_root = None
+        # ...but a session launched in a parent dir has its buckets under cwd (D011) - when that
+        # project is on too (D004). A .claude or scratch that is a link (a cloned repo can commit
+        # one) holds no buckets of ours. The rule every bucket-writing hook shares:
+        scratch_root = find_scratch_root(data)
     context = [NOTICE] if needs_init(root) and not cards_mode else []
     # Every open task counts for the marks below (a hidden row once lost this window's own task
     # after /clear); pick_rows then chooses the rows shown.
     buckets = open_buckets(scratch_root) if scratch_root else []
     slugs = [s for s, _, _ in buckets]
-    me = window() if cards_mode or not readonly else ""
+    me = window() if cards_mode or not READONLY else ""
     mine = _try(my_bucket, data, scratch_root, me, slugs) if buckets else None
     if cards_mode and me and buckets and not mine:
         # Mid-session: this window's record says what its session works on (its transcript
@@ -425,17 +448,19 @@ def main():
     shown, hidden = (_try(pick_rows, scratch_root, buckets, mine, busy, limit)
                      or (buckets[:limit], buckets[limit:]))
     prev = (_try(read_window, me) or {}) if me else {}
-    if me and not readonly and (scratch_root or root):
+    if me and not READONLY and (scratch_root or root):
         # Read by this window's next /clear and by the other windows' session starts.
         _try(write_window, me, {"sid": str(data.get("session_id") or ""), "root": scratch_root or root,
                                 "transcript": str(data.get("transcript_path") or ""), "bucket": mine})
-    if scratch_root and len(sys.argv) < 3:
+    if scratch_root and not READONLY:
         # Never the previous session of this window (its SessionEnd may still run, ~80 ms apart)
         # nor this one.
         _try(_maintain, scratch_root, {str(prev.get("sid") or ""), str(data.get("session_id") or "")},
              t0 + MAINTAIN_S)
-    if len(sys.argv) < 3 and time.time() < t0 + MAINTAIN_S:
-        _try(sweep_context_markers)
+    if not READONLY:
+        _try(refresh_rules, launch_root())
+        if time.time() < t0 + MAINTAIN_S:
+            _try(sweep_context_markers)
     # After a compaction the session already has its task: short rows, and the room goes to
     # its STATE.md. Every other start gets the full cards.
     full = data.get("source") != "compact"

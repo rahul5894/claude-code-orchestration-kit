@@ -1,7 +1,8 @@
 # <PROJECT NAME> — working rules
 
 Repo-specific rules only. The orchestration loop, model routing, agent roster, brief format
-and reporting rules live in `~/.claude/rules/orchestration-kit.md` (and, when you opt into one,
+and reporting rules live in `.claude/rules/orchestration-kit.md` - the kit's rules, which `/kit-on`
+copied here (and, when you opt into one,
 the kit's output styles), and apply here too.
 
 Keep this file about **this codebase**: how to check it, how to build it, what is dangerous
@@ -41,7 +42,7 @@ Measured: one builder ran the full `pytest` suite **twice at 159 s each** — 5.
 
 ## Security surfaces in THIS repo
 
-`~/.claude/rules/orchestration-kit.md` defines the general list. Name the concrete files and paths here, so a
+`.claude/rules/orchestration-kit.md` (the kit's rules) defines the general list. Name the concrete files and paths here, so a
 reviewer does not have to guess. A change touching any of these is reviewed at once, never
 batched.
 

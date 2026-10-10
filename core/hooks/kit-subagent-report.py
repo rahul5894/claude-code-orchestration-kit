@@ -8,17 +8,21 @@ show the file. Prints nothing in any path: stdout from a hook can reach the mode
 crash = write nothing (fail open, dev tool).
 Self-check: python kit-subagent-report_test.py
 """
-import datetime
-import json
 import os
-import re
-import subprocess
 import sys
 
 # The hook's own folder, explicitly: under PYTHONSAFEPATH=1 (or python -P / -I) the script dir
 # is not on sys.path, the import fails and the hook exits 1 - which fails open (refuter-02).
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from kit_off import kit_off  # noqa: E402
+
+if __name__ == "__main__" and kit_off():
+    sys.exit(0)  # off here, the default: out before the imports below (kit-default-off-optimize D003)
+
+import datetime  # noqa: E402
+import json  # noqa: E402
+import re  # noqa: E402
+import subprocess  # noqa: E402
 
 UNSAFE = re.compile(r"[^A-Za-z0-9._-]")
 
@@ -46,8 +50,6 @@ def clean(value):
 
 
 def main():
-    if kit_off():
-        return
     try:
         # Explicit UTF-8: sys.stdin uses the locale codec (cp1252 on Windows) and the payload
         # comes from JSON.stringify, which leaves non-ASCII raw. Decoding it wrong mangles

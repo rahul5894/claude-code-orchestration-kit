@@ -1,6 +1,7 @@
-"""Self-test for kit_off: every kit hook, fed a payload that makes it speak or write, must go
-silent - no stdout, no file written - once the project holds .claude/kit-off, and must still
-speak without it (else "silent" could mean "broken"). Temp dirs only; deletes them on exit.
+"""Self-test for kit_off: every kit hook, fed a payload that makes it speak or write, must stay
+silent - no stdout, no file written - in a project without the kit's rules copy (the default:
+off), and must speak once /kit-on wrote it (else "silent" could mean "broken"). Temp dirs only;
+deletes them on exit.
 Run: python kit_off_test.py"""
 import json
 import os
@@ -10,6 +11,8 @@ import sys
 import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+from kit_off import HEADER, RULES  # noqa: E402
 tmp = tempfile.mkdtemp(prefix="kit-off-test-")
 # The hooks' temp-dir writes (window record, context marker) land here, never in the real temp
 # dir - where a run under CLAUDE_PID would overwrite the calling window's own record.
@@ -49,9 +52,10 @@ def project(off):
                             "message": {"role": "assistant", "content": [{"type": "tool_use", "id": "t1", "name": "Write",
                                         "input": {"file_path": os.path.join(scratch, "alpha", "STATE.md"),
                                                   "content": "# STATE\nStatus: OPEN\n"}}]}}) + "\n")
-    if off:
-        with open(os.path.join(root, ".claude", "kit-off"), "w", encoding="utf-8") as f:
-            f.write("")
+    if not off:  # what /kit-on writes (kit_switch.py): the kit's rules copy
+        os.makedirs(os.path.join(root, ".claude", "rules"))
+        with open(os.path.join(root, RULES), "wb") as f:
+            f.write(HEADER + b" (test) -->\n")
     return root
 
 
@@ -86,15 +90,15 @@ try:
     for hook, payload in CASES:
         on, off = project(False), project(True)
         rc, out, wrote = run(hook, on, payload(on))
-        ok(rc == 0 and (out or wrote), f"{hook}: kit on -> speaks or writes (rc={rc})")
+        ok(rc == 0 and (out or wrote), f"{hook}: kit on (rules copy) -> speaks or writes (rc={rc})")
         rc, out, wrote = run(hook, off, payload(off))
-        ok(rc == 0 and not out and not wrote, f"{hook}: .claude/kit-off -> silent, writes nothing")
-    # ...except md-guard's read-only write guard: any shell can create the marker, so the
-    # marker must not be what lifts the one write boundary refuter and debugger have.
+        ok(rc == 0 and not out and not wrote, f"{hook}: kit off (the default) -> silent, writes nothing")
+    # ...except md-guard's read-only write guard: any shell can delete the rules copy, so the
+    # switch must not be what lifts the one write boundary refuter and debugger have.
     off = project(True)
     rc, out, _ = run("md-guard.py", off, {"tool_name": "Bash", "agent_type": "refuter",
                                          "tool_input": {"command": "mkdir -p x"}})
-    ok('"deny"' in out, "md-guard: .claude/kit-off does NOT lift the read-only write guard")
+    ok('"deny"' in out, "md-guard: kit off does NOT lift the read-only write guard")
 finally:
     shutil.rmtree(tmp, ignore_errors=True)
 

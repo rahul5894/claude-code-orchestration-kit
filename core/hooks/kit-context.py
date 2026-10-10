@@ -38,20 +38,28 @@ Exit 0 always. Any crash = silence (fail open, dev tool). Writes the temp-dir ba
 timeline entry and the digest only; neither of the last two failing ever costs the block.
 Self-check: python kit-context_test.py
 """
-import json
 import os
-import re
 import sys
 
 # The hook's own folder, explicitly: under PYTHONSAFEPATH=1 (or python -P / -I) the script dir
 # is not on sys.path, the import fails and the hook exits 1 - which fails open (refuter-02).
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from kit_off import kit_off  # noqa: E402
-from kit_index import MAX_TRANSCRIPT, context_marker, scratch_root, session_bucket  # noqa: E402
+
+if __name__ == "__main__" and kit_off():
+    sys.exit(0)  # off here, the default: out before the imports below (kit-default-off-optimize D003)
+
+import json  # noqa: E402
+import re  # noqa: E402
+import time  # noqa: E402
+
+from kit_index import (MAX_TRANSCRIPT, context_marker, keep, read_state, resumed, scratch_root,  # noqa: E402
+                       session_bucket, write_atomic)
 from kit_index import window as window_id  # noqa: E402
 
 THRESHOLD = 45
 BAND = 10
+DIGEST_EVERY_S = 300  # past the handoff, one digest rebuild per 5 minutes at most (D005)
 WINDOW = 200_000
 WINDOW_1M = 1_000_000
 UNSAFE = re.compile(r"[^A-Za-z0-9._-]")
@@ -120,19 +128,25 @@ def window(model):
     return WINDOW_1M
 
 
-def usage(transcript_path, session_id=""):
+def usage(transcript_path, session_id="", cache=None):
     """(used tokens, window) from the transcript; unreadable or missing = (0, WINDOW).
 
     With a session_id, a line carrying another sessionId is not this session's and is skipped.
+    With `cache` (every Stop) it goes on from the state the last call kept (kit_index.resumed):
+    only the lines appended since are read, a line still being written is left for the next call.
     """
-    used, named, replied = 0, "", ""
     try:
-        with open(transcript_path, encoding="utf-8", errors="replace") as f:
-            for line in f:
-                if '"usage"' not in line and '"modelId"' not in line:
+        with open(transcript_path, "rb") as f:
+            st = resumed(cache, f, {"transcript": transcript_path, "sid": session_id},
+                         {"used": 0, "named": "", "replied": ""})
+            for raw in f:
+                if cache and not raw.endswith(b"\n"):
+                    break
+                st["offset"] += len(raw)
+                if b'"usage"' not in raw and b'"modelId"' not in raw:
                     continue
                 try:
-                    obj = json.loads(line)
+                    obj = json.loads(raw.decode("utf-8", "replace"))
                 except ValueError:
                     continue
                 if not isinstance(obj, dict):
@@ -145,14 +159,17 @@ def usage(transcript_path, session_id=""):
                     if isinstance(u, dict) and msg.get("model") != "<synthetic>":
                         n = sum(int(u.get(k) or 0) for k in (
                             "input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"))
-                        used = n or used
-                        replied = str(msg.get("model") or replied)
+                        st["used"] = n or st["used"]
+                        st["replied"] = str(msg.get("model") or st["replied"])
                 elif obj.get("type") == "attachment":
                     att = obj.get("attachment") or {}
                     if att.get("type") == "model":
-                        named = str((att.get("identity") or {}).get("modelId") or named)
-    except OSError:
+                        st["named"] = str((att.get("identity") or {}).get("modelId") or st["named"])
+    except (OSError, TypeError, ValueError):
         return 0, WINDOW
+    if cache:
+        _try(keep, cache, st)
+    used, named, replied = st["used"], st["named"], st["replied"]
     # The last `model` attachment names the model; before ~2.1.268 none was written and the
     # replies' model is all there is. A session already past 200K can only be a 1M one.
     w = window(named or replied)
@@ -181,7 +198,7 @@ def chain_touch(data, sid, pct, size):
     if root and sid:
         import kit_chain
         kit_chain.touch(data.get("transcript_path") or "", sid, root, pid=window_id(), pct=pct,
-                        window_k=size // 1000)
+                        window_k=size // 1000, cache=read_state(sid, ".scan"))
 
 
 def where(data):
@@ -192,10 +209,15 @@ def where(data):
     return WHERE_MINE.format(slug=os.path.basename(bucket)) if bucket else WHERE_NONE
 
 
-def sync_digest(data, sid, pct, used, size):
+def sync_digest(data, sid, pct, used, size, every=0):
     """After the block, keep <bucket>/digests/<session>.md current to the last turn before
     /clear, in the bucket this session handed off to. Never through a symlinked or junctioned
-    digests/ folder: write and prune would follow it out of the bucket (refuter 6)."""
+    digests/ folder: write and prune would follow it out of the bucket (refuter 6). `every`: at
+    most one rebuild per that many seconds (D005) - each reads the whole transcript (30-120 ms),
+    and SessionEnd writes the digest whole anyway (a killed window's: the next start's repair)."""
+    stamp = read_state(sid, ".digest")
+    if every and os.path.isfile(stamp) and time.time() - os.path.getmtime(stamp) < every:
+        return
     root = scratch_root(data)
     transcript = data.get("transcript_path") or ""
     if not (root and sid and os.path.isfile(transcript)) or os.path.getsize(transcript) > MAX_TRANSCRIPT:
@@ -213,11 +235,10 @@ def sync_digest(data, sid, pct, used, size):
     import kit_digest
     meta = {"session": sid, "pct": pct, "used_k": used // 1000, "window_k": size // 1000}
     kit_digest.write(transcript, path, meta, kit_digest.cap_tokens(pct, size))
+    write_atomic(stamp, "")
 
 
 def main():
-    if kit_off():
-        return
     try:
         # Explicit UTF-8, same as the other hooks: sys.stdin uses the locale codec (cp1252 on
         # Windows) while the payload leaves non-ASCII raw.
@@ -225,7 +246,7 @@ def main():
     except Exception:
         return
     sid = str(data.get("session_id") or "")
-    used, size = usage(data.get("transcript_path") or "", sid)
+    used, size = usage(data.get("transcript_path") or "", sid, read_state(sid, ".usage") if sid else None)
     pct = used * 100 // size
     # The timeline entry first: a headless session or one with an agent still running is still
     # a session that worked on its bucket (bucket handoff-timeline).
@@ -261,14 +282,13 @@ def main():
     elif band > stored:
         # The block itself writes no digest: it stays as fast as before, and the digest goes
         # where the model puts the handoff, known once it has written STATE.md.
-        with open(marker, "w", encoding="utf-8") as f:
-            f.write(str(band))
+        write_atomic(marker, str(band))
         out = {"decision": "block",
                "reason": REASON.format(pct=pct, used=used // 1000, window=size // 1000,
                                        lines=state_lines(pct), where=where(data))}
     else:
         # Same band again: already said. A notice on every stop reached 56 in one session.
-        _try(sync_digest, data, sid, pct, used, size)
+        _try(sync_digest, data, sid, pct, used, size, DIGEST_EVERY_S)
         return
     sys.stdout.write(json.dumps(out))
 

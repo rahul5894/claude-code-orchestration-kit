@@ -35,8 +35,8 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import kit_digest  # noqa: E402
-from kit_index import (MAX_TRANSCRIPT, NOTE_PATH, SHELLS, WRITERS, alive, bucket_dir,  # noqa: E402
-                       linked, note_here, read_window, safe_dir, scratch_ok, shell_notes)
+from kit_index import (MAX_TRANSCRIPT, NOTE_PATH, SHELLS, WRITERS, alive, bucket_dir, keep,  # noqa: E402
+                       linked, note_here, read_window, resumed, safe_dir, scratch_ok, shell_notes)
 
 SCRATCH_PATH = re.compile(r"\.claude[/\\]scratch[/\\]", re.IGNORECASE)
 SLUG_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
@@ -131,57 +131,71 @@ def _write_if_changed(path, text):
 
 # ---------------------------------------------------------------- reading the session's transcript
 
-def scan(transcript, sid="", root=None):
+def scan(transcript, sid="", root=None, cache=None):
     """One pass over the session's own main-chain lines (sidechains and lines of another
     sessionId - a fork's copied history - are skipped); with `root`, a note path that lies
     outside root's scratch (a sandbox copy, another project) names no bucket. Returns {first, last, users: [(line,
     text)], texts: [(line, text)], edits: [(line, path)], buckets: {slug: {joined, joined_line,
     last_line, last_ts, wrote_state, wrote_notes, read, state_ts, state_content}}}, or None when
     the transcript is unreadable or too big. Only lines that can matter are parsed: tool output
-    (most of a transcript) never is."""
+    (most of a transcript) never is. With `cache` (the Stop hook, every turn) it goes on from the
+    state the last call kept (kit_index.resumed) - only the lines appended since are read, and a
+    line still being written is left for the next call; the result is the same as a whole read."""
     try:
         if os.path.getsize(transcript) > MAX_TRANSCRIPT:
             return None
-        f = open(transcript, encoding="utf-8", errors="replace")
+        f = open(transcript, "rb")
     except (OSError, TypeError, ValueError):
         return None
-    info = {"first": "", "last": "", "users": [], "texts": [], "edits": [], "buckets": {}}
     with f:
-        for n, line in enumerate(f, 1):
-            # Substring tests only, with no `:` spacing assumed: a format change must cost speed,
-            # never silently drop lines.
-            if '"isSidechain":true' in line or ('"tool_use"' not in line and (
-                    '"tool_result"' in line or ('"user"' not in line and '"text"' not in line))):
-                continue
-            try:
-                o = json.loads(line)
-            except ValueError:
-                continue
-            if (not isinstance(o, dict) or o.get("isSidechain") or o.get("type") not in ("user", "assistant")
-                    or (sid and o.get("sessionId") not in (None, sid))):
-                continue
-            ts = str(o.get("timestamp") or "")
-            if ts:
-                info["first"] = info["first"] or ts
-                info["last"] = ts
-            msg = o.get("message") if isinstance(o.get("message"), dict) else {}
-            content = msg.get("content")
-            if o["type"] == "user":
-                if o.get("isMeta") or o.get("isCompactSummary") or (isinstance(content, list) and any(
-                        isinstance(b, dict) and b.get("type") == "tool_result" for b in content)):
-                    continue
-                text = kit_digest.clean_user(kit_digest._blocks_text(content))
-                if text and not kit_digest.harness_text(text):  # a task notice is never `asked`
-                    info["users"].append((n, text))
-                continue
-            for b in content if isinstance(content, list) else []:
-                if not isinstance(b, dict):
-                    continue
-                if b.get("type") == "text" and (b.get("text") or "").strip():
-                    info["texts"].append((n, b["text"].strip()[:2000]))
-                elif b.get("type") == "tool_use":
-                    _tool(info, n, ts, b, root)
-    return info
+        st = resumed(cache, f, {"transcript": transcript, "sid": sid, "root": root}, {
+            "n": 0, "info": {"first": "", "last": "", "users": [], "texts": [], "edits": [], "buckets": {}}})
+        for raw in f:
+            if cache and not raw.endswith(b"\n"):
+                break
+            st["offset"] += len(raw)
+            st["n"] += 1
+            _feed(st["info"], st["n"], raw.decode("utf-8", "replace"), sid, root)
+    if cache:
+        _try(keep, cache, st)
+    return st["info"]
+
+
+def _feed(info, n, line, sid, root):
+    """Transcript line `n` into `info` (scan)."""
+    # Substring tests only, with no `:` spacing assumed: a format change must cost speed,
+    # never silently drop lines.
+    if '"isSidechain":true' in line or ('"tool_use"' not in line and (
+            '"tool_result"' in line or ('"user"' not in line and '"text"' not in line))):
+        return
+    try:
+        o = json.loads(line)
+    except ValueError:
+        return
+    if (not isinstance(o, dict) or o.get("isSidechain") or o.get("type") not in ("user", "assistant")
+            or (sid and o.get("sessionId") not in (None, sid))):
+        return
+    ts = str(o.get("timestamp") or "")
+    if ts:
+        info["first"] = info["first"] or ts
+        info["last"] = ts
+    msg = o.get("message") if isinstance(o.get("message"), dict) else {}
+    content = msg.get("content")
+    if o["type"] == "user":
+        if o.get("isMeta") or o.get("isCompactSummary") or (isinstance(content, list) and any(
+                isinstance(b, dict) and b.get("type") == "tool_result" for b in content)):
+            return
+        text = kit_digest.clean_user(kit_digest._blocks_text(content))
+        if text and not kit_digest.harness_text(text):  # a task notice is never `asked`
+            info["users"].append((n, text))
+        return
+    for b in content if isinstance(content, list) else []:
+        if not isinstance(b, dict):
+            continue
+        if b.get("type") == "text" and (b.get("text") or "").strip():
+            info["texts"].append((n, b["text"].strip()[:2000]))
+        elif b.get("type") == "tool_use":
+            _tool(info, n, ts, b, root)
 
 
 def _tool(info, n, ts, b, root=None):
@@ -288,14 +302,14 @@ def _rel(path, root):
 
 # ---------------------------------------------------------------- writing the entry and the view
 
-def touch(transcript, sid, root, pid="", pct=None, window_k=None, end=False, counts=True):
+def touch(transcript, sid, root, pid="", pct=None, window_k=None, end=False, counts=True, cache=None):
     """Upsert this session's entry in every bucket it owns (owned()); returns {info, mine, last}
     or {} when it owns none. A bucket it no longer owns (it read A, then wrote B) loses the
-    entry it got for the read."""
+    entry it got for the read. `cache`: see scan."""
     sid = UNSAFE.sub("_", str(sid or ""))
     if not (sid and transcript and scratch_ok(root)):
         return {}
-    info = scan(transcript, sid, root)
+    info = scan(transcript, sid, root, cache)
     if not info or not info["buckets"]:
         return {}
     mine = owned(info, root)

@@ -163,5 +163,6 @@ if (Test-Path $pyc) {
     if (-not (Get-ChildItem $pyc -Force)) { Drop $pyc 'hooks\__pycache__' }
 }
 
-"done. RESTART Claude Code. Projects keep their own kit files (CLAUDE.md, .claude/scratch/);"
-"      /kit-uninstall inside a project removes those - run it BEFORE this, it is a kit command."
+"done. RESTART Claude Code. Projects keep their own kit files (CLAUDE.md, .claude/scratch/, and"
+"      where the kit was on, .claude/rules/orchestration-kit.md - the rules, still loaded there);"
+"      /kit-off or /kit-uninstall inside a project removes them - run it BEFORE this, it is a kit command."

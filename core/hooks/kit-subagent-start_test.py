@@ -18,6 +18,8 @@ except (AttributeError, OSError):
     pass
 
 HOOK = os.path.join(os.path.dirname(os.path.abspath(__file__)), "kit-subagent-start.py")
+sys.path.insert(0, os.path.dirname(HOOK))
+from kit_off import HEADER, RULES  # noqa: E402
 MAX_CHARS = 6000
 
 tmp = tempfile.mkdtemp(prefix="kit-substart-")
@@ -25,10 +27,13 @@ atexit.register(shutil.rmtree, tmp, True)
 
 
 def project(name, rows, decisions):
-    """rows: (slug, status); decisions: {slug: text}. No INDEX.md row list = no scratch dir."""
+    """rows: (slug, status); decisions: {slug: text}. No INDEX.md row list = no scratch dir. The
+    kit is on in every fixture: it is off by default, and /kit-on writes its rules copy."""
     root = os.path.join(tmp, name)
+    os.makedirs(os.path.join(root, ".claude", "rules"))
+    with open(os.path.join(root, RULES), "wb") as f:
+        f.write(HEADER + b" (test) -->\n")
     if rows is None:
-        os.makedirs(root)
         return root
     scratch = os.path.join(root, ".claude", "scratch")
     os.makedirs(scratch)

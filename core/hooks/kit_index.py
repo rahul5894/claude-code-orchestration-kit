@@ -21,14 +21,13 @@ scratch_root() picks the project whose .claude/scratch holds the buckets, scratc
 a .claude or scratch that is a link or junction - a cloned repo could commit one pointing
 anywhere, and a realpath check against the link's own target passes it (bucket
 handoff-timeline, review) - and safe_dir() refuses a linked folder inside a bucket."""
-import glob
 import json
 import os
 import re
-import tempfile
+import sys
 import time
 
-from kit_off import kit_off
+from kit_off import HEADER, RULES, kit_off
 
 CELL_RE = re.compile(r"(?<!\\)\|")
 BULLET_RE = re.compile(r"[-*]\s+(\S+?)\s+[—–-]{1,2}\s+(.+?)(?:\s+[—–-]{1,2}\s+(.*))?")
@@ -445,8 +444,23 @@ def window():
     return pid if pid.isdigit() else ""
 
 
+def tmpdir():
+    """tempfile.gettempdir() without importing tempfile - ~7 ms of every hook event (2026-10-10):
+    the first of TMPDIR, TEMP, TMP that is a folder, gettempdir()'s own order; tempfile itself
+    only when none is. A tempdir set in-process (the self-tests set one) wins, as it does there."""
+    t = sys.modules.get("tempfile")
+    if t is not None and getattr(t, "tempdir", None):
+        return t.tempdir
+    for k in ("TMPDIR", "TEMP", "TMP"):
+        d = os.environ.get(k)
+        if d and os.path.isdir(d):
+            return os.path.abspath(d)
+    import tempfile
+    return tempfile.gettempdir()
+
+
 def _window_file(pid):
-    return os.path.join(tempfile.gettempdir(), f"kit-window-{pid}.json")
+    return os.path.join(tmpdir(), f"kit-window-{pid}.json")
 
 
 # kit-context's per-session band marker. A session that ends above the threshold (the usual
@@ -455,23 +469,142 @@ def _window_file(pid):
 # be resumed and re-blocked for a band it already handled.
 CONTEXT_MARKER = "kit-context-"
 CONTEXT_MARKER_AGE = 30 * 86400
+# The Stop hook reads the transcript every turn. Read whole, that is O(transcript) a turn - 26-200 ms
+# measured on real 3-53 MB transcripts (bucket kit-default-off-optimize) - so its readers keep their
+# state beside the context marker (read_state: swept after a day, deleted at SessionEnd) and read only
+# the lines appended since the last turn; ".digest" times the last digest rebuild (kit-context, D005).
+READ_STATES = (".scan", ".usage", ".digest")
+READ_STATE_AGE = 86400
+STATE_VERSION = 1  # bump when a reader's kept fields change: a kept state of another version is a miss
 
 
 def context_marker(sid):
-    return os.path.join(tempfile.gettempdir(), CONTEXT_MARKER + re.sub(r"[^A-Za-z0-9._-]", "_", sid or "unknown"))
+    return os.path.join(tmpdir(), CONTEXT_MARKER + re.sub(r"[^A-Za-z0-9._-]", "_", sid or "unknown"))
+
+
+def read_state(sid, kind):
+    """The file one Stop-hook reader keeps this session's state in; `kind` one of READ_STATES."""
+    return context_marker(sid) + kind
+
+
+def drop_read_states(sid):
+    for kind in READ_STATES:
+        try:
+            os.remove(read_state(sid, kind))
+        except OSError:
+            pass
+
+
+def resumed(cache, f, ident, fresh):
+    """The state an earlier read of this same transcript kept in `cache`, with `f` (opened "rb")
+    at its offset - when its version and every `ident` value match, every `fresh` field has the
+    type it has there, and the transcript only grew since (the byte before the offset still ends a
+    line); else `fresh` from offset 0, with `f` at 0. No `cache`: always fresh."""
+    ident = {"v": STATE_VERSION, **ident}
+    try:
+        with open(cache, encoding="utf-8") as c:
+            st = json.load(c)
+        off = st["offset"]
+        if (not isinstance(off, int) or off < 0 or any(st.get(k) != v for k, v in ident.items())
+                or any(not isinstance(st.get(k), type(v)) for k, v in fresh.items())):
+            raise ValueError(cache)
+        if off:
+            f.seek(off - 1)
+            if f.read(1) != b"\n":
+                raise ValueError(cache)
+        f.seek(off)
+        return st
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        f.seek(0)
+        return {**ident, "offset": 0, **fresh}
+
+
+def keep(cache, state):
+    """`state` into `cache`, owner-only: it holds the conversation's text."""
+    write_atomic(cache, json.dumps(state, ensure_ascii=False), private=True)
+
+
+def write_atomic(path, data, private=False):
+    """Whole file or the old one, never half: a tmp name of this process's own, created new - so a
+    link a cloned repo planted beside the target is never written through (review 2026-10-10) - then
+    a rename, which replaces a link at `path` itself and never follows it; a rename that a reader's
+    open handle blocks on Windows is retried once. `data`: str (UTF-8, LF kept) or bytes; `private`:
+    owner-only. Two hooks writing one file at once each use their own tmp."""
+    tmp = f"{path}.{os.getpid()}.{time.monotonic_ns() % 10 ** 9}.tmp"
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0), 0o600 if private else 0o666)
+    with os.fdopen(fd, "wb") as f:
+        f.write(data.encode("utf-8") if isinstance(data, str) else data)
+    for attempt in (0, 1):
+        try:
+            os.replace(tmp, path)
+            return
+        except PermissionError:
+            if attempt:
+                try:
+                    os.remove(tmp)
+                except OSError:
+                    pass
+                raise
+            time.sleep(0.05)
+
+
+def installed_rules():
+    """The kit's rules where install.ps1 puts them: ~/.claude/kit/, beside this hooks folder."""
+    return os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "kit", "orchestration-kit.md")
+
+
+def rules_blocker(root):
+    """Why the kit's rules copy may not be written in `root`, or None. `root`'s .claude is Claude
+    Code's own config folder (the home folder: a copy there would be the GLOBAL rules file and turn
+    the kit on in every project); a link on the way (a cloned repo can commit one - the write
+    would land where it points); a file of that name that is the project's own (no HEADER)."""
+    claude = os.path.join(root, ".claude")
+    config = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.join(os.path.expanduser("~"), ".claude")
+    if os.path.normcase(os.path.realpath(claude)) == os.path.normcase(os.path.realpath(config)):
+        return "this folder's .claude is Claude Code's own config (the home folder): a copy there would load in every project"
+    copy = os.path.join(root, RULES)
+    if any(linked(p) for p in (claude, os.path.dirname(copy), copy)):
+        return "a link on the way there"
+    try:
+        with open(copy, "rb") as f:
+            if f.read(len(HEADER)) != HEADER:
+                return "the project's own file of that name (no `<!-- orchestration-kit` header)"
+    except FileNotFoundError:
+        pass
+    except OSError as e:
+        return str(e)
+    return None
+
+
+def sync_rules(root, rules):
+    """The rules copy in `root` made equal to `rules` (bytes, HEADER first): "written" or "same".
+    Ask rules_blocker() first."""
+    copy = os.path.join(root, RULES)
+    try:
+        with open(copy, "rb") as f:
+            if f.read() == rules:
+                return "same"
+    except OSError:
+        pass
+    os.makedirs(os.path.dirname(copy), exist_ok=True)
+    write_atomic(copy, rules)
+    return "written"
 
 
 def sweep_context_markers():
     """Delete context markers older than CONTEXT_MARKER_AGE: plain files only, never a link or a
     folder. ~9 ms over 20,741 temp entries (2026-10-10). Returns how many it deleted."""
     now, gone = time.time(), 0
-    with os.scandir(tempfile.gettempdir()) as it:
+    with os.scandir(tmpdir()) as it:
         for e in it:
             if not e.name.startswith(CONTEXT_MARKER):
                 continue
+            # A read state is rebuilt by its next read, and holds the conversation's text: a day is
+            # enough (a tmp a crash left goes with it). A marker keeps a resumed session's band.
+            age = READ_STATE_AGE if e.name.endswith(READ_STATES + (".tmp",)) else CONTEXT_MARKER_AGE
             try:
                 if (e.is_file(follow_symlinks=False) and not linked(e.path)
-                        and now - e.stat(follow_symlinks=False).st_mtime > CONTEXT_MARKER_AGE):
+                        and now - e.stat(follow_symlinks=False).st_mtime > age):
                     os.remove(e.path)
                     gone += 1
             except OSError:
@@ -518,10 +651,7 @@ def read_window(pid):
 
 
 def write_window(pid, rec):
-    path = _window_file(pid)
-    with open(path + ".tmp", "w", encoding="utf-8") as f:
-        json.dump(rec, f)
-    os.replace(path + ".tmp", path)
+    write_atomic(_window_file(pid), json.dumps(rec))
 
 
 def same_dir(a, b):
@@ -544,8 +674,9 @@ def window_bucket(rec, root):
 def busy_buckets(root, me):
     """{slug: pid} of the buckets another LIVE window of this project works on. The record of a
     dead or long-idle window is removed: it holds no claim."""
+    import glob  # here: a session start alone needs it, never the per-turn hooks
     out = {}
-    for path in glob.glob(os.path.join(tempfile.gettempdir(), "kit-window-*.json")):
+    for path in glob.glob(os.path.join(tmpdir(), "kit-window-*.json")):
         pid = os.path.basename(path)[len("kit-window-"):-len(".json")]
         if not pid.isdigit() or pid == me:
             continue

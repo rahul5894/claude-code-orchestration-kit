@@ -29,6 +29,11 @@ import sys
 import time
 from collections import Counter
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# The kit's one whole-file writer (also the digest's: two hooks writing one digest each use a tmp
+# of their own). Imported, so kit_chain's `kit_digest.write_atomic` keeps working.
+from kit_index import write_atomic  # noqa: E402,F401
+
 TAIL = 6                 # newest turns kept whole, whatever the cap
 CHARS_PER_TOKEN = 4      # estimate; the reader only needs an order of magnitude
 AGENT_CHARS = 6000       # a subagent report
@@ -417,26 +422,6 @@ def ensure_folder(folder):
             f.write("# Session digests hold the conversation verbatim: never commit them.\n*\n")
     return True
 
-
-def write_atomic(path, text):
-    """Whole file or the old one, never half: a tmp name of this process's own, then a rename.
-    Two hooks writing the same digest at once (a SessionEnd and a repair) each use their own
-    tmp; a rename that a reader's open handle blocks on Windows is retried once."""
-    tmp = f"{path}.{os.getpid()}.{time.monotonic_ns() % 10 ** 9}.tmp"
-    with open(tmp, "x", encoding="utf-8", newline="\n") as f:
-        f.write(text)
-    for attempt in (0, 1):
-        try:
-            os.replace(tmp, path)
-            return
-        except PermissionError:
-            if attempt:
-                try:
-                    os.remove(tmp)
-                except OSError:
-                    pass
-                raise
-            time.sleep(0.05)
 
 
 def write(transcript, out_path, meta, cap, turns=None):

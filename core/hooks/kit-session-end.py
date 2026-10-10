@@ -15,24 +15,27 @@ Headless sessions are recorded too - only ever when they touched a bucket. Claud
 this hook's output; it prints nothing. Exit 0 always; any crash = silence (fail open, dev tool).
 Self-check: python kit-session-end_test.py
 """
-import json
 import os
 import sys
-import time
 
 # The hook's own folder, explicitly: under PYTHONSAFEPATH=1 (or python -P / -I) the script dir
 # is not on sys.path, the import fails and the hook exits 1 - which fails open (refuter-02).
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from kit_off import kit_off  # noqa: E402
-from kit_index import scratch_root, window  # noqa: E402
+
+if __name__ == "__main__" and kit_off():
+    sys.exit(0)  # off here, the default: out before the imports below (kit-default-off-optimize D003)
+
+import json  # noqa: E402
+import time  # noqa: E402
+
+from kit_index import drop_read_states, scratch_root, window  # noqa: E402
 
 BUDGET_S = 4
 
 
 def main():
     t0 = time.time()
-    if kit_off():
-        return
     try:
         # Explicit UTF-8, as in the other hooks: sys.stdin uses the locale codec (cp1252 on
         # Windows) while the payload leaves non-ASCII raw.
@@ -44,6 +47,8 @@ def main():
     root = scratch_root(data)
     sid = str(data.get("session_id") or "")
     transcript = str(data.get("transcript_path") or "")
+    if sid:
+        drop_read_states(sid)  # the Stop hook's kept reads (they hold its text); a resume rebuilds them
     if not (root and sid and transcript):
         return
     import kit_chain

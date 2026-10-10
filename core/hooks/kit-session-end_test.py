@@ -11,6 +11,8 @@ import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 HOOK = os.path.join(HERE, "kit-session-end.py")
+sys.path.insert(0, HERE)
+from kit_off import HEADER, RULES  # noqa: E402
 tmp = tempfile.mkdtemp(prefix="kit-session-end-test-")
 cases = []
 SID = "dddddddd-0000-4000-8000-000000000001"
@@ -31,9 +33,13 @@ def run(payload, root, extra=None):
     return subprocess.run([sys.executable, HOOK], input=raw, capture_output=True, env=env, timeout=60)
 
 
-def project(name):
+def project(name, on=True):
     root = os.path.join(tmp, name)
     os.makedirs(os.path.join(root, ".claude", "scratch", "alpha"))
+    if on:  # the kit is off by default; /kit-on writes its rules copy (kit_off.py)
+        os.makedirs(os.path.join(root, ".claude", "rules"))
+        with open(os.path.join(root, RULES), "wb") as f:
+            f.write(HEADER + b" (test) -->\n")
     return root
 
 
@@ -71,10 +77,8 @@ try:
     ok(os.path.isfile(sessions) and f"## S1 · {SID}" in open(sessions, encoding="utf-8").read(),
        "SESSIONS.md lists the session")
 
-    root2 = project("p2")
+    root2 = project("p2", on=False)
     t2 = transcript(root2)
-    with open(os.path.join(root2, ".claude", "kit-off"), "w") as f:
-        f.write("")
     r = run({"session_id": SID, "transcript_path": t2, "cwd": root2}, root2)
     ok(r.returncode == 0 and digests(root2) == [], "a project with the kit off: nothing written")
 

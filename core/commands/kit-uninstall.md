@@ -35,9 +35,10 @@ headless `claude -p` run): stop here and report step 1 - delete nothing.
   `python -c "import os,shutil,datetime; d=os.path.expanduser('~/.claude/kit-backups'); os.makedirs(d, exist_ok=True); print(shutil.make_archive(os.path.join(d, os.path.basename(os.getcwd()) + '-scratch-' + datetime.datetime.now().strftime('%Y%m%d-%H%M%S')), 'zip', '.claude', 'scratch'))"`
   and paste the path it prints. Only when the zip exists, delete `.claude/scratch/`.
 - CLAUDE.md: edit out exactly the sections picked, nothing else.
-- Always, last: `python ~/.claude/kit/kit_switch.py off "<root>"`, which writes `.claude/kit-off`, so
-  the kit's hooks and rules (and a kit style, if one was on) never run here again. If it exits non-zero, show its message
-  and stop.
+- Always, last: `python ~/.claude/kit/kit_switch.py off "<root>"`, which deletes the kit's rules
+  copy (`.claude/rules/orchestration-kit.md`, also the switch the hooks look for), so the kit's
+  hooks and rules (and a kit style, if one was on) no longer run here. If it exits non-zero, show
+  its message and stop.
 
 ## 4. Report
 

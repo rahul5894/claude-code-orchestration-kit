@@ -303,7 +303,7 @@ for _label, _files, _expect in [
         _dry = _dry and 'your values from before the kit kept or restored' in _ru.stdout
     if _expect == 'block':
         _before['CLAUDE.md'] = _OLD_KEEP
-        _dry = _dry and 'rules/orchestration-kit.md' in _mid and '(fork of' not in _mid['CLAUDE.md']
+        _dry = _dry and 'kit/orchestration-kit.md' in _mid and '(fork of' not in _mid['CLAUDE.md']
     _diff = [k for k in set(_before) | set(_after) if _before.get(k) != _after.get(k)]
     ok(_ri.returncode == 0 and _ru.returncode == 0 and _dry and not _diff,
        f'install + uninstall round trip: {_label}',
@@ -606,21 +606,23 @@ said = [l for l in r2.stdout.splitlines()
         if 'unchanged' in l or 'kit block' in l or 'orchestration-kit.md' in l or 'settings.json' in l]
 ok(r2.returncode == 0 and sum('unchanged' in l for l in said) == 2,
    'installer reports unchanged on an already-installed tree', said)
-# The shared rules live in their own file so /kit-off can exclude them per project. A copy
-# still between markers in ~/.claude/CLAUDE.md would load twice and survive /kit-off.
-_rules = HOME / 'rules' / 'orchestration-kit.md'
+# The kit is off by default (bucket kit-default-off-optimize, D002): the shared rules wait in
+# ~/.claude/kit/ for /kit-on to copy them into a project, and nothing in ~/.claude/rules/ or
+# between markers in ~/.claude/CLAUDE.md loads them into every project.
+_rules = HOME / 'kit' / 'orchestration-kit.md'
 ok(_rules.is_file() and norm(_rules.read_text(encoding='utf-8')).endswith(
-       norm(pathlib.Path('core/CLAUDE.md').read_text(encoding='utf-8'))),
-   '~/.claude/rules/orchestration-kit.md carries core/CLAUDE.md')
+       norm(pathlib.Path('core/CLAUDE.md').read_text(encoding='utf-8')))
+   and not (HOME / 'rules' / 'orchestration-kit.md').exists(),
+   '~/.claude/kit/orchestration-kit.md carries core/CLAUDE.md; no ~/.claude/rules/ copy loads it everywhere')
 ok('<!-- orchestration-kit' not in ((HOME / 'CLAUDE.md').read_text(encoding='utf-8')
                                     if (HOME / 'CLAUDE.md').is_file() else ''),
-   '~/.claude/CLAUDE.md holds no old kit block (it would load twice)')
-for _st in ('kit_off self-check: 13/13 passed', 'kit-switch self-check: 13/13 passed'):
+   '~/.claude/CLAUDE.md holds no old kit block (it would load in every project)')
+for _st in ('kit_off self-check: 13/13 passed', 'kit-switch self-check: 15/15 passed'):
     ok(_st in r2.stdout, _st, [l for l in r2.stdout.splitlines() if _st.split(':')[0] in l])
 # The "fully global" pieces: the SessionStart notice and the two files /kit-init reads from
 # ~/.claude/kit. Without them a new project starts with no gate and nothing says so.
-ok('kit-session-start self-check: 53/53 passed' in r2.stdout,
-   'kit-session-start self-check 53/53',
+ok('kit-session-start self-check: 56/56 passed' in r2.stdout,
+   'kit-session-start self-check 56/56',
    [l for l in r2.stdout.splitlines() if 'kit-session-start' in l])
 for _kf in ('project-template.md', 'audit_project.py', 'scan_project.py', 'kit_switch.py'):
     ok((HOME / 'kit' / _kf).exists(), f'~/.claude/kit/{_kf} published for /kit-init')
@@ -654,7 +656,7 @@ ok(_ss_ok, 'the installed SubagentStart injector emits nothing or a well-formed 
 print("  NOTE  per-project state is checked by `python audit_project.py <repo>`, not here")
 # These counts are pinned on purpose: a suite that silently shrinks is the failure this
 # catches. Bump them WITH the test, never to make a red line green.
-ok('md-guard self-check: 177/177 passed' in r2.stdout, 'md-guard self-check 177/177',
+ok('md-guard self-check: 179/179 passed' in r2.stdout, 'md-guard self-check 179/179',
    [l for l in r2.stdout.splitlines() if 'md-guard' in l])
 ok('kit-subagent-report self-check: 12/12 passed' in r2.stdout,
    'kit-subagent-report self-check 12/12',
@@ -662,14 +664,14 @@ ok('kit-subagent-report self-check: 12/12 passed' in r2.stdout,
 ok('kit-subagent-start self-check: 19/19 passed' in r2.stdout,
    'kit-subagent-start self-check 19/19',
    [l for l in r2.stdout.splitlines() if 'kit-subagent-start' in l])
-ok('kit-context self-check: 48/48 passed' in r2.stdout,
-   'kit-context self-check 48/48',
+ok('kit-context self-check: 50/50 passed' in r2.stdout,
+   'kit-context self-check 50/50',
    [l for l in r2.stdout.splitlines() if 'kit-context' in l])
 ok('kit_digest self-check: 35/35 passed' in r2.stdout,
    'kit_digest self-check 35/35',
    [l for l in r2.stdout.splitlines() if 'kit_digest' in l])
-ok('kit_chain self-check: 47/47 passed' in r2.stdout,
-   'kit_chain self-check 47/47',
+ok('kit_chain self-check: 48/48 passed' in r2.stdout,
+   'kit_chain self-check 48/48',
    [l for l in r2.stdout.splitlines() if 'kit_chain' in l])
 ok('kit-session-end self-check: 8/8 passed' in r2.stdout,
    'kit-session-end self-check 8/8',

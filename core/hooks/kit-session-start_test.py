@@ -15,11 +15,24 @@ HOOK = os.path.join(os.path.dirname(os.path.abspath(__file__)), "kit-session-sta
 
 tmp = tempfile.mkdtemp(prefix="kit-start-")
 atexit.register(shutil.rmtree, tmp, True)
+sys.path.insert(0, os.path.dirname(HOOK))
+from kit_off import HEADER, RULES  # noqa: E402
+
+
+def kit_on(root, text=HEADER.decode() + " (test) -->\n"):
+    """The kit is off by default (kit_off.py); /kit-on writes its rules copy. Every fixture but
+    the one that tests the default is switched on."""
+    os.makedirs(os.path.join(root, ".claude", "rules"), exist_ok=True)
+    with open(os.path.join(root, RULES), "w", encoding="utf-8") as f:
+        f.write(text)
+
+
 WITH = os.path.join(tmp, "with")
 WITHOUT = os.path.join(tmp, "without")
 NONE = os.path.join(tmp, "none")
 for d in (WITH, WITHOUT, NONE):
     os.makedirs(d)
+    kit_on(d)
 with open(os.path.join(WITH, "CLAUDE.md"), "w", encoding="utf-8") as f:
     f.write("# x\n| **FAST GATE — agents run this** | `make lint` | 4 s |\n")
 with open(os.path.join(WITHOUT, "CLAUDE.md"), "w", encoding="utf-8") as f:
@@ -29,6 +42,7 @@ with open(os.path.join(WITHOUT, "CLAUDE.md"), "w", encoding="utf-8") as f:
 # a project that is in fact set up.
 ACCENT = os.path.join(tmp, "Grüße")
 os.makedirs(ACCENT)
+kit_on(ACCENT)
 with open(os.path.join(ACCENT, "CLAUDE.md"), "w", encoding="utf-8") as f:
     f.write("# x\n| **FAST GATE — agents run this** | `make lint` | 4 s |\n")
 
@@ -46,9 +60,11 @@ CASES = [
 ]
 
 # Task buckets: INDEX.md rows OPEN/BLOCKED are listed for the model and named to the user.
-def bucket_project(name, gated, rows):
+def bucket_project(name, gated, rows, on=True):
     root = os.path.join(tmp, name)
     os.makedirs(os.path.join(root, ".claude", "scratch"))
+    if on:
+        kit_on(root)
     if gated:
         with open(os.path.join(root, "CLAUDE.md"), "w", encoding="utf-8") as f:
             f.write("# x\n| **FAST GATE — agents run this** | `make lint` | 4 s |\n")
@@ -72,7 +88,7 @@ PRIVATE_TMP = os.path.join(tmp, "_tmp")  # window records land here, never in th
 os.makedirs(PRIVATE_TMP)
 
 
-def run(how, root, project_dir=None, source="startup", pid=None, sid=None, transcript=None, extra=None):
+def run(how, root, project_dir=None, source="startup", pid=None, sid=None, transcript=None, extra=None, hook=HOOK):
     """Parsed stdout: {} when silent, {"_bad": text} when it is not JSON. `pid` plays the
     window (env CLAUDE_PID); without it the run has none, whatever window runs the test."""
     # The hook prefers CLAUDE_PROJECT_DIR; a caller inside Claude Code has it set, so every run
@@ -90,14 +106,14 @@ def run(how, root, project_dir=None, source="startup", pid=None, sid=None, trans
         if sid:
             payload.update(session_id=sid, transcript_path=transcript or "")
         raw = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-        p = subprocess.run([sys.executable, HOOK], input=raw, capture_output=True, cwd=root, env=env)
+        p = subprocess.run([sys.executable, hook], input=raw, capture_output=True, cwd=root, env=env)
     elif how == "check":
-        p = subprocess.run([sys.executable, HOOK, "--check", root], capture_output=True, env=env)
+        p = subprocess.run([sys.executable, hook, "--check", root], capture_output=True, env=env)
     elif how == "cards":
-        p = subprocess.run([sys.executable, HOOK, "--cards", root], capture_output=True, env=env)
+        p = subprocess.run([sys.executable, hook, "--cards", root], capture_output=True, env=env)
         return {"_text": p.stdout.decode("utf-8", "replace")}
     else:
-        p = subprocess.run([sys.executable, HOOK], input=b"{not json",
+        p = subprocess.run([sys.executable, hook], input=b"{not json",
                            capture_output=True, cwd=root, env=env)
     out = p.stdout.decode("utf-8", "replace").strip()
     if not out:
@@ -191,10 +207,10 @@ with open(os.path.join(CUT, ".claude", "scratch", "u8", "STATE.md"), "wb") as f:
 o = run("stdin", CUT, source="compact")
 extra.append(("_bad" not in o and "a" * 5999 in context(o) and "u8 [OPEN]" in context(o),
               "multi-byte char cut at the cap, invalid bytes -> valid JSON, text kept"))
-# kit-off in the project silences the new path too.
-open(os.path.join(CUT, ".claude", "kit-off"), "w").close()
+# Switched off (/kit-off deletes the rules copy) silences the new path too.
+os.remove(os.path.join(CUT, RULES))
 o = run("stdin", CUT, source="compact")
-extra.append(("a" * 100 not in context(o), "kit-off + compact -> no STATE.md content"))
+extra.append(("a" * 100 not in context(o), "kit off + compact -> no STATE.md content"))
 # A cloned repo's STATE.md as a symlink to a file outside the scratch dir is never read.
 LINK = bucket_project("link", True, [("ln", "OPEN", "x")])
 os.makedirs(os.path.join(LINK, ".claude", "scratch", "ln"))
@@ -218,6 +234,7 @@ extra.append(("live-one" in context(o),
 BUL = os.path.join(tmp, "bullets")
 for slug in ("fail-over", "stall", "gone"):
     os.makedirs(os.path.join(BUL, ".claude", "scratch", slug))
+kit_on(BUL)
 with open(os.path.join(BUL, "CLAUDE.md"), "w", encoding="utf-8") as f:
     f.write("# x\n| **FAST GATE — agents run this** | `make lint` | 4 s |\n")
 with open(os.path.join(BUL, ".claude", "scratch", "INDEX.md"), "w", encoding="utf-8") as f:
@@ -406,6 +423,50 @@ extra.append((row_of(c, "stale").endswith(" · idle 20d") and "idle" not in row_
               and "idle" not in row_of(c, "fresh") and "never an idle one over a fresh one unless it is P1" in c,
               "STATE.md untouched 20 days -> ` · idle 20d` on its row (14.5 days, 1 day: none); "
               "the note: idle never beats fresh unless P1"))
+
+# Off is the default (bucket kit-default-off-optimize, D002): a project /kit-on never touched gets
+# nothing - no gate notice, no cards, no window record, no upkeep - and --cards says why.
+OFFP = bucket_project("off-by-default", False, [("o1", "OPEN", "x")], on=False)
+seen = sorted(os.listdir(PRIVATE_TMP))
+o = run("stdin", OFFP, pid=626262, sid="s-off", transcript=os.path.join(tmp, "s-off.jsonl"))
+extra.append((o == {} and sorted(os.listdir(PRIVATE_TMP)) == seen
+              and sorted(os.listdir(os.path.join(OFFP, ".claude", "scratch"))) == ["INDEX.md"]
+              and "kit is off in this project" in run("cards", OFFP)["_text"],
+              "kit off (the default): no notice though CLAUDE.md has no FAST GATE, no cards, nothing "
+              "written; --cards says the kit is off"))
+# The rules copy follows the installed rules (refresh_rules): install.ps1 rewrites ~/.claude/kit/
+# only. The installed layout: <config>/hooks/ beside <config>/kit/orchestration-kit.md.
+INST = os.path.join(tmp, "inst")
+shutil.copytree(os.path.dirname(HOOK), os.path.join(INST, "hooks"),
+                ignore=shutil.ignore_patterns("__pycache__", "*_test.py"))
+os.makedirs(os.path.join(INST, "kit"))
+with open(os.path.join(INST, "kit", "orchestration-kit.md"), "w", encoding="utf-8") as f:
+    f.write("<!-- orchestration-kit (fork of x) -->\n# rules v2\n")
+STALE = bucket_project("stale-rules", True, [("s1", "OPEN", "x")])
+OWN = bucket_project("own-rules", True, [("s2", "OPEN", "x")])
+kit_on(OWN, "# the project's own rules, not the kit's\n")
+for p in (STALE, OWN):
+    run("stdin", p, hook=os.path.join(INST, "hooks", "kit-session-start.py"))
+with open(os.path.join(STALE, RULES), encoding="utf-8") as f, open(os.path.join(OWN, RULES), encoding="utf-8") as g:
+    extra.append((f.read().endswith("# rules v2\n") and g.read() == "# the project's own rules, not the kit's\n",
+                  "a session start refreshes an ON project's stale rules copy from the installed rules; "
+                  "a file there that is not the kit's is never touched"))
+# A cloned repo that commits a stale copy plus a `.tmp` link to a file of the user's: the refresh
+# must not write through it (review 2026-10-10: open('wb') followed the link).
+TRAP = bucket_project("trap-rules", True, [("s3", "OPEN", "x")])
+VICTIM = os.path.join(tmp, "victim.txt")
+with open(VICTIM, "w", encoding="utf-8") as f:
+    f.write("keep me\n")
+try:
+    os.symlink(VICTIM, os.path.join(TRAP, RULES + ".tmp"))
+except OSError:
+    print("SKIP refresh through a .tmp link (this machine cannot create symlinks); total drops by one")
+else:
+    run("stdin", TRAP, hook=os.path.join(INST, "hooks", "kit-session-start.py"))
+    with open(VICTIM, encoding="utf-8") as f, open(os.path.join(TRAP, RULES), encoding="utf-8") as g:
+        extra.append((f.read() == "keep me\n" and g.read().endswith("# rules v2\n"),
+                      "a `.tmp` link planted beside a stale copy is never written through: the refresh "
+                      "lands in the copy (a tmp name of its own), the linked file is untouched"))
 
 # Timeline upkeep (bucket handoff-timeline): a session whose window died with no SessionEnd is
 # finished at the next start; the previous session of THIS window is never touched (its own

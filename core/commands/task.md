@@ -7,7 +7,13 @@ allowed-tools: Bash, Read, Write
 Task request: **$ARGUMENTS**
 
 A bucket is the folder `.claude/scratch/<slug>/` for one task. The index file
-`.claude/scratch/INDEX.md` lists every bucket. Rules for buckets are in the kit's shared rules (`~/.claude/rules/orchestration-kit.md`).
+`.claude/scratch/INDEX.md` lists every bucket. Rules for buckets are in the kit's shared rules (`.claude/rules/orchestration-kit.md`, put there by `/kit-on`).
+
+## 0. Only where the kit is on
+
+No `.claude/rules/orchestration-kit.md` in the primary working directory means the kit is off
+here (the default): say so, offer `/kit-on`, and stop - write nothing. A bucket in an off project
+gets no hooks and no rules: half on.
 
 ## 1. Read the index
 

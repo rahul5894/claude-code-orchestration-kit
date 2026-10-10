@@ -736,7 +736,7 @@ chk('outputStyle' not in su, 'settings: no outputStyle (kit styles are opt-in)',
     str(su.get('outputStyle')))
 # The user runs default everywhere (2026-10-10): /kit-on never restores a kit style it replaced.
 _ksw = open('kit_switch.py', encoding='utf-8').read() if os.path.isfile('kit_switch.py') else ''
-chk('pinned = style_in_force(root, data) in KIT_STYLES' in _ksw and 'did["old_style"]' not in _ksw,
+chk('def default_style' in _ksw and 'changed = default_style(root, data)' in _ksw and 'old_style' not in _ksw,
     '/kit-on leaves the project on the default style, never kit-lean or orchestrator')
 # The default branches a worktree from the default branch, hiding local work from the agent.
 chk(su.get('worktree', {}).get('baseRef') == 'head', 'settings: worktree.baseRef head',
@@ -952,22 +952,45 @@ for frag, label in [('kit-session-start.py', 'installer registers the SessionSta
                     ('kit_chain_test.py', 'installer runs the timeline self-test'),
                     ("kit\\project-template.md", 'installer publishes the project template to ~/.claude/kit'),
                     ("kit\\audit_project.py", 'installer publishes audit_project.py to ~/.claude/kit'),
-                    ('kit_off_test.py', 'installer runs the per-project off-switch self-test'),
-                    ("rules\\orchestration-kit.md", 'installer writes the shared rules to their own '
-                     'file, which /kit-off can exclude per project')]:
+                    ('kit_off_test.py', 'installer runs the per-project off-switch self-test')]:
     chk(frag in _inst, label)
-# Per-project off switch (2026-09-23): .claude/kit-off silences the kit in one project. A hook
-# that skips the check keeps writing _inbox files or denying Reads there, and nothing else shows it.
+# The per-project switch: the kit is OFF unless /kit-on wrote its rules copy (2026-10-10, bucket
+# kit-default-off-optimize D002). A hook that skips the check writes _inbox files, digests and
+# window records in every project, and nothing else shows it.
 chk(os.path.isfile('core/hooks/kit_off.py') and os.path.isfile('core/hooks/kit_off_test.py'),
     'core/hooks/kit_off.py and its self-test exist')
+
+
+def _fast_path(src):
+    """The hook decides on/off before any heavy import (D003: an off project's event went 40-48 ms
+    -> ~25): every import above its first `if __name__ ...: sys.exit(...)` is os, sys or kit_off,
+    and kit_off() has been called by then. Read from the syntax tree, not the text: moving a
+    `from kit_index import` up beside `from kit_off import` passed the text check it replaced."""
+    import ast
+    called = False
+    for node in ast.parse(src).body:
+        if isinstance(node, ast.Import):
+            if any(a.name not in ('os', 'sys') for a in node.names):
+                return False
+            continue
+        if isinstance(node, ast.ImportFrom):
+            if node.module != 'kit_off':
+                return False
+            continue
+        calls = [ast.unparse(n.func) for n in ast.walk(node) if isinstance(n, ast.Call)]
+        called = called or 'kit_off' in calls
+        if isinstance(node, ast.If) and '__name__' in ast.unparse(node.test) and 'sys.exit' in calls:
+            return called
+    return False
+
+
 for _h in sorted(glob.glob('core/hooks/*.py')):
     # kit_off.py, kit_index.py, kit_digest.py and kit_chain.py are libraries the hooks import, not hooks
     if _h.endswith('_test.py') or os.path.basename(_h) in ('kit_off.py', 'kit_index.py', 'kit_digest.py',
                                                             'kit_chain.py'):
         continue
-    _src = open(_h, encoding='utf-8').read()
-    chk('from kit_off import kit_off' in _src and 'kit_off(' in _src,
-        f'{os.path.basename(_h)} honours .claude/kit-off (md-guard: its .md checks only)')
+    chk(_fast_path(open(_h, encoding='utf-8').read()),
+        f'{os.path.basename(_h)}: off by default - kit_off() decides before any heavy import (md-guard: its .md checks only)')
 # The handoff (2026-09-23): what lives only in the chat must reach STATE.md, STATE.md stays
 # short, and /continue is the one word that resumes. Each clause here is one a rewrite could
 # drop without anything else noticing.
@@ -1045,7 +1068,8 @@ chk('_try(chain_touch' in _kc and _headless in _kc and 'background_tasks") or []
     'kit-context writes the timeline entry every stop, before the headless and running-agent returns')
 chk('kit_chain.finish(' in _ke and 'scratch_root(' in _ke and "5-second timeout raises this one's budget" in _inst,
     'kit-session-end finishes every session; the installer says its timeout lifts the 1.5 s SessionEnd default')
-chk('_try(_maintain' in _ks and 'prev.get("sid")' in _ks and 'scratch_ok(r)' in _ks,
+chk('_try(_maintain' in _ks and 'prev.get("sid")' in _ks and 'find_scratch_root(data)' in _ks
+    and 'scratch_ok(r) and not kit_off(r)' in _ki,
     "kit-session-start repairs a dead window's session, never this window's previous one; skips linked scratch")
 chk('def scratch_ok' in _ki and 'def bucket_dir' in _ki and 'scratch_ok(root)' in _ki
     and 'return bucket_dir(root, slug)' in _ki and 'def _transcript_ok' in _kh and '"projects"' in _kh,
@@ -1073,6 +1097,42 @@ chk('def pick_rows' in _ks and '[-MAX_ROWS:]' not in _ks and 'MAX_CARDS = 20' in
     and 'never an idle one' in _ct and 'At most 8' in _ct,
     "the note shows the most recently worked tasks (this window's, another window's and P1 always), "
     "never INDEX.md's last rows; idle tasks are marked and never recommended over fresh ones")
+# Default OFF (2026-10-10, bucket kit-default-off-optimize D002): the kit is on in a project exactly
+# where /kit-on wrote its rules copy - one file is the switch and the rules - and the installer no
+# longer puts the rules where every session of every project loads them.
+_koff = open('core/hooks/kit_off.py', encoding='utf-8').read() if os.path.isfile('core/hooks/kit_off.py') else ''
+_kon = open('core/commands/kit-on.md', encoding='utf-8').read() if os.path.isfile('core/commands/kit-on.md') else ''
+_RULES_REL = 'RULES = os.path.join(".claude", "rules", "orchestration-kit.md")'
+chk(_RULES_REL in _koff and 'HEADER = b"<!-- orchestration-kit"' in _koff and 'f.read(len(HEADER)) != HEADER' in _koff
+    and 'def launch_root' in _koff and 'kit-off' not in _koff
+    and 'from kit_off import HEADER, RULES, kit_off' in _ksw and '--show-prefix' in _ksw
+    and 'why = rules_blocker(root)' in _ksw and 'sync_rules(root, rules)' in _ksw
+    and 'def rules_blocker' in _ki and "Claude Code's own config" in _ki
+    and "Join-Path $dest 'kit\\orchestration-kit.md'" in _inst and 'Remove-Item $old' in _inst
+    and 'kit_switch.py on' in _kon and 'orchestration-kit.md' in _kon,
+    "the kit is off by default: on exactly where /kit-on wrote its rules copy, the kit's header first; "
+    'kit_switch.py and the session-start refresh share one guard (home folder, links, a project file '
+    'of that name); install writes the rules to ~/.claude/kit/ and removes the global rules/ copy')
+# One whole-file writer (review 2026-10-10: a fixed `<copy>.tmp` name let a cloned repo's link
+# truncate any file of the user's; /simplify: three writers had grown apart). kit_index.write_atomic:
+# a tmp name of the process's own created new, a rename that never follows a link, the Windows retry.
+chk('def write_atomic' in _ki and 'os.O_EXCL' in _ki and '{os.getpid()}' in _ki and 'PermissionError' in _ki
+    and 'def write_atomic' not in _kd and 'from kit_index import write_atomic' in _kd
+    and 'write_atomic(cache,' in _ki and 'write_atomic(copy, rules)' in _ki and 'write_atomic(_window_file(pid)' in _ki
+    and 'write_atomic(marker, str(band))' in _kc and 'sync_rules(root, rules)' in _ks
+    and 'write_whole' not in _ki + _ks + _ksw,
+    'one whole-file writer (kit_index.write_atomic: its own tmp, created new, a rename, the Windows retry) '
+    'for the rules copy, the read state, window records, markers and digests')
+# The Stop hook read the whole transcript twice a turn (2026-10-10: 26-200 ms on real 3-53 MB
+# transcripts); it now goes on from the state the last turn kept - the same result, proven on 9
+# real transcripts grown in 26 steps each. Past the handoff, a digest rebuild (30-120 ms) at most
+# once per 5 minutes (D005): SessionEnd writes it whole anyway.
+chk('def resumed' in _ki and 'STATE_VERSION' in _ki and 'READ_STATES = (' in _ki
+    and 'resumed(cache, f, {' in _kh and 'resumed(cache, f, {' in _kc
+    and 'cache=read_state(sid, ".scan")' in _kc and 'read_state(sid, ".usage")' in _kc
+    and 'drop_read_states(sid)' in _ke and 'DIGEST_EVERY_S = 300' in _kc and 'read_state(sid, ".digest")' in _kc,
+    "each turn's transcript reads go on from the last turn's kept state (versioned, shape-checked); "
+    'SessionEnd deletes it; past the handoff one digest rebuild per 5 minutes')
 # Which task a session is filed under (2026-10-10, D008): a note counts as written only when the
 # shell command's write TARGETS it. The test it replaced - any `>` anywhere, so `2>/dev/null`
 # beside a read - filed sessions under closed tasks and could point /clear at the wrong one.
@@ -1081,7 +1141,7 @@ chk('def pick_rows' in _ks and '[-MAX_ROWS:]' not in _ks and 'MAX_CARDS = 20' in
 # path's prefix in both readers, Write/Edit targets and shell commands alike.
 chk('def shell_notes' in _ki and 'SHELL_WRITE' not in _ki and 'SHELL_WRITE' not in _kh
     and 'shell_notes(inp.get("command"), root)' in _kh and 'shell_notes(inp.get("command"), root)' in _ki
-    and _kh.count('note_here(') >= 1 and _ki.count('note_here(path[:') == 1 and 'scan(transcript, sid, root)' in _kh,
+    and _kh.count('note_here(') >= 1 and _ki.count('note_here(path[:') == 1 and 'scan(transcript, sid, root, cache)' in _kh,
     'kit_index.shell_notes judges a shell note write by its target, and only a path in this project counts; '
     'kit_chain and session_bucket both use it')
 # The digest (2026-10-10, D009): round 3's one wrong answer came from an error line with no command;

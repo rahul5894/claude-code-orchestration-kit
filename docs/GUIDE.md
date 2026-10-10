@@ -11,14 +11,15 @@ pwsh -File install.ps1
 ```
 
 Then restart Claude Code. The installer copies the agents, commands, hooks and two output
-styles into `~/.claude`, and writes the kit's rules to `~/.claude/rules/orchestration-kit.md`.
-Your own `~/.claude/CLAUDE.md` is not touched.
+styles into `~/.claude`, and the kit's rules to `~/.claude/kit/orchestration-kit.md`. Your own
+`~/.claude/CLAUDE.md` is not touched. **The kit is off in every project until you type `/kit-on`
+(or `/kit-init`) there.**
 
 ## 2. The two modes
 
 | Mode | What it does | How to switch |
 |---|---|---|
-| `default` (after install) | Plain Claude Code: Claude writes the code itself, no builder or refuter unless you ask; kit hooks, guards, rules and `/task` + `/continue` still apply | `/output-style default` |
+| `default` (after install) | Plain Claude Code: Claude writes the code itself, no builder or refuter unless you ask; where the kit is on, its hooks, guards, rules and `/task` + `/continue` still apply | `/output-style default` |
 | `kit-lean` | Claude writes the code itself, runs the gate, then `/code-review` (and `/security-review` for risky files) | `/output-style kit-lean` |
 | `orchestrator` | Full loop: builder agent writes, refuter + verifier review, Fable/Opus split | `/output-style orchestrator` |
 
@@ -29,8 +30,9 @@ Your own `~/.claude/CLAUDE.md` is not touched.
 
 ## 3. A new project
 
-Type `/kit-init` once. It finds the project's fast check (the "gate"), times it and writes
-the project `CLAUDE.md`. Until then, a message at session start reminds you.
+Type `/kit-init` once. It turns the kit on here, finds the project's fast check (the "gate"),
+times it and writes the project `CLAUDE.md`. In a project where the kit is on but that row is
+missing, a message at session start reminds you.
 
 ## 4. Long work that spans sessions
 
@@ -46,21 +48,24 @@ the project `CLAUDE.md`. Until then, a message at session start reminds you.
   `/clear`, then `/continue`, and it resumes from that note, fresh and cheaper.
 - `this project has no FAST GATE row` - run `/kit-init`.
 
-## 6. Kit off in ONE project
+## 6. Kit on and off, one project at a time
 
-- `/kit-off` - the kit goes quiet here: kit hooks silent, kit rules not loaded, and a kit output
-  style in force here (kit-lean or orchestrator) goes back to default.
-  Files stay. (md-guard still stops the read-only reviewer agents from writing.)
-- `/kit-on` - back on, exactly as before.
+- The kit is **off** in every project by default: no hooks at work, no kit rules in the chat.
+- `/kit-on` - on here: it copies the kit's rules into `.claude/rules/orchestration-kit.md`
+  (kept out of git through `.git/info/exclude`); that file is also the switch.
+- `/kit-off` - off here: the copy goes, kit hooks are silent, and a kit output style in force
+  here (kit-lean or orchestrator) goes back to default. Task files stay. (md-guard still stops
+  the read-only reviewer agents from writing.)
 - `/kit-uninstall` - removes the kit's files from this project (asks first, can zip your task
-  folders), then turns the kit off here for good. `/kit-on` still brings it back.
-- After any of these, the hooks switch at once; the rules switch in the next new chat in that
-  project. No need to restart VS Code.
+  folders), then turns the kit off here. `/kit-on` still brings it back.
+- After any of these, the hooks switch at once, and Claude follows (or stops following) the
+  kit's rules in the same chat; every new chat loads them, or not, by itself. No need to
+  restart VS Code.
 
 ## 7. Remove the kit from the whole machine
 
-Run `/kit-uninstall` first in any project you want cleaned (it is a kit command, so it is gone
-after this step). Then:
+Run `/kit-uninstall` (or at least `/kit-off`) first in every project where the kit is on: it is
+a kit command, so it is gone after this step, and the rules copy would keep loading there. Then:
 
 ```
 pwsh -File uninstall.ps1 -WhatIf    # shows every change, writes nothing

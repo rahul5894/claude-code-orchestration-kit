@@ -12,15 +12,22 @@ hooks.md allows 10,000, and a spawn pays this on every agent.
 Exit 0 always. Any crash = silence (fail open, dev tool). Never writes a file.
     python kit-subagent-start.py --check <dir>     # same decision, for tests and verification
 """
-import json
 import os
-import re
 import sys
 
 # The hook's own folder, explicitly: under PYTHONSAFEPATH=1 (or python -P / -I) the script dir
 # is not on sys.path, the import fails and the hook exits 1 - which fails open (refuter-02).
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from kit_off import kit_off  # noqa: E402
+
+# --check <dir>: the read-only mode tests and verify_live use - on or off.
+READONLY = len(sys.argv) >= 3 and sys.argv[1] == "--check"
+if __name__ == "__main__" and not READONLY and kit_off():
+    sys.exit(0)  # off here, the default: out before the imports below (kit-default-off-optimize D003)
+
+import json  # noqa: E402
+import re  # noqa: E402
+
 from kit_index import open_rows  # noqa: E402
 
 MAX_CHARS = 6000
@@ -63,10 +70,8 @@ def sections(scratch):
 
 
 def main():
-    if len(sys.argv) >= 3 and sys.argv[1] == "--check":
+    if READONLY:
         root = sys.argv[2]
-    elif kit_off():
-        return
     else:
         try:
             # Explicit UTF-8, same as the other hooks: sys.stdin uses the locale codec

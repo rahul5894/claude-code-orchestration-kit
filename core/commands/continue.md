@@ -16,6 +16,7 @@ every task to choose is the waste the cards exist to avoid. No cards in context,
 opened or closed since this session started, or a request may belong to a task that line only
 names: run `python ~/.claude/hooks/kit-session-start.py --cards "<root>"` once (up to 20 cards;
 `<root>` = the absolute primary working directory, never `.`) and decide from what it prints.
+If it says the kit is off in this project (the default): tell the user, offer `/kit-on`, and stop.
 
 ## 2. No request: `/continue` alone, or a task's slug
 

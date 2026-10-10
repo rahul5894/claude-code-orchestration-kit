@@ -17,6 +17,15 @@ HOOK = os.path.join(os.path.dirname(os.path.abspath(__file__)), "md-guard.py")
 
 tmp = tempfile.mkdtemp(prefix="md-guard-")
 atexit.register(shutil.rmtree, tmp, True)
+# The kit is off by default (kit_off.py): every case runs as in a project that turned it on, and
+# one at the end in a project that did not.
+sys.path.insert(0, os.path.dirname(HOOK))
+from kit_off import HEADER, RULES  # noqa: E402
+os.makedirs(os.path.join(tmp, ".claude", "rules"))
+with open(os.path.join(tmp, RULES), "wb") as f:
+    f.write(HEADER + b" (test) -->\n")
+OFF = os.path.join(tmp, "off-project")
+os.makedirs(OFF)
 BIG = os.path.join(tmp, "big.md").replace("\\", "/")
 SMALL = os.path.join(tmp, "small.md").replace("\\", "/")
 BIG_WIN = BIG.replace("/", "\\")
@@ -280,7 +289,7 @@ CASES = [
 ]
 
 
-def run(tool, inp, agent_type=None):
+def run(tool, inp, agent_type=None, project=tmp):
     # Bytes, not text=True: the payload must reach the hook as raw UTF-8, the way
     # JSON.stringify sends it. text=True would encode it with the locale codec and the
     # non-ASCII case below could never run on Windows.
@@ -288,7 +297,8 @@ def run(tool, inp, agent_type=None):
     if agent_type:
         payload["agent_type"] = agent_type
     raw = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-    p = subprocess.run([sys.executable, HOOK], input=raw, capture_output=True)
+    p = subprocess.run([sys.executable, HOOK], input=raw, capture_output=True,
+                       env=dict(os.environ, CLAUDE_PROJECT_DIR=project))
     if b'"deny"' in p.stdout:
         return "DENY"
     return "WINDOW" if b'"updatedInput"' in p.stdout else "ALLOW"
@@ -304,9 +314,10 @@ for want, tool, inp, agent_type in CASES:
 
 # A denial must say how to get ALL of the file, not only how to find a spot in it: a model
 # told "grep, then Read a window" can stop at one window and work from part of the document.
-def reason(tool, inp, field="permissionDecisionReason"):
+def reason(tool, inp, field="permissionDecisionReason", project=tmp):
     raw = json.dumps({"tool_name": tool, "tool_input": inp}, ensure_ascii=False).encode("utf-8")
-    p = subprocess.run([sys.executable, HOOK], input=raw, capture_output=True)
+    p = subprocess.run([sys.executable, HOOK], input=raw, capture_output=True,
+                       env=dict(os.environ, CLAUDE_PROJECT_DIR=project))
     try:
         out = json.loads(p.stdout)["hookSpecificOutput"]
         return json.dumps(out[field]) if field == "updatedInput" else out[field]
@@ -334,6 +345,14 @@ for label, text, needles in MESSAGES:
         fails += 1
     print(f"{'ok ' if good else 'BAD'} message: {label}")
 
-total = len(CASES) + len(MESSAGES)
+# A project that never turned the kit on (the default): the big-.md check is not there, the
+# read-only agents' write guard is.
+for want, inp, agent, label in (("ALLOW", {"command": f"cat {BIG}"}, None, "kit off: a big .md read passes"),
+                                ("DENY", {"command": "rm notes.txt"}, "refuter", "kit off: a refuter's rm is still denied")):
+    got = run("Bash", inp, agent, project=OFF)
+    if got != want:
+        fails += 1
+    print(f"{'ok ' if got == want else 'BAD'} {label} (got {got})")
+total = len(CASES) + len(MESSAGES) + 2
 print(f"\n{total - fails}/{total} passed")
 sys.exit(1 if fails else 0)

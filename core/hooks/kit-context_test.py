@@ -8,10 +8,19 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import uuid
 
 HOOK = os.path.join(os.path.dirname(os.path.abspath(__file__)), "kit-context.py")
 tmp = tempfile.mkdtemp(prefix="kit-context-test-")
+# The kit is off by default (kit_off.py): the fixture project, and the launch root one case moves
+# to, are switched on the way /kit-on does it - the kit's rules copy.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from kit_off import HEADER, RULES  # noqa: E402
+for _root in (tmp, os.path.join(tmp, "elsewhere")):
+    os.makedirs(os.path.join(_root, ".claude", "rules"))
+    with open(os.path.join(_root, RULES), "wb") as _f:
+        _f.write(HEADER + b" (test) -->\n")
 # A caller running inside Claude Code has CLAUDE_PROJECT_DIR and CLAUDE_CODE_SESSION_ATTENDED
 # set; every run gets the same env whether or not it is, and a case adds what it tests.
 # The window env vars are stripped too: the caller's provider or 1M switch must not move a case.
@@ -20,6 +29,12 @@ ENV = {k: v for k, v in os.environ.items()
                     "CLAUDE_CODE_DISABLE_1M_CONTEXT", "CLAUDE_CODE_MAX_CONTEXT_TOKENS",
                     "DISABLE_COMPACT", "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX",
                     "CLAUDE_CODE_USE_FOUNDRY")}
+# Context markers and the per-session read state (kit_index.resumed) land in a private temp dir,
+# test and hook alike, never in the real one.
+PRIVATE_TMP = os.path.join(tmp, "_tmp")
+os.makedirs(PRIVATE_TMP)
+tempfile.tempdir = PRIVATE_TMP
+ENV.update(TEMP=PRIVATE_TMP, TMP=PRIVATE_TMP, TMPDIR=PRIVATE_TMP)
 sessions = []
 SMALL = "claude-haiku-4-5-20251001"   # a 200K model: the band arithmetic below is of 200K
 
@@ -67,7 +82,7 @@ def run(path, sid, stop_hook_active=False, background=None, raw=None, env=None):
                           "hook_event_name": "Stop", "stop_hook_active": stop_hook_active,
                           "background_tasks": background or [], "session_crons": []}).encode("utf-8")
     p = subprocess.run([sys.executable, HOOK], input=raw, capture_output=True,
-                       env=dict(ENV, **(env or {})))
+                       env=dict(ENV, **{"CLAUDE_PROJECT_DIR": tmp, **(env or {})}))
     out = p.stdout.decode("utf-8", "replace").strip()
     if not out:
         return p.returncode, None
@@ -242,7 +257,7 @@ try:
                       asst(100_000))
     res = run(path, s)
     ok(blocked(res, 50) and "~60 lines" in res[1].get("reason", "") and "digests/" in res[1].get("reason", "")
-       and not os.path.exists(os.path.join(tmp, ".claude"))
+       and not os.path.exists(os.path.join(tmp, ".claude", "scratch"))
        and "touched no bucket" in res[1].get("reason", "") and "parallel window" in res[1].get("reason", ""),
        "50% block: STATE at ~60 lines, digest promised, nothing written; no bucket -> open one, never another's")
     state("other")  # another session's STATE.md: only on disk, never in this transcript
@@ -271,10 +286,17 @@ try:
         f.write(json.dumps({"type": "user", "message": {"content": "then commit and push"}}) + "\n")
         f.write(json.dumps(asst(101_000)) + "\n")
     os.utime(path, (before + 5, before + 5))
+    # Past the handoff, one rebuild per DIGEST_EVERY_S (D005): each reads the whole transcript, and
+    # SessionEnd writes the digest whole anyway. The stamp is aged to let the next one through.
+    stamp = os.path.join(PRIVATE_TMP, "kit-context-" + s + ".digest")
+    ok(quiet(run(path, s)) and "then commit and push" not in open(digest("task-a", s), encoding="utf-8").read(),
+       "a stop within 5 minutes of the last rebuild leaves the digest as it is (D005)")
+    os.utime(stamp, (time.time() - 400,) * 2)
     ok(quiet(run(path, s)) and "then commit and push" in open(digest("task-a", s), encoding="utf-8").read()
        and not os.path.exists(digest("other", s)),
-       "a later stop refreshes the digest; a newer STATE.md of another session does not move it")
+       "5 minutes on, a later stop refreshes the digest; a newer STATE.md of another session does not move it")
     state("task-b", path)
+    os.utime(stamp, (time.time() - 400,) * 2)
     ok(quiet(run(path, s)) and os.path.isfile(digest("task-b", s)),
        "this session hands off into task-b later -> the digest follows its newest handoff")
     # a symlinked or junctioned digests/ is never written through (it would leave the bucket)
@@ -299,12 +321,11 @@ try:
     p2 = transcript(asst(100_000))
     run(p2, s2)
     state("task-c", p2)
-    with open(os.path.join(tmp, ".claude", "kit-off"), "w") as f:
-        f.write("")
+    os.rename(os.path.join(tmp, RULES), os.path.join(tmp, RULES + ".away"))
     ok(notice(run(p2, s2, stop_hook_active=True, env={"CLAUDE_PROJECT_DIR": os.path.join(tmp, "elsewhere")}), 50)
        and not os.path.exists(digest("task-c", s2)),
        "the payload cwd's project is switched off -> no digest written into it")
-    os.remove(os.path.join(tmp, ".claude", "kit-off"))
+    os.rename(os.path.join(tmp, RULES + ".away"), os.path.join(tmp, RULES))
     s = session()
     r70 = run(transcript(asst(140_000)), s)
     r80 = run(transcript(asst(160_000)), s)
@@ -337,6 +358,24 @@ try:
     # 12-13. fail open
     ok(quiet(run(os.path.join(tmp, "nope.jsonl"), session())), "missing transcript -> no output, exit 0")
     ok(quiet(run(None, session(), raw=b"{not json")), "non-JSON stdin -> no output, exit 0")
+
+    # 14. Each Stop reads only what the transcript gained since the last one (kit_index.resumed,
+    # bucket kit-default-off-optimize): the same usage as a whole read; a line still being written
+    # waits for the next turn.
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("kit_context", HOOK)
+    kctx = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(kctx)
+    p, c = transcript(asst(60_000)), os.path.join(PRIVATE_TMP, "case14.usage")
+    first = kctx.usage(p, "", c)
+    late = json.dumps(asst(90_000)) + "\n"
+    with open(p, "a", encoding="utf-8") as f:
+        f.write(late[:25])
+    torn = kctx.usage(p, "", c)
+    with open(p, "a", encoding="utf-8") as f:
+        f.write(late[25:])
+    ok(first == torn == (60_000, 200_000) and kctx.usage(p, "", c) == kctx.usage(p) == (90_000, 200_000)
+       and os.path.isfile(c), "usage from a kept state = a whole read; a torn last line waits for the next turn")
 finally:
     shutil.rmtree(tmp, ignore_errors=True)
     for sid in sessions:

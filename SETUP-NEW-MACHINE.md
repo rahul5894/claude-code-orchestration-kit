@@ -65,7 +65,7 @@ agents:        builder, debugger, Explore, refuter, researcher, verifier
 commands:      continue, kit-init, kit-off, kit-on, kit-uninstall, task
 skills:        review-precision, simple-english
 output-styles: kit-lean, orchestrator
-rules/orchestration-kit.md: written  (or "unchanged" on a re-run)
+kit/orchestration-kit.md: written  (or "unchanged" on a re-run)
 settings.json: merged (backup written)  ("created" if none existed, "unchanged" on a re-run)
 md-guard: registered in settings.json
 kit-session-start: registered in settings.json
@@ -73,23 +73,24 @@ kit-subagent-report: registered in settings.json
 kit-subagent-start: registered in settings.json
 kit-context: registered in settings.json
 kit-session-end: registered in settings.json
-md-guard self-check: 177/177 passed
-kit-session-start self-check: 53/53 passed
+md-guard self-check: 179/179 passed
+kit-session-start self-check: 56/56 passed
 kit-subagent-report self-check: 12/12 passed
 kit-subagent-start self-check: 19/19 passed
-kit-context self-check: 48/48 passed
+kit-context self-check: 50/50 passed
 kit_off self-check: 13/13 passed
 kit_digest self-check: 35/35 passed
-kit_chain self-check: 47/47 passed
+kit_chain self-check: 48/48 passed
 kit-session-end self-check: 8/8 passed
-kit-switch self-check: 13/13 passed
+kit-switch self-check: 15/15 passed
 scan-project self-check: 38/38 passed
 done. ...
 ```
 
 What the installer does. It copies `core/agents/*.md` and `core/commands/*.md` into
-`~/.claude/`. It writes the shared rules to `~/.claude/rules/orchestration-kit.md`, a file of
-their own so `/kit-off` can drop them from one project, and leaves `~/.claude/CLAUDE.md` to you
+`~/.claude/`. It writes the shared rules to `~/.claude/kit/orchestration-kit.md`, which no session loads
+by itself: the kit is off in every project until `/kit-on` copies them into that project's
+`.claude/rules/` (also the switch the hooks look for). It leaves `~/.claude/CLAUDE.md` to you
 (an old kit block between marker comments there is removed, with a backup). It deep-merges `core/settings.user.json` into
 `~/.claude/settings.json` and writes a backup first. It copies `core/hooks/*.py` into
 `~/.claude/hooks/` and registers six hooks once each (md-guard, kit-session-start,
@@ -260,7 +261,7 @@ judged on its own, so `rm big.md; git status | head` passes.
 
 The deny message tells Claude the capped `grep -n` + `Read` window to use instead.
 
-Check: `python ~/.claude/hooks/md-guard_test.py` prints `177/177 passed`. The test
+Check: `python ~/.claude/hooks/md-guard_test.py` prints `179/179 passed`. The test
 builds its own fixtures in a temp folder, so it runs on any machine. The installer runs
 it for you.
 
@@ -285,7 +286,7 @@ Bedrock/Vertex/Foundry id without `[1m]`); `CLAUDE_CODE_DISABLE_1M_CONTEXT=1` ma
 `CLAUDE_CODE_MAX_CONTEXT_TOKENS` counts together with `DISABLE_COMPACT`. The `[1m]` marker never
 reaches the transcript, so the model id alone cannot say 1M. Only lines of the current
 session count, so a new session starts from 0.
-Check: `python ~/.claude/hooks/kit-context_test.py` prints `48/48 passed`.
+Check: `python ~/.claude/hooks/kit-context_test.py` prints `50/50 passed`.
 
 The task timeline (`kit_chain.py`): every session that works on a bucket - at any context %,
 not only past 45% - leaves `<bucket>/digests/<sid>.json` (its entry), `<sid>.state.md` (STATE.md
@@ -297,7 +298,7 @@ killed with no SessionEnd and prunes. Records stay while the task is open and ar
 after `Status: CLOSED <date>`; entries, SESSIONS.md, STATE, DECISIONS and FINDINGS stay.
 `python ~/.claude/hooks/kit_chain.py --backfill <repo>` builds the records of open tasks from
 the transcripts still on disk (Claude Code keeps them 30 days).
-Check: `python ~/.claude/hooks/kit_chain_test.py` prints `47/47 passed` and
+Check: `python ~/.claude/hooks/kit_chain_test.py` prints `48/48 passed` and
 `python ~/.claude/hooks/kit-session-end_test.py` prints `8/8 passed`.
 
 Known gaps, on purpose:
@@ -443,16 +444,16 @@ report format. The skill is worth keeping, so the kit ships its own copy at
 
 ## 7. Final checklist
 
-- [ ] `pwsh install.ps1` printed `md-guard self-check: 177/177 passed`
-- [ ] the same run printed `kit-session-start self-check: 53/53 passed`
+- [ ] `pwsh install.ps1` printed `md-guard self-check: 179/179 passed`
+- [ ] the same run printed `kit-session-start self-check: 56/56 passed`
 - [ ] the same run printed `kit-subagent-report self-check: 12/12 passed`
 - [ ] the same run printed `kit-subagent-start self-check: 19/19 passed`
-- [ ] the same run printed `kit-context self-check: 48/48 passed`
+- [ ] the same run printed `kit-context self-check: 50/50 passed`
 - [ ] the same run printed `kit_off self-check: 13/13 passed`
 - [ ] the same run printed `kit_digest self-check: 35/35 passed`
-- [ ] the same run printed `kit_chain self-check: 47/47 passed`
+- [ ] the same run printed `kit_chain self-check: 48/48 passed`
 - [ ] the same run printed `kit-session-end self-check: 8/8 passed`
-- [ ] the same run printed `kit-switch self-check: 13/13 passed`
+- [ ] the same run printed `kit-switch self-check: 15/15 passed`
 - [ ] the same run printed `scan-project self-check: 38/38 passed`
 - [ ] `verify_live.py` C6 lists no unreviewed plugin
 - [ ] In a new Claude Code session, asking Claude to read a 300+ line `.md` whole is

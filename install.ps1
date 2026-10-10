@@ -1,7 +1,7 @@
 #Requires -Version 7
 # Installs or re-syncs this kit into ~/.claude. Idempotent: run it after every kit change
 # and on every new machine. Nothing here replaces a file you own; settings.json is merged,
-# agents, commands and rules/orchestration-kit.md are copied (the kit is their source of truth).
+# agents, commands and kit/orchestration-kit.md are copied (the kit is their source of truth).
 # uninstall.ps1 reverses it.
 $ErrorActionPreference = 'Stop'
 $kit  = $PSScriptRoot
@@ -67,21 +67,26 @@ Copy-Item (Join-Path $kit 'kit_switch.py')            (Join-Path $dest 'kit\kit_
 "skills:        " + ((Get-ChildItem (Join-Path $kit 'core\skills') -Directory).Name -join ', ')
 "output-styles: " + ((Get-ChildItem (Join-Path $kit 'core\output-styles\*.md')).BaseName -join ', ')
 
-# 2. The kit's shared rules: their own user-level rules file, loaded every session like
-#    ~/.claude/CLAUDE.md. A separate file is what lets /kit-off drop the kit from ONE project
-#    (claudeMdExcludes) while your own CLAUDE.md keeps loading there. Measured live 2026-09-23 on
-#    2.1.280: the file reaches the main session and subagents, and the exclude removes it from both.
-$rf    = Join-Path $dest 'rules\orchestration-kit.md'
-New-Item -ItemType Directory -Force (Split-Path $rf) | Out-Null
+# 2. The kit's shared rules. The kit is OFF in every project by default (bucket
+#    kit-default-off-optimize, D002): the rules go to kit\orchestration-kit.md, which no session
+#    loads by itself; /kit-on copies them into ONE project's .claude/rules/, where the main session
+#    and every subagent load them, and that copy is also the switch the hooks look for. The
+#    session-start hook keeps an ON project's copy current with this file.
+$rf    = Join-Path $dest 'kit\orchestration-kit.md'
 $rules = "<!-- orchestration-kit (fork of SirRuggie/claude-code-orchestration-kit, source $kit) -->`n" +
          (Get-Content (Join-Path $kit 'core\CLAUDE.md') -Raw)
 # Compare LF-normalized: Write-Lf strips CRLF on write, so a raw compare never matches and
 # the file is rewritten on every run, hiding whether anything actually changed.
 if ($rules.Replace("`r`n", "`n") -ne (Read-Text $rf).Replace("`r`n", "`n")) {
-    Write-Lf $rf $rules; "rules/orchestration-kit.md: written" }
-else { "rules/orchestration-kit.md: unchanged" }
+    Write-Lf $rf $rules; "kit/orchestration-kit.md: written" }
+else { "kit/orchestration-kit.md: unchanged" }
+# The default-on kit kept them in rules\, where EVERY session of every project loads them: out.
+$old = Join-Path $dest 'rules\orchestration-kit.md'
+if ((Test-Path $old) -and (Read-Text $old).StartsWith('<!-- orchestration-kit')) {
+    Remove-Item $old -Force; "rules/orchestration-kit.md: removed (the kit is off by default; /kit-on per project)"
+}
 # Earlier versions put the same rules between markers in ~/.claude/CLAUDE.md. Left there, they
-# would load twice and survive /kit-off, so the block comes out. Your own text stays.
+# would load in every project, kit on or off, so the block comes out. Your own text stays.
 $md  = Join-Path $dest 'CLAUDE.md'
 $cur = Read-Text $md
 # The exact header every install wrote (git log -S: one form only), and never across a second
@@ -92,10 +97,10 @@ if ($cur -match $pat) {
     Copy-Item $md "$md.bak-kit-$(Get-Date -Format yyyyMMdd-HHmmss-fff)"
     $rest = [regex]::Replace($cur, $pat, "`n`n").Trim()
     Write-Lf $md $(if ($rest) { "$rest`n" } else { '' })
-    "CLAUDE.md: old kit block removed (now in rules/orchestration-kit.md; backup written)"
+    "CLAUDE.md: old kit block removed (the rules now load only where /kit-on put them; backup written)"
 }
 if ((Read-Text $md).Contains('<!-- orchestration-kit (fork of')) {
-    Write-Warning "~/.claude/CLAUDE.md still holds an old kit header with no end marker. Delete that block by hand: it loads twice and /kit-off cannot drop it."
+    Write-Warning "~/.claude/CLAUDE.md still holds an old kit header with no end marker. Delete that block by hand: it loads in every project and /kit-off cannot drop it."
 }
 
 # 3. settings.json: deep-merge core/settings.user.json. Objects merge, lists union, scalars win.
@@ -290,7 +295,7 @@ else {
     else { "scan-project self-check: $t5" }
 }
 
-"done. RESTART Claude Code: agents and output styles are read at startup, so they only"
-"      apply to a new session. The kit sets no output style; /output-style kit-lean or"
-"      orchestrator opts in. /status confirms the settings file loaded, and /context shows"
-"      what the shared CLAUDE.md now costs per spawn."
+"done. The kit is OFF in every project until /kit-on there (it copies the rules in; /kit-off"
+"      takes them out). Open windows: the hooks run the new code from their next event, the"
+"      commands and rules from the next /clear; agents and output styles from a new window."
+"      The kit sets no output style; /output-style kit-lean or orchestrator opts in."

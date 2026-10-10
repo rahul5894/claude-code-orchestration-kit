@@ -15,10 +15,15 @@ Each scenario is a fresh window (a new session) that types one /continue:
   closed      /continue <more for the avatar upload>   -> offer to reopen profile-avatar
   ambiguous   /continue <"the billing work">           -> ask: invoice-export or payment-retry
   unblock     /continue <the retry delays>             -> payment-retry, confirm first
+  hidden      /continue <more for the invoice export>  -> invoice-export, though 7 newer tasks
+                                                          leave it only named in the note
 Right = it put the expected task first (the recommended option), asked before doing anything,
 and changed no file before the answer. Also counted: bucket files it opened before answering
-(the cards exist so that it opens none) and the cost. With --follow, `match`, `new` and
-`closed` get a second turn that takes the recommended option, and the files are checked after.
+(the cards exist so that it opens none) and the cost. The question box is the real one
+(AskUserQuestion via --permission-prompt-tool stdio): `box ok` = 2-4 options, the recommended one
+first with "(Recommended)", every option described. With --follow, `match`, `new` and `closed`
+take the recommended option in the box (or a second turn, if it asked in text), and the files
+are checked after. The fixture is switched on with the installed kit_switch.py (off is default).
 
     python bench/handoff/continue_live.py [--model opus] [--samples 2] [--follow] [--keep] [--tag old]
 Writes only into temp project dirs (their transcripts land in ~/.claude/projects, as any
@@ -39,7 +44,14 @@ import queue
 CLAUDE = os.environ.get("CLAUDE_CODE_EXECPATH") or shutil.which("claude") or "claude"
 DROP = ("CLAUDE_PROJECT_DIR", "CLAUDE_PID", "CLAUDE_CODE_SESSION_ID", "CLAUDECODE",
         "CLAUDE_CODE_ENTRYPOINT", "CLAUDE_CODE_CHILD_SESSION", "CLAUDE_CODE_SSE_PORT")
-SLUGS = ("login-dark-mode", "invoice-export", "payment-retry", "profile-avatar")
+FILLERS = (("search-filters", "Search page filters: price range and brand, kept in the URL"),
+           ("settings-notify", "Settings screen: per-channel notification toggles"),
+           ("order-history", "Order history table with pagination and a status filter"),
+           ("admin-roles", "Admin role permissions for staff accounts"),
+           ("signup-verify", "Signup email verification with a resend link"),
+           ("cart-coupons", "Coupon codes in the cart with a validity check"),
+           ("stock-alerts", "Low-stock email alerts for the shop owner"))
+SLUGS = ("login-dark-mode", "invoice-export", "payment-retry", "profile-avatar") + tuple(s for s, _ in FILLERS)
 
 
 def day(n):
@@ -131,6 +143,8 @@ SCENARIOS = {
     "closed": ("/continue avatar upload mein ab 5 MB tak ki file allow karni hai", "profile-avatar"),
     "ambiguous": ("/continue billing wala kaam aage badhao", "invoice-export|payment-retry"),
     "unblock": ("/continue payment retry ke delays 1, 5 aur 15 minute rakho", "payment-retry"),
+    # 10 open: invoice-export has no card in the note, only its name in the `(+2 older: ...)` line.
+    "hidden": ("/continue invoice ke CSV export mein ek GST column bhi chahiye", "invoice-export"),
 }
 
 
@@ -146,7 +160,7 @@ def git(root, *args):
                    capture_output=True)
 
 
-def project():
+def project(hidden=False):
     root = tempfile.mkdtemp(prefix="kit-cont-")
     write(root, "CLAUDE.md", "# shop app\n| **FAST GATE — agents run this** | `npm test` | 0.5 s |\n")
     write(root, ".gitignore", ".claude/scratch/\nnode_modules/\n")
@@ -166,18 +180,36 @@ def project():
         write(root, scratch + slug + "/FINDINGS.md", f"# FINDINGS — {slug}\n")
         write(root, scratch + slug + "/DECISIONS.md", f"# DECISIONS — {slug}\n")
     write(root, scratch + "INDEX.md", INDEX.format(d1=day(1), d2=day(2), d3=day(3)))
-    for slug, age_h in (("login-dark-mode", 20), ("invoice-export", 50), ("payment-retry", 70), ("profile-avatar", 44)):
+    ages = [("login-dark-mode", 20), ("invoice-export", 50), ("payment-retry", 70), ("profile-avatar", 44)]
+    if hidden:
+        # 7 more open tasks, all worked on after invoice-export: the note shows 8 rows, so
+        # invoice-export and payment-retry are only NAMED, in its `(+2 older: ...)` line.
+        with open(os.path.join(root, scratch, "INDEX.md"), "a", encoding="utf-8", newline="\n") as f:
+            for i, (slug, about) in enumerate(FILLERS, 1):
+                write(root, scratch + slug + "/STATE.md", f"# STATE — {slug}\nAbout: {about}.\n"
+                      f"Updated: {day(0)}   Status: OPEN   Priority: P2\n## Next action\nStart with the UI.\n")
+                f.write(f"| {slug} | OPEN | {day(0)} | start with the UI |\n")
+                ages.append((slug, i))
+    for slug, age_h in ages:
         p = os.path.join(root, ".claude", "scratch", slug, "STATE.md")
         t = time.time() - age_h * 3600
         os.utime(p, (t, t))
+    # The kit is off in every project by default: switch it on as /kit-on does, with the installed
+    # switch (the kit under test).
+    subprocess.run([sys.executable, os.path.expanduser(os.path.join("~", ".claude", "kit", "kit_switch.py")), "on", root],
+                   capture_output=True)
     return root
 
 
 class Window:
+    """A headless session. `--permission-prompt-tool stdio` is what puts AskUserQuestion in its tool
+    list (the Agent SDK's way, measured 2026-10-10: 82 tools offered, the call arrives as a
+    can_use_tool control request) - so the real question box is what gets graded."""
+
     def __init__(self, root, model):
         env = {k: v for k, v in os.environ.items() if k not in DROP}
         cmd = [CLAUDE, "-p", "--input-format", "stream-json", "--output-format", "stream-json",
-               "--verbose", "--permission-mode", "bypassPermissions"]
+               "--verbose", "--permission-mode", "bypassPermissions", "--permission-prompt-tool", "stdio"]
         if model:
             cmd += ["--model", model]
         self.p = subprocess.Popen(cmd, cwd=root, env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
@@ -185,6 +217,28 @@ class Window:
         self.q = queue.Queue()
         threading.Thread(target=self._read, daemon=True).start()
         self.tools_offered = []
+        # The user takes the first, recommended option in the box; False: answers later (the turn
+        # ends at the question).
+        self.take_first = False
+        self._send({"type": "control_request", "request_id": "init-1", "request": {"subtype": "initialize", "hooks": None}})
+
+    def _send(self, o):
+        self.p.stdin.write((json.dumps(o) + "\n").encode("utf-8"))
+        self.p.stdin.flush()
+
+    def _answer(self, o):
+        """A can_use_tool request: AskUserQuestion is answered as the user would; anything else allowed."""
+        req = o.get("request") or {}
+        inp = dict(req.get("input") or {})
+        resp = {"behavior": "allow", "updatedInput": inp}
+        if req.get("tool_name") == "AskUserQuestion":  # its tool_use block is in the stream already
+            q = (inp.get("questions") or [{}])[0]
+            if self.take_first and q.get("options"):
+                inp["answers"] = {q.get("question", ""): q["options"][0].get("label", "")}
+            else:
+                resp = {"behavior": "deny", "message": "The user will answer in their next message. Stop here."}
+        self._send({"type": "control_response", "response": {"subtype": "success", "request_id": o.get("request_id"),
+                                                              "response": resp}})
 
     def _read(self):
         for raw in self.p.stdout:
@@ -195,14 +249,15 @@ class Window:
 
     def say(self, text, timeout=480):
         """One user message -> (result text, [tool_use blocks in order], result event)."""
-        msg = {"type": "user", "message": {"role": "user", "content": text}}
-        self.p.stdin.write((json.dumps(msg) + "\n").encode("utf-8"))
-        self.p.stdin.flush()
+        self._send({"type": "user", "message": {"role": "user", "content": text}})
         tools = []
         while True:
             o = self.q.get(timeout=timeout)
             if o.get("type") == "system" and o.get("subtype") == "init":
                 self.tools_offered = list(o.get("tools") or [])
+            if o.get("type") == "control_request" and (o.get("request") or {}).get("subtype") == "can_use_tool":
+                self._answer(o)
+                continue
             if o.get("type") == "assistant":
                 for b in (o.get("message") or {}).get("content") or []:
                     if isinstance(b, dict) and b.get("type") == "tool_use":
@@ -271,19 +326,38 @@ def pick_of(text, options):
     return min(cands)[1] if cands else "?"
 
 
+def box_of(tools):
+    """The question box as /continue step 4 asks for it: 2-4 options, the recommended one first
+    with `(Recommended)` in its label, each option saying what happens next."""
+    t = next((t for t in tools if t["name"] == "AskUserQuestion"), None)
+    if t is None:
+        return None
+    opts = (t["input"].get("questions") or [{}])[0].get("options") or []
+    rec = bool(opts) and "(recommended)" in str(opts[0].get("label", "")).lower()
+    desc = bool(opts) and all(str(o.get("description", "")).strip() for o in opts)
+    return {"options": len(opts), "recommended_first": rec, "descriptions": desc, "ok": 2 <= len(opts) <= 4 and rec and desc}
+
+
 def run(name, model, follow, keep):
     prompt, want = SCENARIOS[name]
-    root = project()
+    root = project(hidden=name == "hidden")
     w = Window(root, model)
+    goes_on = follow and name in ("match", "new", "closed")
+    w.take_first = goes_on
     row = {"scenario": name, "want": want, "root": root}
     try:
         text, tools, res = w.say(prompt)
+        # What it did before the user answered is what "asked first" is judged on.
+        cut = next((i for i, t in enumerate(tools) if t["name"] == "AskUserQuestion"), len(tools))
+        before, after = tools[:cut], tools[cut + 1:]
         opts = options_of(tools)
-        row.update(text=text, options=opts, pick=pick_of(text, opts), reads=bucket_reads(tools),
-                   changed=changed(tools), cost=res.get("total_cost_usd") or 0.0, turns=res.get("num_turns"),
+        row.update(text=text, options=opts, pick=pick_of(text, opts), reads=bucket_reads(before),
+                   changed=changed(before), cost=res.get("total_cost_usd") or 0.0, turns=res.get("num_turns"),
                    asked=bool(opts) or "?" in text[-700:], ask_tool_offered="AskUserQuestion" in w.tools_offered,
-                   tools=[t["name"] for t in tools])
-        if follow and name in ("match", "new", "closed"):
+                   box=box_of(tools), tools=[t["name"] for t in tools])
+        if goes_on and cut < len(tools):  # answered in the box: it went on in the same turn
+            row["follow"] = check_follow(name, root, after)
+        elif goes_on:
             text2, tools2, res2 = w.say("haan, jo aapne recommend kiya wahi karo")
             row["cost"] += res2.get("total_cost_usd") or 0.0
             row["follow"] = check_follow(name, root, tools2)
@@ -384,12 +458,16 @@ def main():
               f"${r['cost']:.3f} {'OK ' if ok else 'BAD'}  tools {r.get('tools')}")
         if r.get("options"):
             print(f"          options: {r['options']}")
+        if r.get("box"):
+            print(f"          box: {r['box']}")
         print(f"          reply: {' '.join((r.get('text') or '').split())[:420]}")
         if "follow" in r:
             print(f"          follow-up: {r['follow']}")
+    boxes = [r["box"] for r in rows if r.get("box")]
     print(f"\nright: {good}/{len(rows)}   bucket files opened before answering: "
           f"{sum(sum(r['reads'].values()) for r in rows)}   cost: ${sum(r['cost'] for r in rows):.2f}   "
-          f"AskUserQuestion offered: {sorted({str(r.get('ask_tool_offered')) for r in rows})}")
+          f"AskUserQuestion offered: {sorted({str(r.get('ask_tool_offered')) for r in rows})}   "
+          f"question box used {len(boxes)}/{len(rows)}, box ok {sum(b['ok'] for b in boxes)}/{len(boxes)}")
     os.makedirs(out, exist_ok=True)
     tag = arg[arg.index("--tag") + 1] if "--tag" in arg else "run"
     with open(os.path.join(out, f"{tag}.json"), "w", encoding="utf-8") as f:

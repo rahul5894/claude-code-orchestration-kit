@@ -17,16 +17,29 @@ Bash/PowerShell -> deny outright when the payload's agent_type is a read-only
 Exit 0 + JSON on stdout = decision. Any crash = allow (fail open, dev tool).
 Self-check: python md-guard_test.py
 """
-import glob
-import json
 import os
-import re
 import sys
 
 # The hook's own folder, explicitly: under PYTHONSAFEPATH=1 (or python -P / -I) the script dir
 # is not on sys.path, the import fails and the hook exits 1 - which fails open (refuter-02).
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from kit_off import kit_off  # noqa: E402
+
+READ_ONLY_AGENTS = {"refuter", "debugger"}
+# Most shell calls need no check at all: no read-only agent runs them, and either the kit is off
+# here (the default) or the command names no `.md` and no `$` - the first test every segment's
+# check makes (_segment_reads_big_md), here on the raw payload, which holds the command whole.
+# Decided before the imports and the patterns below load: 40 -> ~23 ms a call (bucket
+# kit-default-off-optimize, D003). Anything else falls through to the full check, so this can only
+# skip work, never a guard.
+_RAW = sys.stdin.buffer.read() if __name__ == "__main__" else b""
+_OFF = __name__ == "__main__" and kit_off()
+if (__name__ == "__main__" and not any(a.encode() in _RAW for a in READ_ONLY_AGENTS)
+        and (_OFF or (b".md" not in _RAW.lower() and b"$" not in _RAW))):
+    sys.exit(0)
+
+import json  # noqa: E402
+import re  # noqa: E402
 
 MAX_LINES = 300
 CAP_RE = re.compile(
@@ -66,8 +79,7 @@ HEREDOC_WRITE_RES = (
 # A read-only agent's verdict is discarded whole if the tree moved under it, so the shell
 # writes it can name are denied here rather than found afterwards in a git diff.
 # A denylist of named write shapes; the prose prohibition and the git-status diff catch
-# the rest
-READ_ONLY_AGENTS = {"refuter", "debugger"}
+# the rest. READ_ONLY_AGENTS is defined at the top, where the fast path reads it.
 # A discard target: writing there changes nothing.
 _DISCARD = r"(?:/dev/null|\$null|nul)(?![\w./\\-])"
 # A redirect whose target is a FILE: `>f`, `>>f`, `N>f`, `&>f`, `&>>f`. Not an fd merge
@@ -86,8 +98,8 @@ _GIT_WRITE = (r"\bgit\s+(?:add|commit|checkout|switch|reset|clean|restore|rm|mv|
               r"|\bgit\s+worktree\b(?!\s+list)"
               r"|\bgit\s+branch\b[^;&|\n]*\s-[dDmMc]\b")
 # The two commands the project CLAUDE.md forbids every agent to run: both write ~/.claude.
-# kit_switch.py writes a project's settings.local.json and its kit-off marker. (install\.ps1
-# matches uninstall.ps1 too.)
+# kit_switch.py writes a project's rules copy (the kit's switch), settings.local.json and
+# .git/info/exclude. (install\.ps1 matches uninstall.ps1 too.)
 _FORBIDDEN = r"|install\.ps1|verify_live\.py|kit_switch\.py"
 # A command word: start of the string or just after a shell separator.
 _CMD = r"(?:^|[;&|(\n`]|\$\()\s*"
@@ -191,6 +203,7 @@ def _resolve(raw, base):
     Relative paths resolve against `base`: the payload cwd, moved by any `cd` before them."""
     cand = _local(raw, base)
     if any(c in cand for c in "*?["):
+        import glob  # here, not at the top: ~5 ms of imports a wildcard alone needs
         return [h for h in glob.glob(cand) if os.path.isfile(h)] or None
     return [cand] if os.path.isfile(cand) else None
 
@@ -466,16 +479,16 @@ def main():
         # left raw. Measured 2026-09-19: a 400-line .md under a path holding "ö" decoded
         # into a path that does not exist, line_count() returned 0, and the Read was
         # ALLOWED - the guard failing open exactly where the path is not ASCII.
-        data = json.loads(sys.stdin.buffer.read().decode("utf-8"))
+        data = json.loads(_RAW.decode("utf-8"))
     except Exception:
         return
     tool = data.get("tool_name", "")
     inp = data.get("tool_input", {}) or {}
-    # /kit-off quiets the big-.md checks only. The read-only write guard below stays on in
-    # every project: it is the one write boundary refuter and debugger have, and a marker any
-    # shell can create must not be able to lift it (refuter-02, 2026-09-23: `python -c
-    # "os.open('.claude/kit-off', os.O_CREAT)"` passed, and every later write went unguarded).
-    off = kit_off()
+    # An off project (the default) skips the big-.md checks only. The read-only write guard
+    # below stays on in every project: it is the one write boundary refuter and debugger have,
+    # and a switch any shell can flip must not be able to lift it (refuter-02, 2026-09-23: a
+    # created `.claude/kit-off` marker lifted it, and every later write went unguarded).
+    off = _OFF
     if tool in ("Bash", "PowerShell"):
         # `plugin:kit:refuter` is a refuter: the payload names the agent namespaced when the
         # agent comes from a plugin.

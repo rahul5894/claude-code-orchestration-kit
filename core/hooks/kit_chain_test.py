@@ -536,6 +536,32 @@ try:
        == "/continue kya hum in numbers ko aur improve"
        and kc._asked([(1, "/continue alpha"), (2, "haan, aage badho")], None) == "haan, aage badho",
        "asked: a slash command given a sentence is the request; `/continue alpha` and `/clear` are not")
+
+    # 20. The Stop hook's scan goes on from the state its last call kept (kit_index.resumed,
+    # bucket kit-default-off-optimize): the same result as one whole read, a line still being
+    # written left for the next call, and a transcript rewritten under the kept state read whole.
+    root20 = project("p20", slugs=("alpha",))
+    sid20 = "20202020-0000-4000-8000-000000000020"
+    t20 = transcript(sid20, [u(sid20, "2026-10-10T03:00:00Z", "first ask"),
+                             a(sid20, "2026-10-10T03:01:00Z", text("on it"))])
+    cache20 = os.path.join(tmp, "p20.scan")
+    kc.scan(t20, sid20, root20, cache20)
+    late = json.dumps(u(sid20, "2026-10-10T03:03:00Z", "second ask")) + "\n"
+    with open(t20, "a", encoding="utf-8") as f:
+        f.write(json.dumps(a(sid20, "2026-10-10T03:02:00Z", call("Write", file_path=note(root20, "alpha", "STATE.md"),
+                                                                    content=state("alpha", "go")))) + "\n")
+        f.write(late[:30])
+    mid = kc.scan(t20, sid20, root20, cache20)
+    with open(t20, "a", encoding="utf-8") as f:
+        f.write(late[30:])
+    inc, whole = kc.scan(t20, sid20, root20, cache20), kc.scan(t20, sid20, root20)
+    transcript(sid20, [u(sid20, "2026-10-10T04:00:00Z", "a new start")])
+    redo = kc.scan(t20, sid20, root20, cache20)
+    ok([t for _, t in mid["users"]] == ["first ask"] and "alpha" in mid["buckets"]
+       and json.dumps(inc, sort_keys=True) == json.dumps(whole, sort_keys=True)
+       and [t for _, t in inc["users"]] == ["first ask", "second ask"]
+       and [t for _, t in redo["users"]] == ["a new start"] and not redo["buckets"],
+       "scan with a kept state: same as a whole read; a torn last line waits; a rewritten transcript is read whole")
 finally:
     shutil.rmtree(tmp, ignore_errors=True)
 

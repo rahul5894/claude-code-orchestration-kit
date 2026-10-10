@@ -1,6 +1,6 @@
 # Orchestration rules — shared
 
-Every session, every project. A repo's own `CLAUDE.md` wins on conflict.
+Every session and subagent of a project the kit is on in (`/kit-on`). A repo's own `CLAUDE.md` wins on conflict.
 
 ## Tools
 

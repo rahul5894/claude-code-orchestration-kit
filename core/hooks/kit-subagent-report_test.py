@@ -15,10 +15,19 @@ tmp = tempfile.mkdtemp(prefix="kit-subagent-report-test-")
 atexit.register(shutil.rmtree, tmp, True)
 
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from kit_off import HEADER, RULES  # noqa: E402
+
+
 def repo(with_scratch=True):
+    """A project with the kit on - the kit is off by default, and /kit-on writes its rules copy
+    (kit_off.py) - with or without a scratch dir."""
     d = tempfile.mkdtemp(dir=tmp)
     if with_scratch:
         os.makedirs(os.path.join(d, ".claude", "scratch"))
+    os.makedirs(os.path.join(d, ".claude", "rules"), exist_ok=True)
+    with open(os.path.join(d, RULES), "wb") as f:
+        f.write(HEADER + b" (test) -->\n")
     return d
 
 
@@ -31,7 +40,9 @@ def run(payload, project_dir=None):
     env = {k: v for k, v in os.environ.items() if k != "CLAUDE_PROJECT_DIR"}
     if project_dir:
         env["CLAUDE_PROJECT_DIR"] = project_dir
-    return subprocess.run([sys.executable, HOOK], input=raw, capture_output=True, env=env)
+    # No CLAUDE_PROJECT_DIR: the hook runs where the session is, as Claude Code starts it.
+    return subprocess.run([sys.executable, HOOK], input=raw, capture_output=True, env=env,
+                          cwd=project_dir or payload.get("cwd") or None)
 
 
 def inbox(d):
@@ -40,7 +51,9 @@ def inbox(d):
 
 
 def tree(d):
-    return [os.path.join(r, n) for r, _, names in os.walk(d) for n in names]
+    """Every file the hook could have written: the kit's rules copy is the fixture's own."""
+    return [os.path.join(r, n) for r, _, names in os.walk(d) for n in names
+            if os.path.join(r, n) != os.path.join(d, RULES)]
 
 
 def read(path):
