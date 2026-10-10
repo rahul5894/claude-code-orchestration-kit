@@ -9,11 +9,13 @@ Request (blank = `/continue` alone): $ARGUMENTS
 
 The session-start note's block `orchestration-kit: task cards` holds one card per open task -
 its own short description, as a skill has one: `about` (what it is), `state`, `next step`, when
-it was last worked on, how many sessions - and the tasks closed in the last 14 days. **Open no
-bucket file before the user has picked a task**: reading every task to choose is the waste the
-cards exist to avoid. No cards in context, or a task was opened or closed since this session
-started: run `python ~/.claude/hooks/kit-session-start.py --cards "<root>"` once (`<root>` = the
-absolute primary working directory, never `.`) and decide from what it prints.
+it was last worked on, how many sessions - and the tasks closed in the last 14 days. At most 8
+cards: this window's task first, then the most recently worked on; the rest are only named, in
+one `(+N older: ...)` line. **Open no bucket file before the user has picked a task**: reading
+every task to choose is the waste the cards exist to avoid. No cards in context, a task was
+opened or closed since this session started, or a request may belong to a task that line only
+names: run `python ~/.claude/hooks/kit-session-start.py --cards "<root>"` once (up to 20 cards;
+`<root>` = the absolute primary working directory, never `.`) and decide from what it prints.
 
 ## 2. No request: `/continue` alone, or a task's slug
 
@@ -22,9 +24,10 @@ absolute primary working directory, never `.`) and decide from what it prints.
   without asking, and name the other open tasks in one line so the user can switch.
 - A card marked `(open in another window)` is being worked there: never take it unless named.
 - Of the rest: none open - say so and ask what to work on; one - resume it; two or more -
-  **recommend one** with a one-clause reason: `P1` first; then the one nearest done or with the
-  most concrete next step; then a BLOCKED one the user can unblock with one answer now; ties:
-  `(newest handoff)` (in 9 of 12 measured resumes the user picked the newest). Ask (step 4).
+  **recommend one** with a one-clause reason: `P1` first; never an idle one (` · idle Nd` on its
+  row: untouched over 14 days) over a fresh one unless it is P1; then the one nearest done or
+  with the most concrete next step; then a BLOCKED one the user can unblock with one answer now;
+  ties: `(newest handoff)` (in 9 of 12 measured resumes the user picked the newest). Ask (step 4).
 
 ## 3. A request: `/continue <what to do>`
 

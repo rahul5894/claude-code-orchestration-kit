@@ -2,7 +2,7 @@
 
 Claude Code feeds SessionStart hooks a JSON object on stdin (`cwd`, `source`, ...). This hook
 prints ONE JSON object whose `additionalContext` (to the model) carries a line when the
-project's CLAUDE.md has no `FAST GATE` row, and the last open rows (kit_index.py) of
+project's CLAUDE.md has no `FAST GATE` row, and the open rows (kit_index.py) of
 .claude/scratch/INDEX.md; when buckets exist and the session is a startup or a /clear,
 `systemMessage` names them to the user so that "/clear, then continue" needs no explanation.
 After a compaction (`source` "compact") the newest open bucket's STATE.md follows, capped.
@@ -28,6 +28,11 @@ the tasks closed in the last 14 days, so /continue can choose, match a request t
 reopen one without opening any bucket; only the chosen task's history is read. A compaction gets
 the short rows (its session has its task). The note stays under Claude Code's 10,000-character
 cap for hook context: detail lines go first, the last task's first.
+
+Which rows (bucket continue-router, D007): at most 8 (20 with --cards) - this window's task on
+top, then the most recently worked on by their STATE.md, never INDEX.md's order; a task open in
+another window and a P1 always get a row; the rest are named in one `(+N older: ...)` line. A
+task untouched more than 14 days says ` · idle Nd` on its row.
 
 Timeline upkeep (bucket handoff-timeline): kit_chain.maintain() finishes at most one session that
 ended with no SessionEnd (a killed or closed window fires none), prunes verbatim records 7 days
@@ -76,9 +81,10 @@ ROUTE = ("Choose from the cards: open no bucket file before the user has picked 
          "used): the task marked (this window's task) is what this window worked on before "
          "/clear - resume it without asking; one marked (open in another window) is being worked "
          "there - never take it unless named; one free task: resume it; two or more: "
-         "RECOMMEND one with a one-clause reason (P1 first; then the one nearest done or with the most "
-         "concrete next step; then a BLOCKED one the user can unblock with one answer now; ties: "
-         "the (newest handoff)) and ask, the recommended one first. A request goes to the open "
+         "RECOMMEND one with a one-clause reason (P1 first; never an idle one over a fresh one unless "
+         "it is P1; then the one nearest done or with the most concrete next step; then a BLOCKED "
+         "one the user can unblock with one answer now; ties: the (newest handoff)) and ask, the "
+         "recommended one first. A request goes to the open "
          "task it belongs to, a closed task it continues, or a new task - confirmed in one "
          "question. A first request that plainly belongs to one task, with no /continue: say "
          "which and offer to continue it there. After the pick, the task skill's 'Continue a "
@@ -95,6 +101,15 @@ STATE_AFTER_COMPACT = ("orchestration-kit: the conversation was just compacted. 
                        "what it keeps. If this conversation was not working on {slug}, ignore it. "
                        "Where it and the repo disagree, the repo is right.\n")
 MAX_ROWS = 8
+# --cards prints into a tool result, not hook context: the 10,000-character cap does not bind it,
+# and 20 cards at every cell's cap come to ~17,000 characters.
+MAX_CARDS = 20
+CARDS_CAP = 20000
+# The rows left out are named in one line, at most this many.
+MAX_NAMED = 20
+# A task untouched longer is marked idle on its row; /continue never recommends it over a fresh
+# one unless it is P1 (2026-10-10: 6 of 32 open tasks in 7 projects, 15-21 days untouched).
+IDLE_DAYS = 14
 # Bytes. A STATE.md within the task skill's ~60-line rule is ~4.5K; 6000 keeps the whole
 # additionalContext (gate notice + 8 capped rows + this) under ~10,000 characters.
 MAX_STATE = 6000
@@ -124,14 +139,37 @@ CONTEXT_CAP = 9500
 
 
 def open_buckets(root):
-    """((slug, status, next action) per open row of INDEX.md - the last MAX_ROWS -, how many
-    earlier rows were left out). Rows come from kit_index.open_rows(), shared with
+    """(slug, status, next action) per open row of INDEX.md, in file order - all of them; which
+    are shown is pick_rows' call. Rows come from kit_index.open_rows(), shared with
     kit-subagent-start.py, so both hooks agree on what is open. INDEX.md is text anyone can
     write: every cell is capped and a slug that is not one path component is dropped."""
-    out = [(slug, status[:MAX_STATUS], nxt[:MAX_NEXT])
-           for slug, status, nxt in open_rows(os.path.join(root, ".claude", "scratch", "INDEX.md"))
-           if len(slug) <= MAX_SLUG and SLUG_RE.fullmatch(slug)]
-    return out[-MAX_ROWS:], max(0, len(out) - MAX_ROWS)
+    return [(slug, status[:MAX_STATUS], nxt[:MAX_NEXT])
+            for slug, status, nxt in open_rows(os.path.join(root, ".claude", "scratch", "INDEX.md"))
+            if len(slug) <= MAX_SLUG and SLUG_RE.fullmatch(slug)]
+
+
+def pick_rows(root, buckets, mine, busy, limit):
+    """(shown, left out) of the open rows. INDEX.md's order says nothing about recency - one
+    project adds new rows on top, another at the bottom, and keeping its last 8 hid the 4 most
+    recently worked of 12 (2026-10-10) - so the rows go newest first by STATE.md's mtime; a row
+    with no live STATE.md (none, unreadable, says CLOSED) last; among equals INDEX.md's later row
+    first. This window's task, a task open in another window and a P1 (the recommendation's
+    first rule) always get a row; at most `limit` rows, this window's task on top."""
+    def recency(i):
+        slug = buckets[i][0]
+        try:
+            if state_text(root, slug) is not None:
+                return (0, -os.path.getmtime(os.path.join(root, ".claude", "scratch", slug, "STATE.md")), -i)
+        except (OSError, ValueError):
+            pass
+        return (1, 0.0, -i)
+    order = sorted(range(len(buckets)), key=recency)
+    held = [i for i in order if buckets[i][0] == mine or buckets[i][0] in busy
+            or priority(root, buckets[i][0]) == "P1"]
+    held.sort(key=lambda i: buckets[i][0] != mine)  # stable: the rest stay newest first
+    keep = set((held + [i for i in order if i not in held])[:limit])
+    shown = sorted((i for i in order if i in keep), key=lambda i: buckets[i][0] != mine)
+    return [buckets[i] for i in shown], [buckets[i] for i in order if i not in keep]
 
 
 def state_text(root, slug):
@@ -168,17 +206,26 @@ def open_states(root, slugs):
     return [slug for _, slug in sorted(found, reverse=True) if state_text(root, slug) is not None]
 
 
+def priority(root, slug):
+    """The `Priority:` (P1-P3) of the task's STATE.md header, or ""."""
+    m = PRIORITY_RE.search((state_text(root, slug) or "")[:1024])
+    return m.group(1).upper() if m else ""
+
+
 def row_facts(root, slug):
-    """` · last MM-DD` (STATE.md's mtime), ` · P1` (its header's Priority) and ` · N sessions`
-    (the kit's timeline entries, digests/*.json), when known."""
-    out = ""
+    """` · last MM-DD` (STATE.md's mtime), ` · idle Nd` (untouched over IDLE_DAYS days), ` · P1`
+    (its header's Priority) and ` · N sessions` (the kit's timeline entries, digests/*.json),
+    when known."""
     path = os.path.join(root, ".claude", "scratch", slug, "STATE.md")
     try:
-        out += " · last " + time.strftime("%m-%d", time.localtime(os.path.getmtime(path)))
+        mtime = os.path.getmtime(path)
+        out = " · last " + time.strftime("%m-%d", time.localtime(mtime))
     except (OSError, ValueError, OverflowError):
-        return out
-    m = PRIORITY_RE.search((state_text(root, slug) or "")[:1024])
-    out += " · " + m.group(1).upper() if m else ""
+        return ""
+    days = int((time.time() - mtime) // 86400)
+    out += f" · idle {days}d" if days > IDLE_DAYS else ""
+    p = priority(root, slug)
+    out += " · " + p if p else ""
     n = sessions_of(root, slug)
     return out + (f" · {n} session{'s' if n > 1 else ''}" if n else "")
 
@@ -359,7 +406,9 @@ def main():
         if scratch_root and kit_off(scratch_root):
             scratch_root = None
     context = [NOTICE] if needs_init(root) and not cards_mode else []
-    buckets, more = open_buckets(scratch_root) if scratch_root else ([], 0)
+    # Every open task counts for the marks below (a hidden row once lost this window's own task
+    # after /clear); pick_rows then chooses the rows shown.
+    buckets = open_buckets(scratch_root) if scratch_root else []
     slugs = [s for s, _, _ in buckets]
     me = window() if cards_mode or not readonly else ""
     mine = _try(my_bucket, data, scratch_root, me, slugs) if buckets else None
@@ -372,6 +421,9 @@ def main():
             if s in slugs and s != mine}
     free = open_states(scratch_root, [s for s in slugs if s != mine and s not in busy]) if buckets else []
     top = free[0] if free else None
+    limit = MAX_CARDS if cards_mode else MAX_ROWS
+    shown, hidden = (_try(pick_rows, scratch_root, buckets, mine, busy, limit)
+                     or (buckets[:limit], buckets[limit:]))
     prev = (_try(read_window, me) or {}) if me else {}
     if me and not readonly and (scratch_root or root):
         # Read by this window's next /clear and by the other windows' session starts.
@@ -391,18 +443,22 @@ def main():
         buckets or cards_mode) else []
     if buckets or closed:
         rows = []
-        for slug, status, nxt in buckets:
+        for slug, status, nxt in shown:
             rows.append(f"- {slug} [{status}]: {nxt}"
                         + (MINE if slug == mine else BUSY if slug in busy else NEWEST if slug == top else "")
                         + (_try(row_facts, scratch_root, slug) or ""))
             if full:
                 rows += _try(card_lines, scratch_root, slug, nxt) or []
-        if more:
-            rows.append(f"(+{more} more in .claude/scratch/INDEX.md)")
+        if hidden:
+            names = [s for s, _, _ in hidden]
+            rows.append(f"(+{len(names)} older: " + ", ".join(names[:MAX_NAMED])
+                        + (f" and {len(names) - MAX_NAMED} more in .claude/scratch/INDEX.md"
+                           if len(names) > MAX_NAMED else "")
+                        + " - /continue <name> reaches them)")
         if closed:
             rows += [CLOSED_HEAD] + [f"- {s} (closed {d})" + (f": {a}" if a else "") for d, s, a in closed]
         lines = fit(([CARDS] if buckets else []) + rows + ([] if cards_mode else [ROUTE]),
-                    CONTEXT_CAP - len("\n\n".join(context)) - 2)
+                    (CARDS_CAP if cards_mode else CONTEXT_CAP) - len("\n\n".join(context)) - 2)
         if cards_mode:
             sys.stdout.write("\n".join(lines) + "\n")
             return
@@ -434,7 +490,8 @@ def main():
             then = f" to resume - it asks which (newest: {top})."
         else:
             then = " <slug> to take one here."
-        out["systemMessage"] = ("Open task(s): " + ", ".join(slugs) + " - type /continue" + then
+        out["systemMessage"] = ("Open task(s): " + ", ".join(s for s, _, _ in shown)
+                                + (f" (+{len(hidden)} older)" if hidden else "") + " - type /continue" + then
                                 + (" Open in another window: " + ", ".join(sorted(busy)) + "." if busy else ""))
     sys.stdout.write(json.dumps(out))
 

@@ -150,10 +150,11 @@ extra.append((r"pipe-one [OPEN]: a \| b" in context(o), r"next action holding an
 extra.append(("../x" not in context(o) and "escaped the scratch dir" not in context(o),
               "slug ../x -> dropped"))
 o = run("stdin", MANY)
-extra.append(("b0" not in context(o) and "b1 " not in context(o)
+extra.append(("b0 [OPEN]" not in context(o) and "b1 [OPEN]" not in context(o)
               and all(f"b{i} [OPEN]" in context(o) for i in range(2, 10))
-              and "+2 more" in context(o),
-              "10 OPEN rows -> the last 8 listed, then +2 more"))
+              and "(+2 older: b1, b0 - /continue <name> reaches them)" in context(o)
+              and o.get("systemMessage", "").startswith("Open task(s): b9, b8, b7, b6, b5, b4, b3, b2 (+2 older) - "),
+              "10 OPEN rows, no STATE.md -> 8 listed (INDEX's later rows first), the other 2 named in one line"))
 o = run("stdin", BUCKETS, source="compact")
 extra.append(("live-one" in context(o) and "systemMessage" not in o,
               "source compact -> additionalContext, no systemMessage"))
@@ -339,10 +340,72 @@ for i in range(10):
 state(BIG, "t9", "# STATE\nStatus: OPEN\n" + "z" * 7000, 0)
 c = context(run("stdin", BIG))
 cc = context(run("stdin", BIG, source="compact"))
-extra.append((len(c) <= 9500 and all(f"- t{i} [OPEN]" in c for i in range(2, 10)) and "RECOMMEND one" in c
+extra.append((len(c) <= 9500 and all(f"- t{i} [OPEN]" in c for i in (9, 0, 1, 2, 3, 4, 5, 6))
+              and "(+2 older: t7, t8 - " in c and "RECOMMEND one" in c
               and len(cc) <= 10000 and "z" * 1000 in cc and "cut to fit" in cc,
-              f"10 long cards fit the 10,000-character hook cap ({len(c)} chars, every row kept); "
+              f"10 long cards fit the 10,000-character hook cap ({len(c)} chars, the 8 newest rows kept); "
               f"compact + a 7 KB STATE.md too ({len(cc)})"))
+
+# Row choice (D007): INDEX.md's order says nothing about recency. my-scraper-project adds new rows
+# on TOP, and "the last 8 rows" hid its 4 most recently worked tasks of 12 (2026-10-10).
+REC = bucket_project("recent", True, [(f"r{i:02d}", "OPEN", f"step r{i:02d}") for i in range(12)])
+for i in range(12):
+    state(REC, f"r{i:02d}", f"# STATE\nAbout: task r{i:02d}\nStatus: OPEN\n", age_days=i + 0.5)
+o = run("stdin", REC)
+extra.append((all(f"- r{i:02d} [OPEN]" in context(o) for i in range(8))
+              and not any(f"- r{i:02d} [OPEN]" in context(o) for i in range(8, 12))
+              and "(+4 older: r08, r09, r10, r11 - /continue <name> reaches them)" in context(o)
+              and context(o).index("- r00 ") < context(o).index("- r07 "),
+              "12 open, newest rows on TOP of INDEX.md -> the 8 newest STATE.md shown, newest first; "
+              "the 4 oldest named"))
+# A P1 always gets a row: the recommendation picks P1 first, and it cannot pick a hidden one.
+state(REC, "r09", "# STATE\nAbout: task r09\nUpdated: x   Status: OPEN   Priority: P1\n", age_days=9.5)
+c = context(run("stdin", REC))
+extra.append(("- r09 [OPEN]: step r09" in c and c.split("- r09 [OPEN]: step r09")[1].split("\n")[0].endswith(" · P1")
+              and "(+4 older: r07, r08, r10, r11 - " in c,
+              "an old P1 is kept among the 8; the next oldest is named instead"))
+t = run("cards", REC)["_text"]
+extra.append((all(f"- r{i:02d} [OPEN]" in t for i in range(12)) and "older:" not in t
+              and t.index("- r00 ") < t.index("- r11 "),
+              "--cards shows up to 20 rows: all 12, newest first"))
+# This window's task and a task open in another window always get a row, however old. r00 tops
+# INDEX.md (the last-8 rule hid it, and with it the window's own task after /clear) and its
+# STATE.md is now the oldest: a task resumed here but not handed off yet.
+os.utime(os.path.join(REC, ".claude", "scratch", "r00", "STATE.md"), (time.time() - 30 * 86400,) * 2)
+sleeper = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(120)"])
+try:
+    for pid, rec in ((515151, {"sid": "s-prev", "root": REC, "transcript": "", "bucket": "r00"}),
+                     (sleeper.pid, {"sid": "s-other", "root": REC, "transcript": "", "bucket": "r10"})):
+        with open(os.path.join(PRIVATE_TMP, f"kit-window-{pid}.json"), "w", encoding="utf-8") as f:
+            json.dump(rec, f)
+    o = run("stdin", REC, source="clear", pid=515151, sid="s-new", transcript=os.path.join(tmp, "s-new.jsonl"))
+    c = context(o)
+    extra.append((c.split("\n")[1].startswith("- r00 [OPEN]: step r00 (this window's task) · last ")
+                  and " · idle 30d" in c.split("\n")[1]
+                  and "- r10 [OPEN]: step r10 (open in another window)" in c and "- r09 [OPEN]" in c
+                  and all(f"- r{i:02d} [OPEN]" in c for i in range(1, 6))
+                  and "(+4 older: r06, r07, r08, r11 - " in c
+                  and o.get("systemMessage", "").endswith("(+4 older) - type /continue to resume r00 "
+                                                          "(this window's task). Open in another window: r10."),
+                  "/clear: this window's task - top of INDEX, oldest STATE.md - on top and marked; open in "
+                  "another window and P1 kept with their marks; the 5 newest fill the rest"))
+finally:
+    sleeper.kill()
+    sleeper.wait()
+IDL = bucket_project("idle", True, [("stale", "OPEN", "s"), ("edge", "OPEN", "e"), ("fresh", "OPEN", "f")])
+for slug, days in (("stale", 20), ("edge", 14.5), ("fresh", 1)):
+    state(IDL, slug, "# STATE\nStatus: OPEN\n", age_days=days)
+c = context(run("stdin", IDL))
+
+
+def row_of(text, slug):
+    return text.split(f"- {slug} [OPEN]")[1].split("\n")[0]
+
+
+extra.append((row_of(c, "stale").endswith(" · idle 20d") and "idle" not in row_of(c, "edge")
+              and "idle" not in row_of(c, "fresh") and "never an idle one over a fresh one unless it is P1" in c,
+              "STATE.md untouched 20 days -> ` · idle 20d` on its row (14.5 days, 1 day: none); "
+              "the note: idle never beats fresh unless P1"))
 
 # Timeline upkeep (bucket handoff-timeline): a session whose window died with no SessionEnd is
 # finished at the next start; the previous session of THIS window is never touched (its own

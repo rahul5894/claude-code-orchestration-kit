@@ -1065,6 +1065,14 @@ chk('Open no' in _ct and 'before the user has picked a task' in _ct and '--cards
     and '"--cards"' in _ks and 'Choose from the cards' in _ks,
     '/continue routes from task cards (About line, state, next step; closed tasks too), asks once, '
     'reads only the picked task; the note fits the 10,000-character hook cap')
+# Which rows the note shows (2026-10-10, continue-router D007): it kept INDEX.md's LAST 8 open rows,
+# and a project that adds rows on top had its 4 most recently worked tasks of 12 hidden - this
+# window's own task with them after /clear, since the marks only looked at the rows shown.
+chk('def pick_rows' in _ks and '[-MAX_ROWS:]' not in _ks and 'MAX_CARDS = 20' in _ks
+    and 'IDLE_DAYS = 14' in _ks and 'older: ' in _ks and 'never an idle one over a fresh one' in _ks
+    and 'never an idle one' in _ct and 'At most 8' in _ct,
+    "the note shows the most recently worked tasks (this window's, another window's and P1 always), "
+    "never INDEX.md's last rows; idle tasks are marked and never recommended over fresh ones")
 # Which task a session is filed under (2026-10-10, D008): a note counts as written only when the
 # shell command's write TARGETS it. The test it replaced - any `>` anywhere, so `2>/dev/null`
 # beside a read - filed sessions under closed tasks and could point /clear at the wrong one.
