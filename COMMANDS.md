@@ -11,7 +11,7 @@ Type these in the Claude Code chat, inside the project you mean.
 | `/kit-uninstall` | Removes the kit from **this project only**. It asks before deleting anything, zips the task notes to `~/.claude/kit-backups/`, can remove the kit-written parts of `CLAUDE.md`, then turns the kit off here. | The kit stays installed for every other project. `/kit-on` still brings it back here. |
 | `/kit-init` | Sets up a new project: turns the kit on, finds and times its fast check, writes `CLAUDE.md`, then audits the project. | Once per project. |
 | `/task` | With no words: lists every task and its next step. With a sentence: continues a task or opens a new one. | |
-| `/continue` | After `/clear`, picks up the open task from its `STATE.md`, its `SESSIONS.md` timeline and the last session's verbatim record; an earlier session is opened only when something is unclear. | Two windows: each resumes its own task and skips the one the other window is on. Two or more free tasks and no own one: it recommends one, with a reason, and asks. |
+| `/continue` | After `/clear`, picks up the open task from its `STATE.md`, its `SESSIONS.md` timeline and the last session's verbatim record; an earlier session is opened only when something is unclear. If the chat before `/clear` had no task, it picks up that conversation from its word-for-word record in `.claude/scratch/_sessions/`. | Two windows: each resumes its own task and skips the one the other window is on. Two or more free tasks and no own one: it recommends one, with a reason, and asks. |
 
 **After `/kit-on` or `/kit-off`:** the hooks switch at once, even in the chat you are in, and in
 that chat Claude starts (or stops) following the kit's rules right away. Every **new chat**

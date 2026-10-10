@@ -34,7 +34,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 # beside this script's ~/.claude/kit/; in the kit checkout, core/hooks/.
 sys.path[:0] = [os.path.join(os.path.dirname(HERE), "hooks"), os.path.join(HERE, "core", "hooks")]
 from kit_off import HEADER, RULES, kit_off  # noqa: E402
-from kit_index import installed_rules, rules_blocker, sync_rules  # noqa: E402
+from kit_index import JOURNAL_PLUGINS, installed_rules, rules_blocker, sync_rules  # noqa: E402
+from kit_index import quiet_journals as _quiet_journals  # noqa: E402
 
 SOURCE = installed_rules()
 # Left by the default-on kit's /kit-off. The exclude matches the project copy too, so on drops it.
@@ -42,8 +43,6 @@ LEGACY_MARKER = os.path.join(".claude", "kit-off")
 EXCLUDE = "**/.claude/rules/orchestration-kit.md"
 KIT_STYLES = ("kit-lean", "orchestrator")
 USER_SETTINGS = os.path.join(os.path.expanduser("~"), ".claude", "settings.json")
-# Plugins that keep a session journal of their own, by enabledPlugins key prefix (D002).
-JOURNAL_PLUGINS = ("remember@",)
 LOCAL_REL = ".claude/settings.local.json"
 
 
@@ -103,20 +102,9 @@ def default_style(root, data):
 
 
 def quiet_journals(root, data):
-    """`false` into `data`'s enabledPlugins for each journal plugin enabled for this project (its
-    shared settings.json, else the user's, decides - settings.local.json would beat both, so a key
-    already there is the user's own and stays). The keys switched off, [] for none."""
-    ep = data.get("enabledPlugins")
-    if ep is not None and not isinstance(ep, dict):
-        return []  # a shape this script does not know is left as it is
-    shared = peek(os.path.join(root, ".claude", "settings.json")).get("enabledPlugins")
-    user = peek(USER_SETTINGS).get("enabledPlugins")
-    shared, user = (d if isinstance(d, dict) else {} for d in (shared, user))
-    keys = [k for k in dict.fromkeys(list(shared) + list(user)) if k.startswith(JOURNAL_PLUGINS)]
-    quiet = [k for k in keys if k not in (ep or {}) and (shared[k] if k in shared else user[k]) is True]
-    if quiet:
-        data["enabledPlugins"] = {**(ep or {}), **{k: False for k in quiet}}
-    return quiet
+    """kit_index.quiet_journals - the one rule the session-start upkeep follows too - against this
+    script's USER_SETTINGS (the self-test points it at a file of its own)."""
+    return _quiet_journals(root, data, USER_SETTINGS)
 
 
 def wake_journals(data):

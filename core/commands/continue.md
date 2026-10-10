@@ -23,6 +23,11 @@ If it says the kit is off in this project (the default): tell the user, offer `/
 - A slug: that task, no question.
 - A card marked `(this window's task)`: what this window worked on before `/clear` - resume it
   without asking, and name the other open tasks in one line so the user can switch.
+- No such card, but the note's `Recent sessions with no task` marks one
+  `(this window's last session)`: before `/clear` this window talked with no task open - resume
+  that conversation without asking: read its record, `.claude/scratch/_sessions/digests/<sid>.md`,
+  whole and go on from its last turn; name the open tasks in one line. It becomes a task only when
+  the work does.
 - A card marked `(open in another window)` is being worked there: never take it unless named.
 - None open in a project-records project (the note's `orchestration-kit + project-records`
   line): take up the project's next item as that skill's next item does - its steps 0-2: file
@@ -55,9 +60,10 @@ goes. The options, the recommended one first:
 
 ## 4. Asking
 
-One AskUserQuestion call: at most 4 options; the recommended one first, with `(Recommended)` in
-its label; each option's description says what happens next (the task's next step, or "opens
-task <slug>"). More open tasks than fit: the best three, the rest named in the question - the
+One AskUserQuestion call, its header `Task` (project-records reads an answer under that header as
+a choice of what to work on, never a decision to file): at most 4 options; the recommended one
+first, with `(Recommended)` in its label; each option's description says what happens next (the
+task's next step, or "opens task <slug>"). More open tasks than fit: the best three, the rest named in the question - the
 user can type one under Other. Anything typed under Other is a new request: route it from
 step 3. No AskUserQuestion tool (a headless run): write the question with numbered options and
 stop. Nothing else before the answer - no file edited, no command that changes anything.

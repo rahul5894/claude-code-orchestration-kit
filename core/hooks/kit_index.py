@@ -170,6 +170,18 @@ def scratch_root(data):
     return next((r for r in roots if scratch_ok(r) and not kit_off(r)), None)
 
 
+def session_root(data):
+    """Where a session's record goes: scratch_root(), else the launch root when the kit is on there
+    and its .claude is a real folder - a project with no task yet still gets its session log
+    (kit_chain.log_dir makes .claude/scratch/_sessions there)."""
+    root = scratch_root(data)
+    if root:
+        return root
+    launch = os.environ.get("CLAUDE_PROJECT_DIR") or data.get("cwd")
+    dot = os.path.join(launch, ".claude") if launch else ""
+    return launch if dot and os.path.isdir(dot) and not linked(dot) and not kit_off(launch) else None
+
+
 # project-records (bucket kit-records-integration, D001): a project whose permanent record is its
 # docs/ folder, kept by the user's project-records skill (copied in by the typed /records-install).
 # There a decision, finding, lesson, question or work item has ONE home, its docs/ entry with its
@@ -222,6 +234,70 @@ def roadmap_next(root):
     """The first open line of docs/ROADMAP.md (what records-hook.mjs names at session start), or ""."""
     m = ROADMAP_OPEN_RE.search(_record_text(root, "ROADMAP.md"))
     return m.group(1).strip()[:RECORD_HEAD_CHARS] if m else ""
+
+
+# Plugins that keep a session journal of their own, by enabledPlugins key prefix (bucket
+# kit-records-integration, D002): off where the kit is on - its task timeline and session log keep
+# that record - through the project's settings.local.json; a value already there is the user's own.
+# kit_switch (/kit-on, /kit-off) and kit-session-start (drift) share this one rule.
+JOURNAL_PLUGINS = ("remember@",)
+
+
+def _peek_json(path):
+    """A settings file only read: a JSON object, else {}."""
+    try:
+        with open(path, encoding="utf-8-sig") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def user_settings_path():
+    return os.path.join(os.environ.get("CLAUDE_CONFIG_DIR") or os.path.join(os.path.expanduser("~"), ".claude"),
+                        "settings.json")
+
+
+def quiet_journals(root, data, user_settings=None):
+    """`false` into `data`'s enabledPlugins for each journal plugin enabled for this project (its
+    shared settings.json, else the user's, decides - settings.local.json would beat both, so a key
+    already there is the user's own and stays). The keys switched off, [] for none."""
+    ep = data.get("enabledPlugins")
+    if ep is not None and not isinstance(ep, dict):
+        return []  # a shape this does not know is left as it is
+    shared = _peek_json(os.path.join(root, ".claude", "settings.json")).get("enabledPlugins")
+    user = _peek_json(user_settings or user_settings_path()).get("enabledPlugins")
+    shared, user = (d if isinstance(d, dict) else {} for d in (shared, user))
+    keys = [k for k in dict.fromkeys(list(shared) + list(user)) if k.startswith(JOURNAL_PLUGINS)]
+    quiet = [k for k in keys if k not in (ep or {}) and (shared[k] if k in shared else user[k]) is True]
+    if quiet:
+        data["enabledPlugins"] = {**(ep or {}), **{k: False for k in quiet}}
+    return quiet
+
+
+def journals_off(root):
+    """Session-start upkeep of an ON project: quiet_journals() into its settings.local.json when a
+    journal plugin is enabled for it and the file says nothing of it - a project switched on before
+    /kit-on did this, or whose file lost the key. A file that is no readable JSON object is never
+    touched, nothing goes through a link. The keys switched off."""
+    dot = os.path.join(root, ".claude")
+    local = os.path.join(dot, "settings.local.json")
+    if not os.path.isdir(dot) or linked(dot) or linked(local):
+        return []
+    data = {}
+    if os.path.exists(local):
+        try:
+            with open(local, encoding="utf-8-sig") as f:
+                text = f.read()
+            data = json.loads(text) if text.strip() else {}
+        except (OSError, ValueError):
+            return []
+        if not isinstance(data, dict):
+            return []
+    quiet = quiet_journals(root, data)
+    if quiet:
+        write_atomic(local, json.dumps(data, indent=2, ensure_ascii=False) + "\n")
+    return quiet
 
 
 def safe_dir(bucket, name):

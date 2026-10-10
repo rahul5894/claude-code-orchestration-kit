@@ -5,13 +5,14 @@ another session (reasons clear, prompt_input_exit, logout, resume, other). This 
 kit_chain.finish(): the session's entry in <bucket>/digests/<sid>.json, its STATE snapshot, the
 verbatim digest <sid>.md - at ANY context %; before, a digest came only after kit-context's 45%
 Stop block, and 12 of 31 sessions that wrote a handoff had none - and SESSIONS.md re-rendered.
-A session that touched no bucket writes nothing.
+A session that touched no bucket goes in the session log, .claude/scratch/_sessions/, when it was a
+conversation (bucket kit-records-integration, D009); a headless run writes nothing there.
 
 Budget: Claude Code gives SessionEnd hooks 1.5 s by default; a hook's own `timeout` raises it
 (code.claude.com/docs/en/hooks), and install.ps1 registers every kit hook with `timeout = 5`, so
 this one has 5 s and stops starting digests after 4. A killed or closed window may fire no
 SessionEnd at all: kit-session-start's kit_chain.maintain() finishes such a session later.
-Headless sessions are recorded too - only ever when they touched a bucket. Claude Code discards
+Headless sessions are recorded only when they touched a bucket. Claude Code discards
 this hook's output; it prints nothing. Exit 0 always; any crash = silence (fail open, dev tool).
 Self-check: python kit-session-end_test.py
 """
@@ -29,7 +30,7 @@ if __name__ == "__main__" and kit_off():
 import json  # noqa: E402
 import time  # noqa: E402
 
-from kit_index import drop_read_states, scratch_root, window  # noqa: E402
+from kit_index import drop_read_states, session_root, window  # noqa: E402
 
 BUDGET_S = 4
 
@@ -44,7 +45,7 @@ def main():
         return
     if not isinstance(data, dict):
         return
-    root = scratch_root(data)
+    root = session_root(data)  # a session of no task goes in the session log (kit_chain)
     sid = str(data.get("session_id") or "")
     transcript = str(data.get("transcript_path") or "")
     if sid:

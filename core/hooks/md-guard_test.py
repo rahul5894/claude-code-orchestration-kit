@@ -123,6 +123,19 @@ CASES = [
     ("ALLOW", "Bash", {"command": 'qmd update && qmd search "x" -c planning --full-path -n 5'}, None),
     ("DENY",  "Bash", {"command": f"grep -n line {BIG}"}, None),
     ("ALLOW", "Bash", {"command": f"grep -n line {BIG} | cut -c1-300"}, None),
+    # A heading search prints the outline only (2026-10-11): project-records' own index commands
+    # pass; context, an inverted match, a body alternative, a second pattern or a cat after it do not.
+    ("ALLOW", "Bash", {"command": f'grep -n "^### " {BIG}'}, None),
+    ("ALLOW", "Bash", {"command": f'grep -n "^## \\|^### " {BIG} | tail -5'}, None),
+    ("ALLOW", "Bash", {"command": f"grep -nE '^#|^##' {BIG}"}, None),
+    ("ALLOW", "Bash", {"command": f"rg -n '^#' {BIG}"}, None),
+    ("DENY",  "Bash", {"command": f'grep -n -A3 "^### " {BIG}'}, None),
+    ("DENY",  "Bash", {"command": f'grep -nv "^#" {BIG}'}, None),
+    ("DENY",  "Bash", {"command": f'grep -n -C 2 "^#" {BIG}'}, None),
+    ("DENY",  "Bash", {"command": f'grep -5 "^#" {BIG}'}, None),
+    ("DENY",  "Bash", {"command": f'grep -n "^#\\|gate" {BIG}'}, None),
+    ("DENY",  "Bash", {"command": f'grep -n -e "^#" -e gate {BIG}'}, None),
+    ("DENY",  "Bash", {"command": f'grep -n "^#" {BIG}; cat {BIG}'}, None),
     # `grep -l` prints names only, so allowing it LOOKS free. It is not: the four cases
     # below pin the reverted 2026-09-19 relaxation. The first two are the bypasses it
     # opened, the third is the search-string match, the fourth is the convenience it was

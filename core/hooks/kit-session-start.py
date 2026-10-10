@@ -41,6 +41,14 @@ after a bucket closes (once a day), and re-renders a stale SESSIONS.md - within 
 previous session of this same window, whose own SessionEnd may still be running. Then
 kit-context markers older than 30 days are deleted (kit_index.sweep_context_markers).
 
+Journal plugins (bucket kit-records-integration, D002): an ON project's start also keeps a plugin
+with a session journal of its own (remember) off in its settings.local.json (kit_index.journals_off,
+the rule /kit-on applies): never over a value already there, never into a file it cannot read.
+
+The session log (D009): the newest sessions that worked on no task are named, at most LOG_SHOWN from
+the last LOG_DAYS days; after a /clear, this window's previous one first, marked, so /continue
+resumes a conversation with no task as it resumes a task.
+
 project-records (bucket kit-records-integration, D001): where the user's project-records skill
 keeps the project's record in docs/ (kit_index.records_project), the note says once that docs/ is
 the one home and a bucket only cites its ids, and - with no task open - names the project's next
@@ -73,9 +81,9 @@ import json  # noqa: E402
 import re  # noqa: E402
 import time  # noqa: E402
 
-from kit_index import (busy_buckets, installed_rules, linked, open_rows, read_window, records_project,  # noqa: E402
-                       roadmap_next, rules_blocker, scratch_ok, session_bucket, sweep_context_markers,
-                       sync_rules, window, window_bucket, write_window)
+from kit_index import (busy_buckets, installed_rules, journals_off, linked, open_rows, read_window,  # noqa: E402
+                       records_project, roadmap_next, rules_blocker, same_dir, scratch_ok, session_bucket,
+                       sweep_context_markers, sync_rules, window, window_bucket, write_window)
 from kit_index import scratch_root as find_scratch_root  # noqa: E402
 
 GATE_RE = re.compile(r"FAST GATE", re.IGNORECASE)
@@ -105,7 +113,12 @@ ROUTE = ("Choose from the cards: open no bucket file before the user has picked 
          "task it belongs to, a closed task it continues, or a new task - confirmed in one "
          "question. A first request that plainly belongs to one task, with no /continue: say "
          "which and offer to continue it there. After the pick, the task skill's 'Continue a "
-         "bucket' step (`/task <slug>`) reads that task's whole history; the others stay as they are.")
+         "bucket' step (`/task <slug>`) reads that task's whole history; the others stay as they are. "
+         "No card marked (this window's task) but a session marked (this window's last session): that "
+         "conversation had no task - /continue alone resumes it, its digest read whole.")
+LOG_ROUTE = ("If the user says continue or /continue with no task named: the session marked (this window's "
+             "last session) is what this window did before /clear - resume it, its digest read whole; with "
+             "none marked, ask what to work on. A request is routed as ~/.claude/commands/continue.md says.")
 RECORDS_NOTE = ("orchestration-kit + project-records: docs/ is this project's record, a bucket is working "
                 "notes. A decision, finding, lesson, question or work item is filed in docs/ under its id "
                 "(D-/F-/L-/Q-/B-NNN); a bucket cites that id and never restates the entry, and numbers its "
@@ -113,6 +126,14 @@ RECORDS_NOTE = ("orchestration-kit + project-records: docs/ is this project's re
                 "after it (b012-csv-export).")
 RECORDS_NEXT = ("No open task. The project's next item, the first open line of docs/ROADMAP.md: {item} - "
                 "/continue takes it up.")
+# The session log (kit_chain.LOG, bucket kit-records-integration D009): the sessions that worked on no
+# task. The newest few are named here - this window's previous one first, marked - so a /clear after
+# a conversation with no task resumes it as /continue resumes a task.
+LOG_HEAD = ("Recent sessions with no task, newest first; each one's words, verbatim: "
+            ".claude/scratch/_sessions/digests/<sid>.md:")
+LOG_MINE = " (this window's last session)"
+LOG_SHOWN = 3
+LOG_DAYS = 14
 NEWEST = " (newest handoff)"
 MINE = " (this window's task)"
 BUSY = " (open in another window)"
@@ -402,6 +423,57 @@ def refresh_rules(root):
             sync_rules(root, rules)
 
 
+def my_log(data, root, me, mine):
+    """This window's previous session when it worked on no task (a /clear after it): its sid in the
+    session log, or the one that session itself had inherited; "" otherwise."""
+    if mine or data.get("source") != "clear" or not me or not root:
+        return ""
+    rec = read_window(me) or {}
+    if not same_dir(rec.get("root") or "", root):
+        return ""
+    folder = os.path.join(root, ".claude", "scratch", "_sessions", "digests")
+    for sid in (rec.get("sid"), rec.get("log")):
+        if isinstance(sid, str) and SLUG_RE.fullmatch(sid) and os.path.isfile(os.path.join(folder, sid + ".json")):
+            return sid
+    return ""
+
+
+def log_rows(root, mine_sid):
+    """One line per session of the session log updated in the last LOG_DAYS days, newest first, at
+    most LOG_SHOWN - this window's previous session first and marked when it is there."""
+    folder = os.path.join(root, ".claude", "scratch", "_sessions", "digests")
+    if any(linked(p) for p in (os.path.dirname(os.path.dirname(folder)), os.path.dirname(folder), folder)):
+        return []
+    import datetime
+    cutoff = time.time() - LOG_DAYS * 86400
+    entries = []
+    try:
+        names = [n for n in os.listdir(folder) if n.endswith(".json")]
+    except OSError:
+        return []
+    for n in names:
+        p = os.path.join(folder, n)
+        try:
+            if os.path.getmtime(p) < cutoff:
+                continue  # untouched since before the window: its session is older still
+            with open(p, encoding="utf-8") as f:
+                e = json.load(f)
+            ended = datetime.datetime.fromisoformat(str(e.get("end") or e.get("last")).replace("Z", "+00:00"))
+            began = datetime.datetime.fromisoformat(str(e.get("joined") or e.get("last")).replace("Z", "+00:00"))
+        except (OSError, ValueError, TypeError, AttributeError):
+            continue
+        # Ordered by the session's own time, never the file's: a backfill writes every entry at once.
+        if ended.timestamp() >= cutoff or n[:-5] == mine_sid:
+            entries.append((ended.timestamp(), n[:-5], began.astimezone(), e))
+    entries.sort(key=lambda x: (x[1] != mine_sid, -x[0]))
+    rows = []
+    for _, sid, when, e in entries[:LOG_SHOWN]:
+        asked, said = _plain(str(e.get("asked") or ""), CARD_ABOUT), _plain(str(e.get("said") or ""), CARD_NEXT)
+        rows.append(f"- {sid} · {when.strftime('%m-%d %H:%M')}" + (f' · asked: "{asked}"' if asked else "")
+                    + (f' · last said: "{said}"' if said else "") + (LOG_MINE if sid == mine_sid else ""))
+    return rows
+
+
 def records_next(root):
     """RECORDS_NEXT for a project-records project whose docs/ROADMAP.md has an open line, else ""."""
     item = roadmap_next(root) if records_project(root) else ""
@@ -461,6 +533,10 @@ def main():
     slugs = [s for s, _, _ in buckets]
     me = window() if cards_mode or not READONLY else ""
     mine = _try(my_bucket, data, scratch_root, me, slugs) if buckets else None
+    # This window's previous session when it worked on no task (before this start rewrites the
+    # window's record); mid-session (--cards) the record this start left says it.
+    mine_log = ((_try(my_log, data, scratch_root, me, mine) or "") if not cards_mode
+                else str((_try(read_window, me) or {}).get("log") or "") if me else "")
     if cards_mode and me and buckets and not mine:
         # Mid-session: this window's record says what its session works on (its transcript
         # first, else the bucket its SessionStart gave it).
@@ -477,7 +553,8 @@ def main():
     if me and not READONLY and (scratch_root or root):
         # Read by this window's next /clear and by the other windows' session starts.
         _try(write_window, me, {"sid": str(data.get("session_id") or ""), "root": scratch_root or root,
-                                "transcript": str(data.get("transcript_path") or ""), "bucket": mine})
+                                "transcript": str(data.get("transcript_path") or ""), "bucket": mine,
+                                "log": mine_log})
     if scratch_root and not READONLY:
         # Never the previous session of this window (its SessionEnd may still run, ~80 ms apart)
         # nor this one.
@@ -485,6 +562,9 @@ def main():
              t0 + MAINTAIN_S)
     if not READONLY:
         _try(refresh_rules, launch_root())
+        # A journal plugin stays off where the kit is on (D002): a project switched on before /kit-on
+        # did this, or whose settings.local.json lost the key, is put right - from the next session.
+        _try(journals_off, launch_root())
         if time.time() < t0 + MAINTAIN_S:
             _try(sweep_context_markers)
     # After a compaction the session already has its task: short rows, and the room goes to
@@ -492,7 +572,8 @@ def main():
     full = data.get("source") != "compact"
     closed = (_try(closed_cards, scratch_root, set(slugs)) or []) if scratch_root and full and (
         buckets or cards_mode) else []
-    if buckets or closed:
+    logs = (_try(log_rows, scratch_root, mine_log) or []) if scratch_root and full else []
+    if buckets or closed or logs:
         rows = []
         for slug, status, nxt in shown:
             rows.append(f"- {slug} [{status}]: {nxt}"
@@ -508,7 +589,10 @@ def main():
                         + " - /continue <name> reaches them)")
         if closed:
             rows += [CLOSED_HEAD] + [f"- {s} (closed {d})" + (f": {a}" if a else "") for d, s, a in closed]
-        lines = fit(([CARDS] if buckets else []) + rows + ([] if cards_mode else [ROUTE]),
+        if logs:
+            rows += [LOG_HEAD] + logs
+        route = [] if cards_mode else [ROUTE] if buckets else [LOG_ROUTE] if logs else []
+        lines = fit(([CARDS] if buckets else []) + rows + route,
                     (CARDS_CAP if cards_mode else CONTEXT_CAP) - len("\n\n".join(context)) - 2)
         if cards_mode:
             sys.stdout.write("\n".join(lines + ([rec_next] if rec_next else [])) + "\n")
@@ -532,7 +616,11 @@ def main():
                                   "additionalContext": "\n\n".join(context)}}
     # The user is told only when a session starts fresh; a resume or a compaction continues a
     # conversation that already knows its bucket.
-    if buckets and data.get("source") in ("startup", "clear"):
+    if mine_log and data.get("source") == "clear" and not mine:
+        out["systemMessage"] = ("This window's last session had no task - type /continue to pick it up"
+                                + (" (open tasks: " + ", ".join(s for s, _, _ in shown) + ")" if buckets else "")
+                                + ".")
+    elif buckets and data.get("source") in ("startup", "clear"):
         if mine:
             then = f" to resume {mine} (this window's task)."
         elif len(free) == 1:

@@ -267,6 +267,8 @@ def _segment_reads_big_md(cmd, base, tool, env):
         return None
     if CAP_RE.search(cmd) or WRITE_RE.search(cmd):
         return None
+    if _heading_search(cmd):
+        return None
     if MD_OPTION.search(cmd):
         return "*.md", 0
     if tool == "Bash" and _lists_only(cmd):
@@ -357,6 +359,43 @@ def _search_pattern(seg):
             continue
         return w
     return None
+
+
+# A heading search prints one line per markdown heading - the outline this guard prints with a
+# denial anyway - so it passes whatever the file's size. project-records hands its agent exactly
+# that as its index (`grep -n "^### " docs/DECISIONS.md`), and in a kit-ON records project every
+# such call on a doc over 300 lines was denied, a turn lost each time (2026-10-11, bucket
+# kit-records-integration). Only one pattern whose every alternative is anchored at `^#`, and no
+# flag that prints other lines: context (-A/-B/-C, -NUM, --context) or an inverted match (-v).
+_OTHER_LINES = re.compile(r"-[A-Za-z]*[ABCv][A-Za-z0-9]*|-\d+|--(?:after-|before-)?context(?:=\S*)?|--invert-match")
+_PATTERN_FLAGS = ("-e", "--regexp", "-f", "--file", "-pattern")
+
+
+def _first_stage(seg):
+    """The segment up to its first pipe outside quotes."""
+    quote = None
+    for i, ch in enumerate(seg):
+        if quote:
+            quote = None if ch == quote else quote
+        elif ch in "\"'":
+            quote = ch
+        elif ch == "|":
+            return seg[:i]
+    return seg
+
+
+def _heading_search(seg):
+    stage = _first_stage(seg)
+    m = _SEARCH.match(stage)
+    if not m:
+        return False
+    words = [re.sub(r"[\"']", "", w) for w in _WORD.findall(m.group(1))]
+    if sum(w.lower() in _PATTERN_FLAGS for w in words) > 1:
+        return False  # a second pattern searches the body
+    if any(_OTHER_LINES.fullmatch(w) or w.lower() in ("-context", "-notmatch") for w in words):
+        return False
+    pattern = _search_pattern(stage)
+    return bool(pattern) and all(a.startswith("^#") for a in re.split(r"\\\||\|", pattern))
 
 
 def _spellings(tok, env, base, depth=0):

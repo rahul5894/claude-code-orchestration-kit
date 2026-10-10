@@ -53,8 +53,8 @@ import json  # noqa: E402
 import re  # noqa: E402
 import time  # noqa: E402
 
-from kit_index import (MAX_TRANSCRIPT, context_marker, keep, read_state, resumed, scratch_root,  # noqa: E402
-                       session_bucket, write_atomic)
+from kit_index import (MAX_TRANSCRIPT, context_marker, keep, read_state, records_project, resumed,  # noqa: E402
+                       scratch_root, session_bucket, session_root, write_atomic)
 from kit_index import window as window_id  # noqa: E402
 
 THRESHOLD = 45
@@ -86,6 +86,13 @@ WHERE_MINE = "This session's bucket is `{slug}`: rewrite .claude/scratch/{slug}/
 WHERE_NONE = ("This session has touched no bucket: open one for what this conversation did, the "
               "/task way, and write its STATE.md - never another task's bucket, which may be a "
               "parallel window's.")
+# A project-records project (bucket kit-records-integration): its record has session-end duties
+# of its own, and a /clear right after the handoff would skip them - so the handoff asks for them
+# too, and STATE.md names their ids instead of repeating them.
+RECORDS_HANDOFF = (" This project keeps project-records: with the handoff, its own session-end entries as its "
+                   "standing orders say - a docs/PROGRESS.md entry and a true Now line in docs/TIMELINE.md - "
+                   "and any decision, finding or work item still only in this chat filed in docs/ first; "
+                   "STATE.md names their ids and never repeats them.")
 # Not "saved": REASON lets the model skip the handoff when nothing carries over (code-review).
 NOTICE = ("Context {pct}% full - handoff written? Next: /clear, then type /continue.")
 
@@ -194,7 +201,7 @@ def state_lines(pct):
 def chain_touch(data, sid, pct, size):
     """This session's entry in each bucket it works on, after EVERY turn (kit_chain.touch):
     SessionEnd never fires for a killed or closed window, so the entry must already be there."""
-    root = scratch_root(data)
+    root = session_root(data)  # a session of no task goes in the session log (kit_chain.touch)
     if root and sid:
         import kit_chain
         kit_chain.touch(data.get("transcript_path") or "", sid, root, pid=window_id(), pct=pct,
@@ -285,7 +292,8 @@ def main():
         write_atomic(marker, str(band))
         out = {"decision": "block",
                "reason": REASON.format(pct=pct, used=used // 1000, window=size // 1000,
-                                       lines=state_lines(pct), where=where(data))}
+                                       lines=state_lines(pct), where=where(data))
+               + (RECORDS_HANDOFF if _try(records_project, _try(session_root, data)) else "")}
     else:
         # Same band again: already said. A notice on every stop reached 56 in one session.
         _try(sync_digest, data, sid, pct, used, size, DIGEST_EVERY_S)

@@ -457,6 +457,102 @@ extra.append(("No open task. The project's next item, the first open line of doc
 extra.append(("project-records" not in context(run("stdin", BUCKETS)) and "No open task" not in run("cards", BUCKETS)["_text"],
               "a project without project-records gets no records note and no roadmap line"))
 
+
+# The session log (bucket kit-records-integration, D009): the newest sessions that worked on no task
+# are named, at most 3 from the last 14 days; after a /clear, this window's previous one comes first,
+# marked, so /continue resumes it; --cards keeps the mark; a window whose last session had a task does not.
+def log_entry(root, sid, asked, said, age_days=0, file_age_days=None):
+    """An entry whose session ended `age_days` ago; its file written `file_age_days` ago (default: then)."""
+    folder = os.path.join(root, ".claude", "scratch", "_sessions", "digests")
+    os.makedirs(folder, exist_ok=True)
+    path = os.path.join(folder, sid + ".json")
+    end = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - age_days * 86400))
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump({"v": 1, "sid": sid, "slug": "_sessions", "joined": end, "last": end, "end": end,
+                   "asked": asked, "said": said}, f)
+    t = time.time() - (age_days if file_age_days is None else file_age_days) * 86400
+    os.utime(path, (t, t))
+
+
+LOGP = bucket_project("log", True, [("old-task", "DONE", "x")])
+for i, age in enumerate((20, 3, 2, 1, 0.5)):
+    log_entry(LOGP, f"lg{i}-0000-4000-8000-00000000000{i}", f"question {i}", f"answer {i}", age)
+o_start = run("stdin", LOGP, pid=515151, sid="lg9-0000-4000-8000-000000000009")
+c_start = context(o_start)
+log_entry(LOGP, "lg9-0000-4000-8000-000000000009", "what does the hook do?", "it names the next step", 0)
+o_clear = run("stdin", LOGP, source="clear", pid=515151, sid="lgA-0000-4000-8000-00000000000a")
+c_clear = context(o_clear)
+c_cards = run("cards", LOGP, pid=515151)["_text"]
+def marked(text):
+    return [ln for ln in text.splitlines() if ln.startswith("- ") and ln.endswith("(this window's last session)")]
+
+
+extra.append(("Recent sessions with no task" in c_start and "question 4" in c_start and "question 2" in c_start
+              and "question 0" not in c_start and "question 1" not in c_start
+              and not marked(c_start) and "/continue" in c_start,
+              "startup: the newest 3 sessions of no task from the last 14 days, none marked; the log's route line"))
+rows = [ln for ln in c_clear.splitlines() if ln.startswith("- lg")]
+extra.append((rows and rows[0].startswith("- lg9-") and rows[0].endswith("(this window's last session)")
+              and 'asked: "what does the hook do?"' in rows[0] and len(rows) == 3
+              and "This window's last session had no task" in o_clear.get("systemMessage", ""),
+              "/clear after a session of no task: it comes first, marked, and the user is told /continue picks it up"))
+extra.append(("lg9-0000-4000-8000-000000000009" in c_cards and "(this window's last session)" in c_cards,
+              "--cards mid-session keeps the mark from the record this window's start left"))
+TASKP = bucket_project("log-task", True, [("t1", "OPEN", "go on")])
+log_entry(TASKP, "lgB-0000-4000-8000-00000000000b", "an older chat", "ok", 0)
+os.makedirs(os.path.join(TASKP, ".claude", "scratch", "t1"), exist_ok=True)
+with open(os.path.join(TASKP, ".claude", "scratch", "t1", "STATE.md"), "w", encoding="utf-8") as f:
+    f.write("# STATE - t1\nStatus: OPEN\n## Next action\ngo on\n")
+tx1 = os.path.join(tmp, "lgC.jsonl")
+with open(tx1, "w", encoding="utf-8") as f:
+    f.write(json.dumps({"type": "assistant", "isSidechain": False, "message": {"content": [
+        {"type": "tool_use", "id": "w1", "name": "Write",
+         "input": {"file_path": os.path.join(TASKP, ".claude", "scratch", "t1", "STATE.md")}}]}}) + "\n")
+run("stdin", TASKP, pid=525252, sid="lgC-0000-4000-8000-00000000000c", transcript=tx1)
+o_t = run("stdin", TASKP, source="clear", pid=525252, sid="lgD-0000-4000-8000-00000000000d")
+extra.append(("t1 [OPEN]: go on (this window's task)" in context(o_t) and not marked(context(o_t))
+              and "an older chat" in context(o_t),
+              "a window whose last session worked on a task resumes the task; the log is listed, unmarked"))
+BACKP = bucket_project("log-backfill", True, [])
+for i, age in enumerate((25, 9, 4, 6, 1)):  # written all at once (a backfill): order by the session's own time
+    log_entry(BACKP, f"bk{i}-0000-4000-8000-00000000000{i}", f"chat {i}", f"reply {i}", age, file_age_days=0)
+cb = [ln.split(" · ")[0] for ln in context(run("stdin", BACKP)).splitlines() if ln.startswith("- bk")]
+extra.append((cb == ["- bk4-0000-4000-8000-000000000004", "- bk2-0000-4000-8000-000000000002",
+                     "- bk3-0000-4000-8000-000000000003"],
+              "entries written at once (a backfill) are ordered by their session's own end, newest first; one "
+              "that ended 25 days ago is left out though its file is new"))
+
+# A journal plugin stays off where the kit is on (bucket kit-records-integration, D002): a start puts
+# remember's `false` into settings.local.json when the user enabled it and the file says nothing of
+# it; the user's own value, an unreadable file and a project with the kit off are left alone.
+JCFG = os.path.join(tmp, "jcfg")
+os.makedirs(JCFG)
+with open(os.path.join(JCFG, "settings.json"), "w", encoding="utf-8") as f:
+    json.dump({"enabledPlugins": {"remember@claude-plugins-official": True, "other@m": True}}, f)
+J1 = bucket_project("journal-none", True, [])
+J2 = bucket_project("journal-own", True, [])
+J3 = bucket_project("journal-bad", True, [])
+J4 = bucket_project("journal-off", True, [], on=False)
+for p_, body in ((J2, '{"enabledPlugins": {"remember@claude-plugins-official": true}}'), (J3, "{ not json")):
+    with open(os.path.join(p_, ".claude", "settings.local.json"), "w", encoding="utf-8") as f:
+        f.write(body)
+for p_ in (J1, J2, J3, J4):
+    run("stdin", p_, project_dir=p_, extra={"CLAUDE_CONFIG_DIR": JCFG})
+
+
+def local_of(p_):
+    try:
+        return open(os.path.join(p_, ".claude", "settings.local.json"), encoding="utf-8").read()
+    except OSError:
+        return None
+
+
+extra.append((json.loads(local_of(J1) or "{}") == {"enabledPlugins": {"remember@claude-plugins-official": False}}
+              and json.loads(local_of(J2))["enabledPlugins"]["remember@claude-plugins-official"] is True
+              and local_of(J3) == "{ not json" and local_of(J4) is None,
+              "kit ON: remember's false is put into settings.local.json; the user's own true, a corrupt file "
+              "and a kit-OFF project are left as they are"))
+
 # Off is the default (bucket kit-default-off-optimize, D002): a project /kit-on never touched gets
 # nothing - no gate notice, no cards, no window record, no upkeep - and --cards says why.
 OFFP = bucket_project("off-by-default", False, [("o1", "OPEN", "x")], on=False)

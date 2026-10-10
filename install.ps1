@@ -157,6 +157,20 @@ function Register-Hook($set, $ev, $matcher, $file, $label) {
     }
 }
 Merge-Into $set $frag
+# The user's own effort per model wins (2026-10-11, bucket kit-records-integration D011): the
+# fragment's effortLevel fills only a model the user set none for. Overwriting it was a tug-of-war -
+# 6 of the user's last 8 backups had xhigh back between installs, and each install pulled it to high.
+# A value the key does not take (max) is not kept.
+if ($pre['modelSettings'] -is [Collections.IDictionary] -and $set['modelSettings'] -is [Collections.IDictionary]) {
+    foreach ($m in @($pre['modelSettings'].Keys)) {
+        $own = $pre['modelSettings'][$m]
+        if ($own -is [Collections.IDictionary] -and $own['effortLevel'] -in @('low', 'medium', 'high', 'xhigh') -and
+            $set['modelSettings'][$m] -is [Collections.IDictionary] -and $set['modelSettings'][$m]['effortLevel'] -ne $own['effortLevel']) {
+            $set['modelSettings'][$m]['effortLevel'] = $own['effortLevel']
+            "modelSettings.${m}.effortLevel: kept yours ($($own['effortLevel']))"
+        }
+    }
+}
 if ($set['env'] -is [Collections.IDictionary]) {
     foreach ($k in $RETIRED_ENV.Keys) {
         if ($set['env'].Contains($k) -and $set['env'][$k] -eq $RETIRED_ENV[$k]) {

@@ -1066,7 +1066,8 @@ chk('_try(chain_touch' in _kc and _headless in _kc and 'background_tasks") or []
     and _kc.index('_try(chain_touch') < _kc.index(_headless)
     and _kc.index('_try(chain_touch') < _kc.index('background_tasks") or []'),
     'kit-context writes the timeline entry every stop, before the headless and running-agent returns')
-chk('kit_chain.finish(' in _ke and 'scratch_root(' in _ke and "5-second timeout raises this one's budget" in _inst,
+chk('kit_chain.finish(' in _ke and 'session_root(' in _ke and 'def session_root' in _ki
+    and 'root = scratch_root(data)' in _ki and "5-second timeout raises this one's budget" in _inst,
     'kit-session-end finishes every session; the installer says its timeout lifts the 1.5 s SessionEnd default')
 chk('_try(_maintain' in _ks and 'prev.get("sid")' in _ks and 'find_scratch_root(data)' in _ks
     and 'scratch_ok(r) and not kit_off(r)' in _ki,
@@ -1130,16 +1131,40 @@ chk('def records_project' in _ki and 'def record_heads' in _ki and 'def roadmap_
     and 'W01' in _tk and 'never restates the entry' in _tk and 'new: B-NNN' in _ct,
     'project-records: docs/ is the one home - agents get the cited D-NNN headings, the session note '
     'says so once and gives one next, a bucket cites ids and numbers its own choices W01')
-chk('JOURNAL_PLUGINS = ("remember@",)' in _ksw and 'quieted = quiet_journals(root, data)' in _ksw
-    and 'woken = wake_journals(data) if present else []' in _ksw and 'k not in (ep or {})' in _ksw
+chk('JOURNAL_PLUGINS = ("remember@",)' in _ki and 'def quiet_journals' in _ki and 'k not in (ep or {})' in _ki
+    and 'def journals_off' in _ki and '_try(journals_off, launch_root())' in _ks
+    and 'quieted = quiet_journals(root, data)' in _ksw and '_quiet_journals(root, data, USER_SETTINGS)' in _ksw
+    and 'woken = wake_journals(data) if present else []' in _ksw
     and '_ks_quiet(' in _vl and 'remember' in _kon,
-    '/kit-on switches remember off in settings.local.json (never over the user\'s own value), /kit-off '
-    'only where the kit was on turns it back, verify_live names a kit-ON project where it still runs')
+    '/kit-on switches remember off in settings.local.json and every ON start keeps it so (one rule, never '
+    'over the user\'s own value); /kit-off only where the kit was on turns it back; verify_live names drift')
 # Found by the same test: `cd .claude/scratch` and then `cd <slug> && cat > STATE.md` filed the
 # session under no task - no digest, so the next /continue resumed without its conversation. In the
 # user's transcripts the wider reader sees 82 more note writes and loses none of the old ones.
 chk('CD_SCRATCH = re.compile' in _ki and 'CD_SLUG.match(shell, nxt)' in _ki and 'SLUG_NOTE.finditer(shell, cd.end(), nxt)' in _ki,
     'kit_index.shell_notes files a note written after `cd .claude/scratch` then `cd <slug>` (or `<slug>/STATE.md`)')
+# Reopened 2026-10-11 02:17 ("bina kuchh khoe hue"): 42% of the real sessions in 9 kit-ON projects
+# touched no task, and remember - now off there - was their only record; the session log keeps them,
+# a /clear resumes one, and nothing of it is a headless run. md-guard denied project-records' own
+# index command on every doc over 300 lines. A /clear right after a handoff skipped the record's own
+# session-end entries. Every install pulled the user's own effort back to high.
+_mgd = open('core/hooks/md-guard.py', encoding='utf-8').read() if os.path.isfile('core/hooks/md-guard.py') else ''
+chk('LOG = "_sessions"' in _kh and 'def log_dir' in _kh and 'def _log_worthy' in _kh
+    and 'CLAUDE_CODE_SESSION_ATTENDED' in _kh and 'return _log(info, sid, root' in _kh and 'def _prune_log' in _kh
+    and '_log_worthy(info, 2)' in _kh and 'def session_root' in _ki and 'session_root(data)' in _kc
+    and 'def log_rows' in _ks and 'def my_log' in _ks and '"log": mine_log' in _ks
+    and "(this window's last session)" in _ct and '_sessions/digests/<sid>.md' in _ct,
+    'the session log: a conversation of no task keeps its record (never a headless run), a /clear resumes it')
+chk('def _heading_search' in _mgd and 'if _heading_search(cmd):' in _mgd,
+    "md-guard passes a heading search (project-records' own index command), never context or an inverted match")
+chk('RECORDS_HANDOFF' in _kc and 'records_project, _try(session_root, data)' in _kc,
+    "a records project's handoff also asks for its PROGRESS entry and Now line")
+# project-records' answer hook files every owner's choice as a decision; /continue's question is a
+# choice of what to work on - the header `Task` is the contract both sides keep (OPI D-044).
+chk('its header `Task`' in _ct,
+    "/continue asks under the header Task, which project-records never files as a decision")
+chk("kept yours" in _inst and "$pre['modelSettings']" in _inst,
+    "install.ps1 keeps the user's own effortLevel per model; the fragment's fills only a model with none")
 chk('AskUserQuestion' in _kon.split('---', 2)[1] and '/records-install' in _kon and 'Never run it' in _kon
     and 'records-install.md' in _kon and 'Records: one question' in _kini and 'AskUserQuestion' in _kini.split('---', 2)[1],
     '/kit-on and /kit-init ask once whether the project keeps project-records; the user types /records-install')

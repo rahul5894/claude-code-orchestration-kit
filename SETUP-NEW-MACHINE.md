@@ -73,14 +73,14 @@ kit-subagent-report: registered in settings.json
 kit-subagent-start: registered in settings.json
 kit-context: registered in settings.json
 kit-session-end: registered in settings.json
-md-guard self-check: 179/179 passed
-kit-session-start self-check: 59/59 passed
+md-guard self-check: 190/190 passed
+kit-session-start self-check: 65/65 passed
 kit-subagent-report self-check: 12/12 passed
 kit-subagent-start self-check: 23/23 passed
-kit-context self-check: 50/50 passed
+kit-context self-check: 51/51 passed
 kit_off self-check: 13/13 passed
 kit_digest self-check: 35/35 passed
-kit_chain self-check: 48/48 passed
+kit_chain self-check: 55/55 passed
 kit-session-end self-check: 8/8 passed
 kit-switch self-check: 18/18 passed
 scan-project self-check: 38/38 passed
@@ -259,9 +259,12 @@ It allows: small files, writes from anyone else (`>`, `>>`, heredocs, `sed -i`, 
 commands. Each `&&` / `;` segment of a command is
 judged on its own, so `rm big.md; git status | head` passes.
 
-The deny message tells Claude the capped `grep -n` + `Read` window to use instead.
+The deny message tells Claude the capped `grep -n` + `Read` window to use instead. A heading
+search passes whatever the file's size - one pattern, every alternative anchored at `^#`, no
+`-A`/`-B`/`-C`/`-v` - because it prints only the outline: it is project-records' own index of
+decisions (`grep -n "^### " docs/DECISIONS.md` in a records project), which was denied before.
 
-Check: `python ~/.claude/hooks/md-guard_test.py` prints `179/179 passed`. The test
+Check: `python ~/.claude/hooks/md-guard_test.py` prints `190/190 passed`. The test
 builds its own fixtures in a temp folder, so it runs on any machine. The installer runs
 it for you.
 
@@ -291,7 +294,7 @@ Bedrock/Vertex/Foundry id without `[1m]`); `CLAUDE_CODE_DISABLE_1M_CONTEXT=1` ma
 `CLAUDE_CODE_MAX_CONTEXT_TOKENS` counts together with `DISABLE_COMPACT`. The `[1m]` marker never
 reaches the transcript, so the model id alone cannot say 1M. Only lines of the current
 session count, so a new session starts from 0.
-Check: `python ~/.claude/hooks/kit-context_test.py` prints `50/50 passed`.
+Check: `python ~/.claude/hooks/kit-context_test.py` prints `51/51 passed`.
 
 The task timeline (`kit_chain.py`): every session that works on a bucket - at any context %,
 not only past 45% - leaves `<bucket>/digests/<sid>.json` (its entry), `<sid>.state.md` (STATE.md
@@ -303,7 +306,17 @@ killed with no SessionEnd and prunes. Records stay while the task is open and ar
 after `Status: CLOSED <date>`; entries, SESSIONS.md, STATE, DECISIONS and FINDINGS stay.
 `python ~/.claude/hooks/kit_chain.py --backfill <repo>` builds the records of open tasks from
 the transcripts still on disk (Claude Code keeps them 30 days).
-Check: `python ~/.claude/hooks/kit_chain_test.py` prints `48/48 passed` and
+
+The session log: a session that works on no task - a question, a look around, a talk that never
+became a task; 42% of the real sessions in 9 projects were such - gets the same entry and verbatim
+digest in `.claude/scratch/_sessions/` (its own `*` `.gitignore`). A headless `claude -p` run is
+never logged, a session that goes on to a task moves to that task's record, verbatim records go
+after 30 days and the newest 200 entries stay. The session start names the newest three; after a
+`/clear`, this window's previous one comes first, marked `(this window's last session)`, and
+`/continue` resumes it by reading its digest - as the remember plugin's summary did, but word for
+word and with no model call. `--backfill` also logs past conversations of no task (2+ typed
+messages: a transcript cannot tell a headless run).
+Check: `python ~/.claude/hooks/kit_chain_test.py` prints `55/55 passed` and
 `python ~/.claude/hooks/kit-session-end_test.py` prints `8/8 passed`.
 
 Known gaps, on purpose:
@@ -329,9 +342,10 @@ One plugin is kept but not everywhere: **remember** writes a session journal of 
 puts it into every session start (a median 6-8K characters, measured 2026-10-11). Where the kit
 is on, the kit's task timeline already keeps that record, so `/kit-on` writes
 `"remember@claude-plugins-official": false` under `enabledPlugins` in that project's
-`.claude/settings.local.json`, and `/kit-off` takes it out again. In a project with the kit off
-it runs as before. `python verify_live.py` section C5 names a kit-ON project where it is still
-on: run `/kit-on` there.
+`.claude/settings.local.json`, and `/kit-off` takes it out again; every session start of a
+kit-ON project puts it back if the file lost it (never over a value of your own). The kit's
+session log keeps the sessions remember was the only record of. In a project with the kit off
+it runs as before. `python verify_live.py` section C5 names a kit-ON project where it is still on.
 
 `python verify_live.py` section C6 reads the manifest of every plugin enabled in the user's
 `settings.json` or `settings.local.json`, handles inline, path, list and side-file hook
@@ -457,14 +471,14 @@ report format. The skill is worth keeping, so the kit ships its own copy at
 
 ## 7. Final checklist
 
-- [ ] `pwsh install.ps1` printed `md-guard self-check: 179/179 passed`
-- [ ] the same run printed `kit-session-start self-check: 59/59 passed`
+- [ ] `pwsh install.ps1` printed `md-guard self-check: 190/190 passed`
+- [ ] the same run printed `kit-session-start self-check: 65/65 passed`
 - [ ] the same run printed `kit-subagent-report self-check: 12/12 passed`
 - [ ] the same run printed `kit-subagent-start self-check: 23/23 passed`
-- [ ] the same run printed `kit-context self-check: 50/50 passed`
+- [ ] the same run printed `kit-context self-check: 51/51 passed`
 - [ ] the same run printed `kit_off self-check: 13/13 passed`
 - [ ] the same run printed `kit_digest self-check: 35/35 passed`
-- [ ] the same run printed `kit_chain self-check: 48/48 passed`
+- [ ] the same run printed `kit_chain self-check: 55/55 passed`
 - [ ] the same run printed `kit-session-end self-check: 8/8 passed`
 - [ ] the same run printed `kit-switch self-check: 18/18 passed`
 - [ ] the same run printed `scan-project self-check: 38/38 passed`

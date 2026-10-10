@@ -66,6 +66,14 @@ REPAIR_MIN_AGE = 60          # an entry touched this recently may still be mid-S
 REPAIR_MAX = 60_000_000      # bigger transcripts are repaired without a digest
 TMP_STALE = 3600
 PRUNE_MARKER = ".kit-pruned"
+# The session log (bucket kit-records-integration, D009): a session that works on no task gets its
+# entry and verbatim digest in .claude/scratch/_sessions/ - laid out like a bucket, so the same
+# timeline code writes it. Measured 2026-10-11: 42% of the real sessions in 9 kit-ON projects
+# (120 of 288 with 2+ typed messages) touched no bucket, and the remember plugin, now off where
+# the kit is on, was their only record.
+LOG = "_sessions"
+LOG_KEEP_DAYS = 30           # verbatim records: Claude Code keeps a transcript 30 days as well
+LOG_MAX = 200                # entries kept, the newest; an older one goes whole
 
 
 def _try(fn, *args, **kw):
@@ -302,19 +310,84 @@ def _rel(path, root):
 
 # ---------------------------------------------------------------- writing the entry and the view
 
-def touch(transcript, sid, root, pid="", pct=None, window_k=None, end=False, counts=True, cache=None):
-    """Upsert this session's entry in every bucket it owns (owned()); returns {info, mine, last}
-    or {} when it owns none. A bucket it no longer owns (it read A, then wrote B) loses the
-    entry it got for the read. `cache`: see scan."""
+def log_dir(root, create=False):
+    """root/.claude/scratch/_sessions, the session log, or None. `create` makes it - with a `*`
+    .gitignore, as it holds conversations - where .claude is a real folder; nothing goes through a
+    link."""
+    if not root:
+        return None
+    dot = os.path.join(root, ".claude")
+    scratch = os.path.join(dot, "scratch")
+    log = os.path.join(scratch, LOG)
+    if linked(dot) or linked(scratch) or linked(log):
+        return None
+    if os.path.isdir(log):
+        return log
+    if not create or not os.path.isdir(dot):
+        return None
+    try:
+        os.makedirs(log, exist_ok=True)
+        if not linked(log):
+            kit_digest.write_atomic(os.path.join(log, ".gitignore"), "*\n")
+    except OSError:
+        return None
+    return log if os.path.isdir(log) and not linked(log) else None
+
+
+def _log_worthy(info, min_typed=1):
+    """A conversation worth keeping: words the user typed (a bare slash command is none), in a
+    session someone attended - a headless `claude -p` run is automation (its hooks see
+    CLAUDE_CODE_SESSION_ATTENDED=0; a transcript cannot tell, so backfill asks for 2 messages)."""
+    if os.environ.get("CLAUDE_CODE_SESSION_ATTENDED") == "0":
+        return False
+    return sum(1 for _, t in info["users"] if _typed(t)) >= min_typed
+
+
+def _log(info, sid, root, transcript, pid, pct, window_k, end, min_typed):
+    """The session's entry in the session log (it worked on no task); {info, mine, last} as touch."""
+    if not _log_worthy(info, min_typed):
+        return {}
+    log = log_dir(root, create=True)
+    if not log:
+        return {}
+    v = {"joined": info["first"], "joined_line": info["users"][0][0] if info["users"] else 0,
+         "last_line": 0, "last_ts": info["last"], "wrote_state": False, "wrote_notes": False}
+    vinfo = {**info, "buckets": {LOG: v}}  # a copy: the Stop hook's kept scan state stays as read
+    _try(_upsert, log, LOG, vinfo, sid, root, transcript, pid, pct, window_k, end, None, True, False)
+    return {"info": vinfo, "mine": {LOG: log}, "last": LOG}
+
+
+def _drop_log(log, sid):
+    """A session that went on to work on a task leaves the log: its record is the task's now."""
+    folder = safe_dir(log, "digests")
+    gone = False
+    for ext in (".json", ".md"):
+        path = os.path.join(folder, sid + ext) if folder else ""
+        if path and os.path.isfile(path) and not linked(path):
+            os.remove(path)
+            gone = True
+    if gone:
+        render(log)
+
+
+def touch(transcript, sid, root, pid="", pct=None, window_k=None, end=False, counts=True, cache=None,
+          min_typed=1):
+    """Upsert this session's entry in every bucket it owns (owned()); returns {info, mine, last}.
+    A bucket it no longer owns (it read A, then wrote B) loses the entry it got for the read. A
+    session that owns no bucket goes in the session log instead (_log), if it is a conversation;
+    else {}. `cache`: see scan."""
     sid = UNSAFE.sub("_", str(sid or ""))
-    if not (sid and transcript and scratch_ok(root)):
+    if not (sid and transcript and root):
         return {}
     info = scan(transcript, sid, root, cache)
-    if not info or not info["buckets"]:
+    if not info:
         return {}
-    mine = owned(info, root)
+    mine = owned(info, root) if info["buckets"] and scratch_ok(root) else {}
     if not mine:
-        return {}
+        return _log(info, sid, root, transcript, pid, pct, window_k, end, min_typed)
+    log = log_dir(root)
+    if log:
+        _try(_drop_log, log, sid)
     b = info["buckets"]
     last = max(mine, key=lambda s: b[s]["last_line"])
     first = min(mine, key=lambda s: b[s]["joined_line"])
@@ -360,7 +433,10 @@ def _upsert(bucket, slug, info, sid, root, transcript, pid, pct, window_k, end, 
             _write_if_changed(os.path.join(folder, sid + ".state.md"), SNAPSHOT_BANNER.format(
                 sid=sid, when=kit_digest.local_time(v.get("state_ts") or last, "%Y-%m-%d %H:%M")) + state)
             e["next"] = _next(state) or e["next"]
-    if _write_if_changed(path, json.dumps(e, ensure_ascii=False, indent=1) + "\n") or not os.path.isfile(
+    changed = _write_if_changed(path, json.dumps(e, ensure_ascii=False, indent=1) + "\n")
+    # The log's view reads up to LOG_MAX entries: rebuilt for a new entry and at the session's end,
+    # not on every turn between (kit-session-start's maintain() also re-renders a stale view).
+    if (changed and (end or not old or os.path.basename(bucket) != LOG)) or not os.path.isfile(
             os.path.join(bucket, "SESSIONS.md")):
         render(bucket)
 
@@ -407,20 +483,26 @@ def render(bucket):
     folder, entries = _entries(bucket)
     if not entries and not os.path.isfile(os.path.join(bucket, "SESSIONS.md")):
         return
+    is_log = os.path.basename(bucket) == LOG
     findings = _lines(os.path.join(bucket, "FINDINGS.md"))
     decisions = _lines(os.path.join(bucket, "DECISIONS.md"))
     f_prev, d_prev = _head(findings), _head(decisions)
     spans = [(_epoch(e.get("joined")) or 0, _epoch(e.get("end") or e.get("last")) or 0) for e in entries]
-    out = [f"# SESSIONS — {os.path.basename(bucket)}",
-           "<!-- Written by the kit from digests/<sid>.json - never edit. Oldest first; times local "
-           f"(UTC{time.strftime('%z')}). S<n> is display order: cite a session by its sid. Per session: "
-           "digests/<sid>.md = what was said, verbatim; digests/<sid>.state.md = STATE.md as it "
-           "left it. -->",
-           "History, oldest first: a later session overrides an earlier one, and `next then` was "
-           "that session's next step - the current one is in STATE.md."]
+    out = ([f"# SESSIONS — this project's sessions that worked on no task",
+            "<!-- Written by the kit from digests/<sid>.json - never edit. Oldest first; times local "
+            f"(UTC{time.strftime('%z')}). Per session: digests/<sid>.md = what was said, verbatim, kept "
+            f"{LOG_KEEP_DAYS} days; the newest {LOG_MAX} entries stay. A session that went on to a task "
+            "is in that task's SESSIONS.md instead. -->"] if is_log else
+           [f"# SESSIONS — {os.path.basename(bucket)}",
+            "<!-- Written by the kit from digests/<sid>.json - never edit. Oldest first; times local "
+            f"(UTC{time.strftime('%z')}). S<n> is display order: cite a session by its sid. Per session: "
+            "digests/<sid>.md = what was said, verbatim; digests/<sid>.state.md = STATE.md as it "
+            "left it. -->",
+            "History, oldest first: a later session overrides an earlier one, and `next then` was "
+            "that session's next step - the current one is in STATE.md."])
     for i, e in enumerate(entries):
         a, b = spans[i]
-        flags = ["STATE written" if e.get("wrote_state") else "no STATE write"]
+        flags = [] if is_log else ["STATE written" if e.get("wrote_state") else "no STATE write"]
         par = [f"S{j + 1}" for j, (x, y) in enumerate(spans) if j != i and x < b and a < y]
         if par:
             flags.append("∥ " + ",".join(par))
@@ -428,7 +510,7 @@ def render(bucket):
             flags.append("no verbatim record")
         if not e.get("end"):
             flags.append("not ended")
-        out.append(f"## S{i + 1} · {e['sid']} · {_span(e)} · " + " · ".join(flags))
+        out.append(" · ".join([f"## S{i + 1}", e["sid"], _span(e)] + flags))
         if e.get("asked"):
             out.append(f'asked: "{e["asked"]}"')
         if e.get("next"):
@@ -469,11 +551,12 @@ def _cut_turns(turns, upto):
     return out
 
 
-def finish(transcript, sid, root, pid="", deadline=None, digest=True, counts=True):
+def finish(transcript, sid, root, pid="", deadline=None, digest=True, counts=True, min_typed=1):
     """touch(end=True), then the verbatim digest in every bucket the session owns (the one it
-    touched last first: /continue reads that), unless one already newer than the transcript is
-    there (kit-context keeps it current past 45%). Returns how many digests it wrote."""
-    t = touch(transcript, sid, root, pid=pid, end=True, counts=counts)
+    touched last first: /continue reads that) - or in the session log when it owns none - unless
+    one already newer than the transcript is there (kit-context keeps it current past 45%).
+    Returns how many digests it wrote."""
+    t = touch(transcript, sid, root, pid=pid, end=True, counts=counts, min_typed=min_typed)
     if not t or not digest:
         return 0
     sid = UNSAFE.sub("_", str(sid))
@@ -559,7 +642,8 @@ def repair(root, skip=(), deadline=None):
     window's previous session: its SessionEnd may still be running, ~80 ms apart) nor an entry
     touched under a minute ago. Returns the sid repaired, or None."""
     seen = set(skip)
-    for bucket in _buckets(root):
+    log = log_dir(root)
+    for bucket in _buckets(root) + ([log] if log else []):
         folder, entries = _entries(bucket)
         for e in entries:
             sid = e["sid"]
@@ -625,6 +709,34 @@ def prune(root, now=None):
                 pass
         if gone > before:
             _try(render, bucket)
+    log = log_dir(root)
+    if log:
+        gone += _try(_prune_log, log, now) or 0
+    return gone
+
+
+def _prune_log(log, now):
+    """The session log's retention: a verbatim record LOG_KEEP_DAYS after its session ended, a
+    whole entry once LOG_MAX newer ones are there; leftover *.tmp after an hour."""
+    folder, entries = _entries(log)
+    if not folder:
+        return 0
+    gone, doomed = 0, []
+    for i, e in enumerate(sorted(entries, key=lambda x: x.get("end") or x.get("last") or "", reverse=True)):
+        ended = _epoch(e.get("end") or e.get("last")) or now
+        exts = (".json", ".md") if i >= LOG_MAX else (".md",) if now - ended > LOG_KEEP_DAYS * 86400 else ()
+        doomed += [os.path.join(folder, e["sid"] + x) for x in exts]
+    doomed += [os.path.join(folder, n) for n in os.listdir(folder) if n.endswith(".tmp")
+               and now - os.path.getmtime(os.path.join(folder, n)) > TMP_STALE]
+    for p in doomed:
+        try:
+            if os.path.isfile(p) and not linked(p):
+                os.remove(p)
+                gone += 1
+        except OSError:
+            pass
+    if gone:
+        _try(render, log)
     return gone
 
 
@@ -642,7 +754,8 @@ def maintain(root, skip=(), deadline=None):
     if _read(marker, 64) != today and time.time() < deadline:
         _try(prune, root)
         _try(kit_digest.write_atomic, marker, today)
-    for bucket in _buckets(root):
+    log = log_dir(root)
+    for bucket in _buckets(root) + ([log] if log else []):
         if time.time() > deadline:
             break
         folder = os.path.join(bucket, "digests")
@@ -689,8 +802,10 @@ def backfill(root, transcripts=None, days=30, quiet_s=600):
             continue
         sid = name[:-len(".jsonl")]
         info = scan(path, sid, root)
-        if info and owned(info, root):
-            finish(path, sid, root, counts=False)
+        # A session of no task goes in the session log - only a conversation (2+ typed messages):
+        # a transcript cannot tell a headless run from a live one.
+        if info and ((info["buckets"] and owned(info, root)) or _log_worthy(info, 2)):
+            finish(path, sid, root, counts=False, min_typed=2)
             done += 1
     return done
 

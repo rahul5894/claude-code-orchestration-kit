@@ -15,7 +15,7 @@ tmp = tempfile.mkdtemp(prefix="kit-chain-test-")
 tempfile.tempdir = os.path.join(tmp, "temp")  # read_window / write_window / prune marker
 os.makedirs(tempfile.tempdir)
 os.environ["CLAUDE_CONFIG_DIR"] = os.path.join(tmp, "cfg")
-for k in ("CLAUDE_PID", "CLAUDE_PROJECT_DIR"):
+for k in ("CLAUDE_PID", "CLAUDE_PROJECT_DIR", "CLAUDE_CODE_SESSION_ATTENDED"):
     os.environ.pop(k, None)
 import kit_chain as kc  # noqa: E402
 import kit_index as ki  # noqa: E402
@@ -265,9 +265,10 @@ try:
           call("Write", file_path=note(root2, "beta", "STATE.md"), content="x")),
         a(sid6, "2026-10-09T13:00:03Z", call("Write", file_path=note(root2, "gone", "STATE.md"), content="x")),
     ])
-    ok(kc.touch(t6, sid6, root2) == {} and entry(root2, "alpha", sid6) is None and entry(root2, "beta", sid6) is None
-       and not os.path.exists(note(root2, "gone", "")),
-       "sidechain and other-session lines count for nothing; a bucket that is gone is not recreated")
+    ok(kc.touch(t6, sid6, root2).get("last") == kc.LOG and entry(root2, "alpha", sid6) is None
+       and entry(root2, "beta", sid6) is None and not os.path.exists(note(root2, "gone", "")),
+       "sidechain and other-session lines count for nothing; a bucket that is gone is not recreated "
+       "(the session, which worked on no task, goes in the session log)")
 
     # 9. Links: a linked scratch, bucket or digests/ is refused.
     root3 = project("p3", slugs=())
@@ -570,6 +571,91 @@ try:
        and [t for _, t in inc["users"]] == ["first ask", "second ask"]
        and [t for _, t in redo["users"]] == ["a new start"] and not redo["buckets"],
        "scan with a kept state: same as a whole read; a torn last line waits; a rewritten transcript is read whole")
+
+    # 21. The session log (bucket kit-records-integration, D009): a session that works on no task gets
+    # its entry and verbatim digest in .claude/scratch/_sessions/ - a conversation only, never a
+    # headless run; it leaves the log once it works on a task; retention keeps the log bounded.
+    root21 = project("p21", slugs=("alpha",))
+    log21 = os.path.join(root21, ".claude", "scratch", kc.LOG)
+    sid21 = "21212121-0000-4000-8000-000000000021"
+    t21 = transcript(sid21, [u(sid21, "2026-10-11T01:00:00Z", "how do the hooks decide a task?"),
+                             a(sid21, "2026-10-11T01:00:05Z", text("They read the transcript."))])
+    kc.finish(t21, sid21, root21)
+    e21 = entry(root21, kc.LOG, sid21) or {}
+    ok(e21.get("asked") == "how do the hooks decide a task?" and e21.get("end")
+       and os.path.isfile(os.path.join(log21, "digests", sid21 + ".md"))
+       and open(os.path.join(log21, ".gitignore"), encoding="utf-8").read() == "*\n"
+       and "sessions that worked on no task" in view(root21, kc.LOG) and "no STATE write" not in view(root21, kc.LOG)
+       and entry(root21, "alpha", sid21) is None,
+       "a session of no task: entry, verbatim digest and view in _sessions/ (a `*` .gitignore); no bucket touched")
+    sid21b, sid21c = "21212121-0000-4000-8000-0000000000b1", "21212121-0000-4000-8000-0000000000c1"
+    t21b = transcript(sid21b, [u(sid21b, "2026-10-11T02:00:00Z", "/continue")])
+    t21c = transcript(sid21c, [u(sid21c, "2026-10-11T02:10:00Z", "Reply with the single word OK.")])
+    os.environ["CLAUDE_CODE_SESSION_ATTENDED"] = "0"
+    try:
+        kc.finish(t21c, sid21c, root21)
+    finally:
+        os.environ.pop("CLAUDE_CODE_SESSION_ATTENDED", None)
+    ok(kc.touch(t21b, sid21b, root21) == {} and entry(root21, kc.LOG, sid21b) is None
+       and entry(root21, kc.LOG, sid21c) is None,
+       "a bare slash command, or a headless run (CLAUDE_CODE_SESSION_ATTENDED=0), is no conversation: not logged")
+    sid21d = "21212121-0000-4000-8000-0000000000d1"
+    t21d = transcript(sid21d, [u(sid21d, "2026-10-11T03:00:00Z", "a question first")])
+    kc.finish(t21d, sid21d, root21)
+    was_logged = entry(root21, kc.LOG, sid21d) is not None and os.path.isfile(os.path.join(log21, "digests", sid21d + ".md"))
+    with open(t21d, "a", encoding="utf-8") as f:
+        f.write(json.dumps(a(sid21d, "2026-10-11T03:05:00Z", call("Write", file_path=note(root21, "alpha", "STATE.md"),
+                                                                    content=state("alpha", "go")))) + "\n")
+    write_state(root21, "alpha", state("alpha", "go"))
+    kc.finish(t21d, sid21d, root21)
+    ok(was_logged and entry(root21, kc.LOG, sid21d) is None and not os.path.exists(os.path.join(log21, "digests", sid21d + ".md"))
+       and entry(root21, "alpha", sid21d) is not None and sid21d not in view(root21, kc.LOG),
+       "a session that goes on to a task leaves the log, entry and digest: its record is the task's")
+    root21e, root21f = os.path.join(tmp, "p21e"), os.path.join(tmp, "p21f")
+    os.makedirs(os.path.join(root21e, ".claude"))
+    os.makedirs(root21f)
+    sid21e = "21212121-0000-4000-8000-0000000000e1"
+    t21e = transcript(sid21e, [u(sid21e, "2026-10-11T04:00:00Z", "the first chat in a new project")])
+    kc.finish(t21e, sid21e, root21e)
+    ok(entry(root21e, kc.LOG, sid21e) is not None and kc.touch(t21e, sid21e, root21f) == {}
+       and not os.path.exists(os.path.join(root21f, ".claude")),
+       "a project with .claude but no tasks yet gets the log; a folder with no .claude gets nothing")
+    root21g = os.path.join(tmp, "p21g")
+    os.makedirs(os.path.join(root21g, ".claude"))
+    elsewhere = os.path.join(tmp, "p21g-elsewhere")
+    os.makedirs(elsewhere)
+    if junction(os.path.join(root21g, ".claude", "scratch"), elsewhere):
+        ok(kc.touch(t21e, sid21e, root21g) == {} and os.listdir(elsewhere) == [],
+           "a .claude/scratch that is a link or junction: no session log written through it")
+    else:
+        skipped.append("session log through a linked scratch (could not create a junction here)")
+    with open(os.path.join(log21, "digests", sid21 + ".json"), encoding="utf-8") as f:
+        e = json.load(f)
+    e["end"] = e["last"] = "2026-08-31T00:00:00Z"
+    with open(os.path.join(log21, "digests", sid21 + ".json"), "w", encoding="utf-8") as f:
+        json.dump(e, f)
+    kc.prune(root21)
+    aged = entry(root21, kc.LOG, sid21) is not None and not os.path.exists(os.path.join(log21, "digests", sid21 + ".md"))
+    sid21h = "21212121-0000-4000-8000-0000000000f1"
+    kc.finish(transcript(sid21h, [u(sid21h, "2026-10-11T05:00:00Z", "one more chat")]), sid21h, root21)
+    saved, kc.LOG_MAX = kc.LOG_MAX, 1
+    try:
+        kc.prune(root21)
+    finally:
+        kc.LOG_MAX = saved
+    ok(aged and entry(root21, kc.LOG, sid21) is None and entry(root21, kc.LOG, sid21h) is not None
+       and os.path.isfile(os.path.join(log21, "digests", sid21h + ".md")),
+       f"log retention: a verbatim record goes {kc.LOG_KEEP_DAYS} days after its session; past LOG_MAX the oldest entry goes whole")
+    root21x = project("p21x", slugs=("alpha",))
+    folder21 = os.path.join(tmp, "cfg", "projects", "p21x")
+    one, two = "21212121-0000-4000-8000-0000000000a1", "21212121-0000-4000-8000-0000000000a2"
+    for p in (transcript(one, [u(one, "2026-10-01T10:00:00Z", "one ask only"), a(one, "2026-10-01T10:00:05Z", text("ok"))], folder21),
+              transcript(two, [u(two, "2026-10-01T11:00:00Z", "first ask"), a(two, "2026-10-01T11:00:05Z", text("ok")),
+                               u(two, "2026-10-01T11:01:00Z", "second ask")], folder21)):
+        os.utime(p, (time.time() - 3600, time.time() - 3600))
+    ok(kc.backfill(root21x, folder21) == 1 and entry(root21x, kc.LOG, two) is not None and entry(root21x, kc.LOG, one) is None
+       and os.path.isfile(os.path.join(root21x, ".claude", "scratch", kc.LOG, "digests", two + ".md")),
+       "backfill logs a past conversation of no task (2+ typed messages), never a one-shot run")
 finally:
     shutil.rmtree(tmp, ignore_errors=True)
 

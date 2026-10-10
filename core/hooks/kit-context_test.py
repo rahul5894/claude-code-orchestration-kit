@@ -256,10 +256,15 @@ try:
     path = transcript({"type": "user", "message": {"content": "keep the report in Hinglish"}},
                       asst(100_000))
     res = run(path, s)
+    scratch = os.path.join(tmp, ".claude", "scratch")
+    # A session of no task is kept in the session log (bucket kit-records-integration, D009); the
+    # block itself makes no bucket and no bucket digest.
     ok(blocked(res, 50) and "~60 lines" in res[1].get("reason", "") and "digests/" in res[1].get("reason", "")
-       and not os.path.exists(os.path.join(tmp, ".claude", "scratch"))
+       and sorted(os.listdir(scratch)) == ["_sessions"]
+       and os.path.isfile(os.path.join(scratch, "_sessions", "digests", s + ".json"))
        and "touched no bucket" in res[1].get("reason", "") and "parallel window" in res[1].get("reason", ""),
-       "50% block: STATE at ~60 lines, digest promised, nothing written; no bucket -> open one, never another's")
+       "50% block: STATE at ~60 lines, digest promised, no bucket made (the session goes in the session log); "
+       "no bucket -> open one, never another's")
     state("other")  # another session's STATE.md: only on disk, never in this transcript
     ok(notice(run(path, s, stop_hook_active=True), 50) and not os.path.exists(digest("other", s)),
        "the stop after the block: only another session's STATE.md exists -> no digest")
@@ -332,6 +337,20 @@ try:
     ok(blocked(r70, 70) and "~100 lines" in r70[1].get("reason", "")
        and blocked(r80, 80) and "~120 lines" in r80[1].get("reason", ""),
        "STATE budget grows with the band: 70% -> ~100 lines, 80% -> ~120 lines")
+    # A project-records project (bucket kit-records-integration): the handoff also asks for the
+    # record's own session-end entries; anywhere else it does not.
+    signs = [os.path.join(tmp, "docs", "TIMELINE.md"), os.path.join(tmp, ".claude", "skills", "project-records", "SKILL.md")]
+    for p_ in signs:
+        os.makedirs(os.path.dirname(p_), exist_ok=True)
+        with open(p_, "w", encoding="utf-8") as f:
+            f.write("x\n")
+    rr = run(transcript(asst(100_000)), session())
+    for p_ in signs:
+        os.remove(p_)
+    rn = run(transcript(asst(100_000)), session())
+    ok(blocked(rr, 50) and "docs/PROGRESS.md entry and a true Now line" in rr[1].get("reason", "")
+       and blocked(rn, 50) and "docs/PROGRESS.md" not in rn[1].get("reason", ""),
+       "records project: the handoff also asks for its PROGRESS entry and Now line; elsewhere not")
 
     # 46-48. the timeline entry (bucket handoff-timeline): every stop, whatever the %, headless or
     # with an agent still running - a killed window fires no SessionEnd.

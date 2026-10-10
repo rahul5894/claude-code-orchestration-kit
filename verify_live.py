@@ -562,9 +562,12 @@ try:
 except (OSError, ValueError) as e:
     s = {}
     ok(False, 'settings.json exists and parses', f'{type(e).__name__}: {e}')
+# Effort: the kit's high, or the user's own level - install.ps1 keeps a value the user set
+# (kit-records-integration D011); never max, which the key does not take.
+for label, model in (('fable effort', 'claude-fable-5-1'), ('opus effort', 'claude-opus-5-5')):
+    got = s.get('modelSettings', {}).get(model, {}).get('effortLevel')
+    ok(got in ('low', 'medium', 'high', 'xhigh'), f"{label} set (the kit's high, or your own level)", str(got))
 for label, got, want in [
-        ('fable effort', s.get('modelSettings', {}).get('claude-fable-5-1', {}).get('effortLevel'), 'high'),
-        ('opus effort', s.get('modelSettings', {}).get('claude-opus-5-5', {}).get('effortLevel'), 'high'),
         ('subagent cache TTL', s.get('subagentPromptCacheTtl'), '1h'),
         ('agent teams off', s.get('env', {}).get('CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS'), '0'),
         ('spawn depth', s.get('env', {}).get('CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH'), '1')]:
@@ -644,8 +647,8 @@ for _st in ('kit_off self-check: 13/13 passed', 'kit-switch self-check: 18/18 pa
     ok(_st in r2.stdout, _st, [l for l in r2.stdout.splitlines() if _st.split(':')[0] in l])
 # The "fully global" pieces: the SessionStart notice and the two files /kit-init reads from
 # ~/.claude/kit. Without them a new project starts with no gate and nothing says so.
-ok('kit-session-start self-check: 59/59 passed' in r2.stdout,
-   'kit-session-start self-check 59/59',
+ok('kit-session-start self-check: 65/65 passed' in r2.stdout,
+   'kit-session-start self-check 65/65',
    [l for l in r2.stdout.splitlines() if 'kit-session-start' in l])
 for _kf in ('project-template.md', 'audit_project.py', 'scan_project.py', 'kit_switch.py'):
     ok((HOME / 'kit' / _kf).exists(), f'~/.claude/kit/{_kf} published for /kit-init')
@@ -679,7 +682,7 @@ ok(_ss_ok, 'the installed SubagentStart injector emits nothing or a well-formed 
 print("  NOTE  per-project state is checked by `python audit_project.py <repo>`, not here")
 # These counts are pinned on purpose: a suite that silently shrinks is the failure this
 # catches. Bump them WITH the test, never to make a red line green.
-ok('md-guard self-check: 179/179 passed' in r2.stdout, 'md-guard self-check 179/179',
+ok('md-guard self-check: 190/190 passed' in r2.stdout, 'md-guard self-check 190/190',
    [l for l in r2.stdout.splitlines() if 'md-guard' in l])
 ok('kit-subagent-report self-check: 12/12 passed' in r2.stdout,
    'kit-subagent-report self-check 12/12',
@@ -687,14 +690,14 @@ ok('kit-subagent-report self-check: 12/12 passed' in r2.stdout,
 ok('kit-subagent-start self-check: 23/23 passed' in r2.stdout,
    'kit-subagent-start self-check 23/23',
    [l for l in r2.stdout.splitlines() if 'kit-subagent-start' in l])
-ok('kit-context self-check: 50/50 passed' in r2.stdout,
-   'kit-context self-check 50/50',
+ok('kit-context self-check: 51/51 passed' in r2.stdout,
+   'kit-context self-check 51/51',
    [l for l in r2.stdout.splitlines() if 'kit-context' in l])
 ok('kit_digest self-check: 35/35 passed' in r2.stdout,
    'kit_digest self-check 35/35',
    [l for l in r2.stdout.splitlines() if 'kit_digest' in l])
-ok('kit_chain self-check: 48/48 passed' in r2.stdout,
-   'kit_chain self-check 48/48',
+ok('kit_chain self-check: 55/55 passed' in r2.stdout,
+   'kit_chain self-check 55/55',
    [l for l in r2.stdout.splitlines() if 'kit_chain' in l])
 ok('kit-session-end self-check: 8/8 passed' in r2.stdout,
    'kit-session-end self-check 8/8',
