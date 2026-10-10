@@ -1135,6 +1135,11 @@ chk('JOURNAL_PLUGINS = ("remember@",)' in _ksw and 'quieted = quiet_journals(roo
     and '_ks_quiet(' in _vl and 'remember' in _kon,
     '/kit-on switches remember off in settings.local.json (never over the user\'s own value), /kit-off '
     'only where the kit was on turns it back, verify_live names a kit-ON project where it still runs')
+# Found by the same test: `cd .claude/scratch` and then `cd <slug> && cat > STATE.md` filed the
+# session under no task - no digest, so the next /continue resumed without its conversation. In the
+# user's transcripts the wider reader sees 82 more note writes and loses none of the old ones.
+chk('CD_SCRATCH = re.compile' in _ki and 'CD_SLUG.match(shell, nxt)' in _ki and 'SLUG_NOTE.finditer(shell, cd.end(), nxt)' in _ki,
+    'kit_index.shell_notes files a note written after `cd .claude/scratch` then `cd <slug>` (or `<slug>/STATE.md`)')
 chk('AskUserQuestion' in _kon.split('---', 2)[1] and '/records-install' in _kon and 'Never run it' in _kon
     and 'records-install.md' in _kon and 'Records: one question' in _kini and 'AskUserQuestion' in _kini.split('---', 2)[1],
     '/kit-on and /kit-init ask once whether the project keeps project-records; the user types /records-install')

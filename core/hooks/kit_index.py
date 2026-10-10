@@ -118,6 +118,16 @@ CD_INTO = re.compile(r"(?:^|[;&|(\n])\s*(?:cd|pushd|Push-Location|Set-Location)(
                      r"[^\s\"';&|]*?\.claude[/\\]scratch[/\\]([^/\\\s\"'*?<>|;&]+)[/\\]?[\"']?(?=\s|[;&|)]|$)",
                      re.IGNORECASE)
 CD_ANY = re.compile(r"(?:^|[;&|(\n])\s*(?:cd|pushd|popd|Push-Location|Pop-Location|Set-Location)\b", re.IGNORECASE)
+# Into the scratch folder itself, then to a bucket by its bare name - `cd .claude/scratch && ...` then
+# `cd <slug> && cat > STATE.md`, or `<slug>/STATE.md` from there. Measured 2026-10-11 (bucket
+# kit-records-integration): a session that wrote its STATE.md that way was filed under no task, so it
+# left no digest and the next /continue resumed without its conversation.
+CD_SCRATCH = re.compile(r"(?:^|[;&|(\n])\s*(?:cd|pushd|Push-Location|Set-Location)(?:\s+-(?:Literal)?Path)?\s+[\"']?"
+                        r"[^\s\"';&|]*?\.claude[/\\]scratch[/\\]?[\"']?(?=\s|[;&|)]|$)", re.IGNORECASE)
+CD_SLUG = re.compile(r"(?:^|[;&|(\n])\s*(?:cd|pushd|Push-Location|Set-Location)(?:\s+-(?:Literal)?Path)?\s+[\"']?"
+                     r"([A-Za-z0-9][A-Za-z0-9._-]*)[/\\]?[\"']?(?=\s|[;&|)]|$)", re.IGNORECASE)
+SLUG_NOTE = re.compile(r"(?<![\w/\\.-])(?:\.[/\\])?([A-Za-z0-9][A-Za-z0-9._-]*)[/\\](STATE|FINDINGS|DECISIONS)\.md"
+                       r"(?![\w-]|\.\w)", re.IGNORECASE)
 BARE_NOTE = re.compile(r"(?<![\w/\\.-])(?:\.[/\\])?(STATE|FINDINGS|DECISIONS)\.md(?![\w-]|\.\w)", re.IGNORECASE)
 # A shell name holding a note or a bucket: `F=.claude/scratch/a/FINDINGS.md; printf x >> "$F"`,
 # `B=.claude/scratch/a; cat >> "$B/FINDINGS.md"`, PowerShell `$f = '...'`.
@@ -431,6 +441,17 @@ def shell_notes(cmd, root=None):
         at = cd.start() + cd.group(0).lower().index(".claude")
         for m in BARE_NOTE.finditer(shell, cd.end(), until):
             found.append((m.start(), at, cd.group(1), m.group(1).upper(), _written(shell, masked, spans, m.start(), m.end())))
+    for cd in CD_SCRATCH.finditer(shell):
+        at = cd.start() + cd.group(0).lower().index(".claude")
+        nxt = next((s for s in stops if s > cd.start()), len(shell))
+        for m in SLUG_NOTE.finditer(shell, cd.end(), nxt):  # `<slug>/STATE.md` from the scratch folder
+            found.append((m.start(), at, m.group(1), m.group(2).upper(), _written(shell, masked, spans, m.start(), m.end())))
+        sub = CD_SLUG.match(shell, nxt) if nxt < len(shell) else None  # the very next cd: into a bucket
+        if sub:
+            until = next((s for s in stops if s > nxt), len(shell))
+            for m in BARE_NOTE.finditer(shell, sub.end(), until):
+                found.append((m.start(), at, sub.group(1), m.group(1).upper(),
+                              _written(shell, masked, spans, m.start(), m.end())))
     for v in SHELL_VAR.finditer(shell):
         if any(a < v.start(1) < b for a, b in spans):
             continue  # `echo "F=..."`: an assignment inside a quoted string is text

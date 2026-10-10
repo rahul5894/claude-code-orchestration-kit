@@ -452,6 +452,14 @@ try:
         (f"cd /d/p/{S}a && cat >> FINDINGS.md <<'EOF'\n- x\nEOF", [("a", "FINDINGS", True)]),
         (f"cd {S}a && grep -c x STATE.md FINDINGS.md", [("a", "STATE", False), ("a", "FINDINGS", False)]),
         (f"cd {S}a && cd /tmp && cat STATE.md", []),
+        # into the scratch folder, then a bucket by its bare name (2026-10-11: such a session got no record)
+        (f"mkdir -p {S}b7/{{briefs,reports}} && cd .claude/scratch && cat > INDEX.md <<'EOF'\n| b7 | OPEN |\nEOF\n"
+         "cd b7 && cat > STATE.md <<'EOF'\n# STATE\nEOF\ncat > FINDINGS.md <<'EOF'\n- x\nEOF",
+         [("b7", "STATE", True), ("b7", "FINDINGS", True)]),
+        ("cd /d/p/.claude/scratch/ && cat >> b7/DECISIONS.md <<'EOF'\n- W01 x\nEOF\ngrep -c x a/STATE.md",
+         [("b7", "DECISIONS", True), ("a", "STATE", False)]),
+        ("cd .claude/scratch && cd /tmp && cat STATE.md", []),
+        ("cd .claude/scratch && cd .. && cat STATE.md", []),
         # code that writes through a name, and a script file written to run next
         (f"python - <<'EOF'\np = r'{S}a/STATE.md'\nt = open(p, encoding='utf-8').read()\n"
          f"open(p, 'w', encoding='utf-8').write(t)\nEOF", [("a", "STATE", True)]),
