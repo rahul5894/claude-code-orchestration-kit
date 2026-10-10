@@ -7,7 +7,9 @@ off writes, under <root>/.claude/:
                         a subagent loads it here (measured live 2026-09-23, 2.1.280); outputStyle
                         "default" only when the style in force here is a kit style - a style the
                         project or you chose yourself stays
-on undoes exactly what off recorded in kit-off, and nothing else. settings.local.json is the
+on undoes what off recorded in kit-off, except that it never brings a kit style back: it leaves
+the project on the default style, writing outputStyle "default" if a kit style would otherwise
+be in force (the user's rule, 2026-10-10). settings.local.json is the
 per-machine settings file. kit-off is a plain file: gitignore it in a shared repo, or commit it
 to switch the kit off in every clone. An unreadable settings.local.json stops the script before
 anything is written. /kit-off, /kit-on and /kit-uninstall call this."""
@@ -122,14 +124,18 @@ def on(root):
         if not data["claudeMdExcludes"]:
             del data["claudeMdExcludes"]
     if did.get("style") and data.get("outputStyle") == "default":
-        if did.get("old_style"):
-            data["outputStyle"] = did["old_style"]
-        else:
-            del data["outputStyle"]
-    if os.path.isfile(sf):
+        del data["outputStyle"]
+    # The user runs the default style everywhere (2026-10-10): on never puts a kit style back,
+    # and one in force from the project's or the user's settings is overridden here, where
+    # settings.local.json beats both.
+    pinned = style_in_force(root, data) in KIT_STYLES
+    if pinned:
+        data["outputStyle"] = "default"
+    if os.path.isfile(sf) or pinned:
         save(sf, data)
     os.remove(marker)
-    print(f"kit ON in {root}. Hooks are on now; the rules load in the next new chat here.")
+    print(f"kit ON in {root}, style {style_in_force(root, data) or 'default'}. "
+          "Hooks are on now; the rules load in the next new chat here.")
 
 
 def _selftest():
@@ -169,15 +175,16 @@ def _selftest():
     _, marker, mid, end = rt(None)
     ok(mid == {"claudeMdExcludes": [EXCLUDE], "outputStyle": "default"},
        "no settings file: off excludes the rules and sets the default style")
-    ok(end == {} and not os.path.exists(marker), "... and on leaves {} and no marker")
+    ok(end == {"outputStyle": "default"} and not os.path.exists(marker),
+       "... and on keeps default over the user's kit style, no marker")
     own = {"outputStyle": "Concise", "claudeMdExcludes": ["**/x.md"], "permissions": {"allow": ["Bash(ls)"]}}
     _, _, mid, end = rt(json.dumps(own))
     ok(mid["outputStyle"] == "Concise" and mid["claudeMdExcludes"] == ["**/x.md", EXCLUDE],
        "a style of your own and your excludes survive off")
     ok(end == own, "... and on restores the file exactly")
     _, _, mid, end = rt('{"outputStyle": "orchestrator"}')
-    ok(mid["outputStyle"] == "default" and end == {"outputStyle": "orchestrator"},
-       "a kit style becomes default, and on puts it back")
+    ok(mid["outputStyle"] == "default" and end == {"outputStyle": "default"},
+       "a kit style becomes default, and on never puts it back")
     _, _, mid, end = rt(None, project='{"outputStyle": "Explanatory"}')
     ok("outputStyle" not in mid and end == {},
        "the project's own committed style is left in force (refuter-02)")
@@ -185,15 +192,16 @@ def _selftest():
     off(root)
     off(root)
     on(root)
-    ok(load(paths(root)[2]) == {}, "off twice, then on: still a full undo")
+    ok(load(paths(root)[2]) == {"outputStyle": "default"}, "off twice, then on: one undo, style default")
     _, _, mid, end = rt(json.dumps({"claudeMdExcludes": [EXCLUDE]}))
-    ok(end == {"claudeMdExcludes": [EXCLUDE]}, "an exclude that was already yours is not removed by on")
+    ok(end == {"claudeMdExcludes": [EXCLUDE], "outputStyle": "default"},
+       "an exclude that was already yours is not removed by on")
     root = tempfile.mkdtemp(dir=base)
     off(root)
     with open(paths(root)[1], "w", encoding="utf-8") as f:
         f.write("1")
     on(root)
-    ok(load(paths(root)[2]) == {} and not os.path.exists(paths(root)[1]),
+    ok(load(paths(root)[2]) == {"outputStyle": "default"} and not os.path.exists(paths(root)[1]),
        "a hand-edited record: on still takes the kit's two values back (refuter-02)")
     root = tempfile.mkdtemp(dir=base)
     d, marker, sf = paths(root)
@@ -220,8 +228,11 @@ def _selftest():
     _, marker, mid, end = rt(None)
     ok(mid == {"claudeMdExcludes": [EXCLUDE]} and end == {} and not os.path.exists(marker),
        "no user style (as installed): off excludes the rules only, on leaves {}")
+    _, _, mid, end = rt(None, project='{"outputStyle": "orchestrator"}')
+    ok(mid["outputStyle"] == "default" and end == {"outputStyle": "default"},
+       "a kit style the project committed: on overrides it with default in settings.local.json")
     shutil.rmtree(base, ignore_errors=True)
-    total = 12
+    total = 13
     print(f"{total - len(fails)}/{total} passed")
     return 1 if fails else 0
 

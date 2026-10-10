@@ -82,7 +82,7 @@ kit_off self-check: 11/11 passed
 kit_digest self-check: 35/35 passed
 kit_chain self-check: 46/46 passed
 kit-session-end self-check: 8/8 passed
-kit-switch self-check: 12/12 passed
+kit-switch self-check: 13/13 passed
 scan-project self-check: 38/38 passed
 done. ...
 ```
@@ -452,7 +452,7 @@ report format. The skill is worth keeping, so the kit ships its own copy at
 - [ ] the same run printed `kit_digest self-check: 35/35 passed`
 - [ ] the same run printed `kit_chain self-check: 46/46 passed`
 - [ ] the same run printed `kit-session-end self-check: 8/8 passed`
-- [ ] the same run printed `kit-switch self-check: 12/12 passed`
+- [ ] the same run printed `kit-switch self-check: 13/13 passed`
 - [ ] the same run printed `scan-project self-check: 38/38 passed`
 - [ ] `verify_live.py` C6 lists no unreviewed plugin
 - [ ] In a new Claude Code session, asking Claude to read a 300+ line `.md` whole is

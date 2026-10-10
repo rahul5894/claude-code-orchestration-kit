@@ -734,6 +734,10 @@ chk(su.get('subagentPromptCacheTtl') == '1h', 'settings: subagentPromptCacheTtl 
 # install never overwrites the user's own; install.ps1 takes back only a leftover 'kit-lean'.
 chk('outputStyle' not in su, 'settings: no outputStyle (kit styles are opt-in)',
     str(su.get('outputStyle')))
+# The user runs default everywhere (2026-10-10): /kit-on never restores a kit style it replaced.
+_ksw = open('kit_switch.py', encoding='utf-8').read() if os.path.isfile('kit_switch.py') else ''
+chk('pinned = style_in_force(root, data) in KIT_STYLES' in _ksw and 'did["old_style"]' not in _ksw,
+    '/kit-on leaves the project on the default style, never kit-lean or orchestrator')
 # The default branches a worktree from the default branch, hiding local work from the agent.
 chk(su.get('worktree', {}).get('baseRef') == 'head', 'settings: worktree.baseRef head',
     str(su.get('worktree')))
