@@ -510,6 +510,14 @@ with open(tx1, "w", encoding="utf-8") as f:
          "input": {"file_path": os.path.join(TASKP, ".claude", "scratch", "t1", "STATE.md")}}]}}) + "\n")
 run("stdin", TASKP, pid=525252, sid="lgC-0000-4000-8000-00000000000c", transcript=tx1)
 o_t = run("stdin", TASKP, source="clear", pid=525252, sid="lgD-0000-4000-8000-00000000000d")
+run("stdin", TASKP, pid=535353, sid="lgE-0000-4000-8000-00000000000e")  # another window: a chat of no task
+log_entry(TASKP, "lgE-0000-4000-8000-00000000000e", "a quick question", "a quick answer", 0)
+o_m = run("stdin", TASKP, source="clear", pid=535353, sid="lgF-0000-4000-8000-00000000000f")
+extra.append((marked(context(o_m)) and marked(context(o_m))[0].startswith("- lgE-") and "t1 [OPEN]" in context(o_m)
+              and "conversation had no task - /continue alone resumes it" in context(o_m)
+              and "conversation had no task" not in context(o_t),
+              "an open task elsewhere and this window's last session had none: that session is marked and the "
+              "route says /continue resumes it; a window with its own task gets no such line"))
 extra.append(("t1 [OPEN]: go on (this window's task)" in context(o_t) and not marked(context(o_t))
               and "an older chat" in context(o_t),
               "a window whose last session worked on a task resumes the task; the log is listed, unmarked"))
@@ -521,6 +529,10 @@ extra.append((cb == ["- bk4-0000-4000-8000-000000000004", "- bk2-0000-4000-8000-
                      "- bk3-0000-4000-8000-000000000003"],
               "entries written at once (a backfill) are ordered by their session's own end, newest first; one "
               "that ended 25 days ago is left out though its file is new"))
+no_pointer = "older: .remember/" not in context(run("stdin", BACKP))
+os.makedirs(os.path.join(BACKP, ".remember"))
+extra.append((no_pointer and "(older: .remember/*.md, the remember plugin's summaries)" in context(run("stdin", BACKP)),
+              "where the remember plugin ran before, the log's head names its summaries (.remember/); elsewhere not"))
 
 # A journal plugin stays off where the kit is on (bucket kit-records-integration, D002): a start puts
 # remember's `false` into settings.local.json when the user enabled it and the file says nothing of

@@ -113,9 +113,10 @@ ROUTE = ("Choose from the cards: open no bucket file before the user has picked 
          "task it belongs to, a closed task it continues, or a new task - confirmed in one "
          "question. A first request that plainly belongs to one task, with no /continue: say "
          "which and offer to continue it there. After the pick, the task skill's 'Continue a "
-         "bucket' step (`/task <slug>`) reads that task's whole history; the others stay as they are. "
-         "No card marked (this window's task) but a session marked (this window's last session): that "
-         "conversation had no task - /continue alone resumes it, its digest read whole.")
+         "bucket' step (`/task <slug>`) reads that task's whole history; the others stay as they are.")
+# Only when a session of the log is marked: ~200 characters no other start needs.
+ROUTE_LOG = (" No card marked (this window's task) but a session marked (this window's last session): that "
+             "conversation had no task - /continue alone resumes it, its digest read whole.")
 LOG_ROUTE = ("If the user says continue or /continue with no task named: the session marked (this window's "
              "last session) is what this window did before /clear - resume it, its digest read whole; with "
              "none marked, ask what to work on. A request is routed as ~/.claude/commands/continue.md says.")
@@ -590,8 +591,13 @@ def main():
         if closed:
             rows += [CLOSED_HEAD] + [f"- {s} (closed {d})" + (f": {a}" if a else "") for d, s, a in closed]
         if logs:
-            rows += [LOG_HEAD] + logs
-        route = [] if cards_mode else [ROUTE] if buckets else [LOG_ROUTE] if logs else []
+            # The remember plugin's summaries stay on disk where it ran before the kit switched it off
+            # (D002): named, so an older session is still found when asked for.
+            old = os.path.isdir(os.path.join(scratch_root, ".remember")) and not linked(os.path.join(scratch_root, ".remember"))
+            rows += [LOG_HEAD + (" (older: .remember/*.md, the remember plugin's summaries)" if old else "")] + logs
+        marked = any(r.endswith(LOG_MINE) for r in logs)
+        route = ([] if cards_mode else [ROUTE + (ROUTE_LOG if marked else "")] if buckets
+                 else [LOG_ROUTE] if logs else [])
         lines = fit(([CARDS] if buckets else []) + rows + route,
                     (CARDS_CAP if cards_mode else CONTEXT_CAP) - len("\n\n".join(context)) - 2)
         if cards_mode:
