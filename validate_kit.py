@@ -1053,6 +1053,18 @@ chk('def scratch_ok' in _ki and 'def bucket_dir' in _ki and 'scratch_ok(root)' i
 chk('SESSIONS.md whole' in _tk and 'Step back only on a gap' in _tk and "Never read another bucket's records" in _tk
     and 'Priority: P2' in _tk and 'recommend one' in _ct and 'RECOMMEND one' in _ks,
     'task.md: /continue reads SESSIONS.md, steps back by session, never another task; 2+ free tasks -> recommend one')
+# /continue is the one way in (2026-10-10, bucket continue-router): it decides from each task's card,
+# as a skill's description decides the skill, and reads only the picked task's history. Live
+# baseline before it: a request was never asked about (0/10), a closed task's follow-up opened a
+# second task beside it (2/2), an ambiguous one was guessed (2/2).
+chk('Open no' in _ct and 'before the user has picked a task' in _ct and '--cards' in _ct
+    and 'new: <the request>' in _ct and 'queue: <the request>' in _ct and 'Reopen a closed task' in _ct
+    and 'AskUserQuestion' in _ct and 'also when one task clearly fits' in _ct
+    and 'About: <one line' in _tk and '`About:` is the task' in _tk and 'starts with `new:`' in _tk
+    and 'def card_lines' in _ks and 'def closed_cards' in _ks and 'CONTEXT_CAP = 9500' in _ks
+    and '"--cards"' in _ks and 'Choose from the cards' in _ks,
+    '/continue routes from task cards (About line, state, next step; closed tasks too), asks once, '
+    'reads only the picked task; the note fits the 10,000-character hook cap')
 # Which task a session is filed under (2026-10-10, D008): a note counts as written only when the
 # shell command's write TARGETS it. The test it replaced - any `>` anywhere, so `2>/dev/null`
 # beside a read - filed sessions under closed tasks and could point /clear at the wrong one.

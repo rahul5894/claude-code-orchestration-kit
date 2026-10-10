@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 
 HOOK = os.path.join(os.path.dirname(os.path.abspath(__file__)), "kit-session-start.py")
 
@@ -92,6 +93,9 @@ def run(how, root, project_dir=None, source="startup", pid=None, sid=None, trans
         p = subprocess.run([sys.executable, HOOK], input=raw, capture_output=True, cwd=root, env=env)
     elif how == "check":
         p = subprocess.run([sys.executable, HOOK, "--check", root], capture_output=True, env=env)
+    elif how == "cards":
+        p = subprocess.run([sys.executable, HOOK, "--cards", root], capture_output=True, env=env)
+        return {"_text": p.stdout.decode("utf-8", "replace")}
     else:
         p = subprocess.run([sys.executable, HOOK], input=b"{not json",
                            capture_output=True, cwd=root, env=env)
@@ -253,6 +257,92 @@ os.remove(os.path.join(NEW, ".claude", "scratch", "older", "STATE.md"))
 o = run("stdin", NEW)
 extra.append((o.get("systemMessage", "").endswith("resume newer."),
               "one free handoff left -> /continue resumes it unasked"))
+
+# Task cards (bucket continue-router): each open task's own short description from its STATE.md,
+# with fallbacks for the shapes real STATE.md files have; the tasks closed in the last 14 days.
+def state(root, slug, body, age_days=0, base=None):
+    d = os.path.join(root, ".claude", "scratch", *([base] if base else []), slug)
+    os.makedirs(d, exist_ok=True)
+    p = os.path.join(d, "STATE.md")
+    with open(p, "w", encoding="utf-8") as f:
+        f.write(body)
+    t = time.time() - age_days * 86400
+    os.utime(p, (t, t))
+
+
+def ago(days):
+    return time.strftime("%Y-%m-%d", time.localtime(time.time() - days * 86400))
+
+
+def lines_after(text, start):
+    """The lines that follow the first line starting with `start`."""
+    ls = text.split("\n")
+    i = next((j for j, s in enumerate(ls) if s.startswith(start)), None)
+    return ls[i + 1:] if i is not None else None
+
+
+CARD = bucket_project("cards", True, [("about-one", "OPEN", "commit is left"),
+                                      ("obj-one", "BLOCKED", "wait for the delays"),
+                                      ("title-one", "OPEN", "see STATE.md"),
+                                      ("bare-one", "OPEN", "x")])
+state(CARD, "about-one", "# STATE — about-one\n<!-- c -->\nAbout: **Dark mode** for the login page\n"
+                         "Updated: x   Status: OPEN — code done, commit left   Priority: P2\n## Objective\nnot this\n"
+                         "## Next action\nOnly the commit is left: run the gate, then commit\n")
+state(CARD, "obj-one", "# STATE — obj-one\n**Status:** BLOCKED on the user\n## Objective\n<!-- c -->\n\n"
+                       "- Retry failed payments 3 times\n## Next action\nwait for the delays\n")
+state(CARD, "title-one", "# STATE — title-one (NPN-88 Pima County AZ)\nUpdated: x   Status: OPEN\n## Done\n- a\n")
+state(CARD, "bare-one", "# F-603 — STATE\n- **Item:** x\n")
+os.makedirs(os.path.join(CARD, ".claude", "scratch", "about-one", "digests"))
+for name in ("s1.json", "s2.json", "s1.md"):
+    open(os.path.join(CARD, ".claude", "scratch", "about-one", "digests", name), "w").close()
+state(CARD, "closed-new", f"# STATE\nAbout: Avatar upload with a square crop\nStatus: CLOSED {ago(2)}\n", 2)
+state(CARD, "closed-old", f"# STATE\nAbout: old work\nStatus: CLOSED {ago(20)}\n", 20)
+state(CARD, "closed-moved", f"# STATE — closed-moved\n## Objective\nCSV export\nStatus: CLOSED {ago(1)}\n", 1, "_closed")
+state(CARD, "closed-nodate", "# STATE\nStatus: CLOSED\n", 1)
+state(CARD, "open-unlisted", "# STATE\nStatus: OPEN\n")
+c = context(run("stdin", CARD))
+extra.append(("  about: Dark mode for the login page" in c and "  state: OPEN — code done, commit left" in c
+              and "  next step: Only the commit is left: run the gate, then commit" in c
+              and " · 2 sessions" in c.split("- about-one [OPEN]")[1].split("\n")[0],
+              "card: About line (bold dropped), a Status that says more, the STATE next step, 2 sessions"))
+extra.append(("  about: Retry failed payments 3 times" in c and "  state: BLOCKED on the user" in c
+              and "next step: wait for the delays" not in c and "  about: NPN-88 Pima County AZ" in c,
+              "card fallbacks: Objective's first line, the title's words; a next step the row has is not repeated"))
+extra.append(((lines_after(c, "- bare-one [OPEN]: x") or ["  "])[0][:2] != "  " and "  state: OPEN\n" not in c,
+              "a STATE.md that gives no about, state or step adds no line - nothing guessed"))
+extra.append(("- closed-new (closed " + ago(2) + "): Avatar upload with a square crop" in c
+              and "- closed-moved (closed " + ago(1) + "): CSV export" in c and "- closed-nodate (closed " in c
+              and "closed-old" not in c and "open-unlisted" not in c and "Closed in the last 14 days" in c,
+              "closed in the last 14 days are listed (also in _closed/, no date = mtime); older and open ones are not"))
+c = context(run("stdin", CARD, source="compact"))
+extra.append(("about-one [OPEN]" in c and "  about:" not in c and "closed-new" not in c,
+              "after a compaction: the short rows, no card lines, no closed list"))
+t = run("cards", CARD)["_text"]
+extra.append(("  about: Dark mode for the login page" in t and "- closed-new (closed " in t
+              and "Choose from the cards" not in t and not t.lstrip().startswith("{"),
+              "--cards prints the cards as plain text, without the routing note"))
+with open(os.path.join(PRIVATE_TMP, "kit-window-424242.json"), "w", encoding="utf-8") as f:
+    json.dump({"sid": "s", "root": CARD, "transcript": "", "bucket": "obj-one"}, f)
+t = run("cards", CARD, pid=424242)["_text"]
+extra.append(("- obj-one [BLOCKED]: wait for the delays (this window's task)" in t
+              and json.load(open(os.path.join(PRIVATE_TMP, "kit-window-424242.json"), encoding="utf-8"))["sid"] == "s",
+              "--cards marks this window's task from its record, and writes no window record"))
+DONE = bucket_project("cards-done", True, [("fin", "DONE", "none")])
+state(DONE, "fin", f"# STATE\nAbout: the finished one\nStatus: CLOSED {ago(3)}\n", 3)
+extra.append(("- fin (closed " in run("cards", DONE)["_text"] and run("stdin", DONE) == {}
+              and "No task buckets here" in run("cards", WITH)["_text"],
+              "--cards lists closed tasks with none open (the note stays silent); no scratch -> says so"))
+BIG = bucket_project("cards-big", True, [(f"t{i}", "OPEN", "n" * 300) for i in range(10)])
+for i in range(10):
+    state(BIG, f"t{i}", f"# STATE\nAbout: {'a' * 300}\nUpdated: x   Status: OPEN {'s ' * 150}\n## Next action\n{'q' * 300}\n",
+          age_days=i / 100)
+state(BIG, "t9", "# STATE\nStatus: OPEN\n" + "z" * 7000, 0)
+c = context(run("stdin", BIG))
+cc = context(run("stdin", BIG, source="compact"))
+extra.append((len(c) <= 9500 and all(f"- t{i} [OPEN]" in c for i in range(2, 10)) and "RECOMMEND one" in c
+              and len(cc) <= 10000 and "z" * 1000 in cc and "cut to fit" in cc,
+              f"10 long cards fit the 10,000-character hook cap ({len(c)} chars, every row kept); "
+              f"compact + a 7 KB STATE.md too ({len(cc)})"))
 
 # Timeline upkeep (bucket handoff-timeline): a session whose window died with no SessionEnd is
 # finished at the next start; the previous session of THIS window is never touched (its own

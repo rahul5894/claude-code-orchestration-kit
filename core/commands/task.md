@@ -33,10 +33,14 @@ Then ask: continue one of these, or start something new?
 
 ## 3. A sentence given: continue or open
 
-Compare the sentence to the OPEN and BLOCKED buckets.
-- Same objective as an existing bucket: continue it (step 5).
-- A different objective: open a new bucket (step 4), even if it touches the same files.
-- Not sure: ask one question, "New task, or part of <slug>?", and wait.
+- It starts with `new:` - I chose a new task in `/continue`: open it (step 4) with the rest of
+  the sentence as the request.
+- It starts with `queue:` - I chose to finish another task first: open the bucket (step 4) with
+  `Next action: Not started - queued on <date> from /continue`, add its INDEX row, and do no
+  work on it.
+- Otherwise route it as `/continue <sentence>` does (`~/.claude/commands/continue.md`, steps
+  3-5), from the task cards: the open task it belongs to (step 5), a closed one it continues
+  (reopened), or a new bucket (step 4), even if it touches the same files - one question first.
 
 ## 4. Open a new bucket
 
@@ -61,6 +65,7 @@ Compare the sentence to the OPEN and BLOCKED buckets.
 ```markdown
 # STATE — <slug>
 <!-- REPLACED, never appended. History lives in FINDINGS/DECISIONS, SESSIONS.md and git. -->
+About: <one line - what this task is, in the words the user uses for it>
 Updated: <date>   Status: OPEN   Priority: P2
 <!-- Priority: P1 now / P2 normal / P3 later - the session-start list shows it; /continue recommends by it -->
 ## Objective
@@ -83,6 +88,11 @@ branch <x> @ <sha>, tree clean|N dirty
 ```
 STATE.md is the handoff a fresh session resumes from. It must make the next session need
 nothing from this conversation, in as few tokens as that takes:
+- **`About:` is the task's card**, as a skill has a description: one line, at most ~160
+  characters - what the task is and what it covers, in the words the user uses for it (the
+  feature, screen, ticket). `/continue` matches a request to a task from it without opening the
+  bucket, so keep it true at every rewrite; a bucket made before it existed gets one at its
+  next handoff.
 - **Only what the next session cannot rebuild.** Never what `git status`/`git diff`, the code
   or a file already says; point at it instead (`install.ps1:87`, `FINDINGS:23`, `D007`), and
   at any doc that already holds analysis done here, so it is not redone.
@@ -129,7 +139,9 @@ nothing from this conversation, in as few tokens as that takes:
 
 4. Add one line for the bucket to the index.
 5. Tell me in one line: "Opened bucket <slug>." Then show the objective and the proposed
-   scope in and out. **Wait for me to confirm the scope** before starting the work.
+   scope in and out. **Wait for me to confirm the scope** before starting the work - unless
+   the request came as `new:` (I already chose it in `/continue`): then state the scope in one
+   line and start. A `queue:` bucket stops here.
 
 ## 5. Continue a bucket
 
@@ -167,7 +179,8 @@ going on: two windows writing one `STATE.md` lose each other's lines.
 3. Check `briefs/` against `reports/`. **Every brief must have a report.** A brief with no
    report means that agent never reported. List it as UNKNOWN, never as "nothing found".
 4. Report briefly: objective, what is settled, what is open, unreported briefs,
-   and the single next action. Then do the next action.
+   and the single next action. Then do the next action - or, when `/continue` brought a request
+   for this task (quoted under User said), that request first.
 
 ## While a bucket is open
 

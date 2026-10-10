@@ -74,7 +74,7 @@ kit-subagent-start: registered in settings.json
 kit-context: registered in settings.json
 kit-session-end: registered in settings.json
 md-guard self-check: 177/177 passed
-kit-session-start self-check: 39/39 passed
+kit-session-start self-check: 48/48 passed
 kit-subagent-report self-check: 12/12 passed
 kit-subagent-start self-check: 19/19 passed
 kit-context self-check: 48/48 passed
@@ -444,7 +444,7 @@ report format. The skill is worth keeping, so the kit ships its own copy at
 ## 7. Final checklist
 
 - [ ] `pwsh install.ps1` printed `md-guard self-check: 177/177 passed`
-- [ ] the same run printed `kit-session-start self-check: 39/39 passed`
+- [ ] the same run printed `kit-session-start self-check: 48/48 passed`
 - [ ] the same run printed `kit-subagent-report self-check: 12/12 passed`
 - [ ] the same run printed `kit-subagent-start self-check: 19/19 passed`
 - [ ] the same run printed `kit-context self-check: 48/48 passed`
