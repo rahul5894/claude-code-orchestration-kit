@@ -460,6 +460,51 @@ try:
     told(batch(p, s), 46)
     add(p, asst(112_000))
     ok(blocked(run(p, s), 56), "told at 46% mid-turn, the turn ends at 56% -> the new band blocks")
+
+    # The auto-compact window (code.claude.com/docs/en/model-config, 2026-10-11): set lower than
+    # the model's, the alert counts against it - else compaction runs before the alert fires.
+    keys = ("CLAUDE_CODE_AUTO_COMPACT_WINDOW", "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE", "CLAUDE_PROJECT_DIR",
+            "USERPROFILE", "HOME")
+    saved = {k: os.environ.get(k) for k in keys}
+    ach = tempfile.mkdtemp(prefix="kit-ac-")
+    try:
+        os.environ["USERPROFILE"] = os.environ["HOME"] = ach
+        os.environ["CLAUDE_PROJECT_DIR"] = os.path.join(ach, "proj")
+        os.makedirs(os.path.join(ach, ".claude"))
+        os.makedirs(os.path.join(ach, "proj", ".claude"))
+        for k in keys[:2]:
+            os.environ.pop(k, None)
+        w = {"none": kctx.window("claude-opus-5-5")}
+        os.environ["CLAUDE_CODE_AUTO_COMPACT_WINDOW"] = "200000"
+        w["env"] = kctx.window("claude-opus-5-5")
+        os.environ["CLAUDE_CODE_AUTO_COMPACT_WINDOW"] = "500k"
+        w["env_k"] = kctx.window("claude-opus-5-5")
+        os.environ.pop("CLAUDE_CODE_AUTO_COMPACT_WINDOW")
+        with open(os.path.join(ach, ".claude", "settings.json"), "w", encoding="utf-8") as fh:
+            json.dump({"autoCompactWindow": "600k", "modelSettings": {"claude-opus-5-5": {"autoCompactWindow": "300k"}}}, fh)
+        w["per_model"], w["top"] = kctx.window("claude-opus-5-5"), kctx.window("claude-fable-5-1")
+        with open(os.path.join(ach, "proj", ".claude", "settings.local.json"), "w", encoding="utf-8") as fh:
+            json.dump({"autoCompactWindow": 250}, fh)
+        w["local"] = kctx.window("claude-opus-5-5")
+        os.environ["CLAUDE_AUTOCOMPACT_PCT_OVERRIDE"] = "50"
+        w["pct"] = kctx.window("claude-opus-5-5")
+        with open(os.path.join(ach, ".claude", "settings.json"), "w", encoding="utf-8") as fh:
+            json.dump({"autoCompactWindow": "auto"}, fh)
+        os.remove(os.path.join(ach, "proj", ".claude", "settings.local.json"))
+        w["pct_only"] = kctx.window("claude-opus-5-5")
+    finally:
+        for k, v in saved.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+        shutil.rmtree(ach, ignore_errors=True)
+    ok(w["none"] == 1_000_000 and w["env"] == 200_000 and w["env_k"] == 100_000,
+       "auto-compact env var: a plain count is the window; '500k' reads as 500 -> 100K, as Claude Code reads it")
+    ok(w["per_model"] == 300_000 and w["top"] == 600_000 and w["local"] == 250_000,
+       "autoCompactWindow: per model beats the file's top-level key; the smallest of user/project/local counts")
+    ok(w["pct"] == 125_000 and w["pct_only"] == 500_000,
+       "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE lowers the point, also on the model's own window; 'auto' sets none")
 finally:
     shutil.rmtree(tmp, ignore_errors=True)
     for sid in sessions:

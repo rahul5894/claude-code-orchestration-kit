@@ -73,11 +73,11 @@ kit-subagent-start: registered in settings.json
 kit-context: registered in settings.json
 kit-context (mid-turn): registered in settings.json
 kit-session-end: registered in settings.json
-md-guard self-check: 223/223 passed
+md-guard self-check: 230/230 passed
 kit-session-start self-check: 68/68 passed
 kit-subagent-report self-check: 16/16 passed
 kit-subagent-start self-check: 25/25 passed
-kit-context self-check: 62/62 passed
+kit-context self-check: 65/65 passed
 kit_off self-check: 13/13 passed
 kit_digest self-check: 41/41 passed
 kit_chain self-check: 61/61 passed
@@ -265,7 +265,7 @@ search passes whatever the file's size - one pattern, every alternative anchored
 `-A`/`-B`/`-C`/`-v` - because it prints only the outline: it is project-records' own index of
 decisions (`grep -n "^### " docs/DECISIONS.md` in a records project), which was denied before.
 
-Check: `python ~/.claude/hooks/md-guard_test.py` prints `223/223 passed`. The test
+Check: `python ~/.claude/hooks/md-guard_test.py` prints `230/230 passed`. The test
 builds its own fixtures in a temp folder, so it runs on any machine. The installer runs
 it for you.
 
@@ -294,10 +294,12 @@ needed, `STATE.md` + digest 95%, Claude Code's own `/compact` 73%. It stays sile
 background agent runs and never blocks a headless `claude -p` run. The window is 1M unless the
 model is a known 200K one (Haiku, Sonnet 4.x, Opus 4.6 and older, claude-3*, or a
 Bedrock/Vertex/Foundry id without `[1m]`); `CLAUDE_CODE_DISABLE_1M_CONTEXT=1` makes it 200K, and
-`CLAUDE_CODE_MAX_CONTEXT_TOKENS` counts together with `DISABLE_COMPACT`. The `[1m]` marker never
+`CLAUDE_CODE_MAX_CONTEXT_TOKENS` counts together with `DISABLE_COMPACT`. A lower auto-compact
+window (`CLAUDE_CODE_AUTO_COMPACT_WINDOW`, `autoCompactWindow`, per model in `modelSettings`,
+`CLAUDE_AUTOCOMPACT_PCT_OVERRIDE`) is counted instead, so the alert comes before compaction. The `[1m]` marker never
 reaches the transcript, so the model id alone cannot say 1M. Only lines of the current
 session count, so a new session starts from 0.
-Check: `python ~/.claude/hooks/kit-context_test.py` prints `62/62 passed`.
+Check: `python ~/.claude/hooks/kit-context_test.py` prints `65/65 passed`.
 
 The task timeline (`kit_chain.py`): every session that works on a bucket - at any context %,
 not only past 45% - leaves `<bucket>/digests/<sid>.json` (its entry), `<sid>.state.md` (STATE.md
@@ -468,11 +470,11 @@ report format. The skill is worth keeping, so the kit ships its own copy at
 
 ## 7. Final checklist
 
-- [ ] `pwsh install.ps1` printed `md-guard self-check: 223/223 passed`
+- [ ] `pwsh install.ps1` printed `md-guard self-check: 230/230 passed`
 - [ ] the same run printed `kit-session-start self-check: 68/68 passed`
 - [ ] the same run printed `kit-subagent-report self-check: 16/16 passed`
 - [ ] the same run printed `kit-subagent-start self-check: 25/25 passed`
-- [ ] the same run printed `kit-context self-check: 62/62 passed`
+- [ ] the same run printed `kit-context self-check: 65/65 passed`
 - [ ] the same run printed `kit_off self-check: 13/13 passed`
 - [ ] the same run printed `kit_digest self-check: 41/41 passed`
 - [ ] the same run printed `kit_chain self-check: 61/61 passed`

@@ -167,6 +167,19 @@ CASES = [
     ("ALLOW", "Bash", {"command": f"sed -n '12p;20p' {BIG}"}, None),
     ("DENY",  "Bash", {"command": f"sed -n '12p;1,100p' {BIG}"}, None),
     ("DENY",  "Bash", {"command": f"sed -n '12p;w {tmp}/out.txt' {BIG}"}, None),
+    # a later filter over a measured stage stays small (`| awk` was denied 2026-10-11); a later
+    # stage that reads a .md of its own does not
+    ("ALLOW", "Bash", {"command": f"sed -n '12p' {BIG} | awk -F'|' '{{print NF}}'"}, None),
+    ("ALLOW", "Bash", {"command": f"sed -n 10,20p {BIG} | wc -c"}, None),
+    ("DENY",  "Bash", {"command": f"sed -n 12p {BIG} | grep x {BIG}"}, None),
+    # bash passes a quoted glob on as written (2026-10-11); PowerShell's Get-Content expands one
+    ("ALLOW", "Bash", {"command": f"cd {tmp} && git ls-files \"*.md\" | grep -v x | while read f; do "
+                                  f"echo \"$(wc -l < \"$f\") $f\"; done | sort -k3 | cut -c1-150"}, None),
+    ("DENY",  "PowerShell", {"command": f"Get-Content \"{tmp}/big*.md\""}, None),
+    # a note written after other commands on the line: its body is still data (2026-10-11)
+    ("ALLOW", "Bash", {"command": f"cd {tmp} && rm -rf {tmp}/gone && ls x 2>/dev/null; cat >> {SMALL} <<'EOF'\n"
+                                  f"- see `cat {BIG}`\nEOF"}, None),
+    ("DENY",  "Bash", {"command": f"cd {tmp} && ls x; bash <<'EOF'\ncat {BIG}\nEOF"}, None),
     ("DENY",  "Bash", {"command": f"sed -n 1,100p {BIG}"}, None),
     ("ALLOW", "Bash", {"command": f"head -c 1500 {BIG}"}, None),
     ("ALLOW", "Bash", {"command": f"tail -c 400 {BIG}"}, None),

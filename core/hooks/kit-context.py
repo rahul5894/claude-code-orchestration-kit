@@ -126,6 +126,66 @@ def flag(name):
 
 
 def window(model):
+    """The window the 45% alert counts against: the model's (model_window), or the auto-compact
+    window when one is set lower - compaction runs there, so counting against the model's window
+    would let it compact before the alert ever fired (code.claude.com/docs/en/model-config)."""
+    base = model_window(model)
+    ac = auto_compact(base, model)
+    return min(base, ac) if ac else base
+
+
+def _tokens(v):
+    """A window as /autocompact takes one: 200000, "500k", "1M" or a bare 100-1000 = thousands;
+    0 when it is none of those or outside 100K-1M."""
+    m = re.fullmatch(r"(\d+(?:\.\d+)?)\s*([km]?)", str(v).strip().lower())
+    if not m:
+        return 0
+    n = float(m.group(1)) * {"k": 1_000, "m": 1_000_000}.get(m.group(2), 1)
+    n = n * 1000 if not m.group(2) and 100 <= n <= 1000 else n
+    return int(n) if 100_000 <= n <= 1_000_000 else 0
+
+
+def auto_compact(base, model):
+    """The auto-compact window this session runs with, 0 when none is set: the env var
+    CLAUDE_CODE_AUTO_COMPACT_WINDOW (a plain token count; it beats everything), else the smallest
+    `autoCompactWindow` of the user, project and local settings - per model in modelSettings, as
+    /autocompact saves it since 2.1.288, before the file's top-level key. A session started with
+    `--autocompact` is not visible here. CLAUDE_AUTOCOMPACT_PCT_OVERRIDE (1-99) lowers the point
+    further, also on the model's own window."""
+    # Read as Claude Code reads it: its leading digits, clamped to 100K-1M ("500k" is 500 -> 100K).
+    env = re.match(r"\s*(\d+)", os.environ.get("CLAUDE_CODE_AUTO_COMPACT_WINDOW", ""))
+    win = min(max(int(env.group(1)), 100_000), 1_000_000) if env else 0
+    if not win:
+        root = os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()
+        found = []
+        for p in (os.path.join(os.path.expanduser("~"), ".claude", "settings.json"),
+                  os.path.join(root, ".claude", "settings.json"),
+                  os.path.join(root, ".claude", "settings.local.json")):
+            try:
+                with open(p, encoding="utf-8") as f:
+                    s = json.load(f)
+            except (OSError, ValueError):
+                continue
+            if not isinstance(s, dict):
+                continue
+            ms = s.get("modelSettings") if isinstance(s.get("modelSettings"), dict) else {}
+            per = next((v.get("autoCompactWindow") for k, v in ms.items()
+                        if k and isinstance(v, dict) and k in model), None)
+            n = _tokens(per) if per is not None else 0
+            n = n or _tokens(s.get("autoCompactWindow", ""))
+            if n:
+                found.append(n)
+        win = min(found) if found else 0
+    try:
+        pct = int(os.environ.get("CLAUDE_AUTOCOMPACT_PCT_OVERRIDE") or 0)
+    except ValueError:
+        pct = 0
+    if 0 < pct < 100:
+        win = (win or base) * pct // 100
+    return win
+
+
+def model_window(model):
     """The context window Claude Code gives `model`, from its id and the env it runs in.
 
     1M unless the model is one known to run 200K. The "[1m]" marker never reaches the

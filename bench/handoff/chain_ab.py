@@ -250,8 +250,13 @@ def reader(chain, arm, k, mem=False):
     if os.path.exists(dst):
         return f"{chain}/{arm}-{k}: cached"
     ps = json.load(open(chain_dir(chain, "probes.json"), encoding="utf-8"))["probes"]
+    # Round 6b (hallucination): `<arm>h` reads <arm>'s sandbox with the chain's absent.json traps
+    # appended - plausible questions no record answers; the only right answer is UNKNOWN.
+    box = arm[:-1] if arm.endswith("h") and os.path.isdir(chain_dir(chain, arm[:-1])) else arm
+    if box != arm:
+        ps = ps + json.load(open(chain_dir(chain, "absent.json"), encoding="utf-8"))["probes"]
     q = "\n".join(f"{p['id']}: {p['question']}" for p in ps)
-    prompt = READER_PROMPT.replace("{SLUG}", slug).replace("{RULES}", arm_rules(arm)).replace("{Q}", q)
+    prompt = READER_PROMPT.replace("{SLUG}", slug).replace("{RULES}", arm_rules(box)).replace("{Q}", q)
     if mem and memory_index(root):
         prompt = ("Claude Code loaded this project's auto memory index at session start (as it does in "
                   "every session):\n=== MEMORY.md ===\n" + memory_index(root) + "\n=== END MEMORY.md ===\n\n" + prompt)
@@ -261,7 +266,7 @@ def reader(chain, arm, k, mem=False):
                         "--no-session-persistence", "--model", MODEL, "--max-turns", "150",
                         "--output-format", "stream-json", "--verbose"],
                        input=prompt.encode("utf-8"), capture_output=True, timeout=3600,
-                       cwd=chain_dir(chain, arm), env=dict(os.environ, MSYS_NO_PATHCONV="1"))
+                       cwd=chain_dir(chain, box), env=dict(os.environ, MSYS_NO_PATHCONV="1"))
     calls, result, usage, cost = [], "", {}, None
     for line in r.stdout.decode("utf-8", "replace").splitlines():
         try:

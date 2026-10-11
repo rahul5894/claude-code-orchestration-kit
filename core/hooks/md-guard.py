@@ -73,10 +73,10 @@ _PATH = r"[\w./\\:~-]+"
 # A write target may also start with a plain `$VAR`/`${VAR}` or be one quoted string (masked to
 # `"___"`): the body still goes to cat/tee's stdin, and the head line is judged as it was.
 _TARGET = r"(?:\$\{?\w+\}?[\w./\\:~-]*|\"_*\"|'_*'|" + _PATH + r")"
-# Before it: `cd <path> &&` and plain assignments, `B=<path or one quoted string> &&` - the way a
-# note gets written (`B=.claude/scratch/x && cat >> $B/FINDINGS.md <<'EOF'`, denied 2026-10-11).
-# No `$(`, backtick or separator fits a value, and the head line is judged as before.
-_CD = r"\s*(?:(?:cd\s+" + _PATH + r"|\w+=(?:\"_*\"|'_*'|" + _PATH + r"))\s*&&\s*)*"
+# Before it, any commands ending in `;`, `&&` or `||` with no `<`, open quote or backtick: the body
+# still goes to the heredoc's own cat/tee (`B=x && cat >> $B/FINDINGS.md <<'EOF'` and `cd x && rm
+# -rf y; cat >> f <<'EOF'` were denied 2026-10-11). The head line is judged as before.
+_CD = r"\s*(?:(?:\"_*\"|'_*'|[^<'\"`\n])*?(?:;|&&|\|\|)\s*)?"
 HEREDOC_WRITE_RES = (
     re.compile(_CD + r"(?:cat\s*>>?\s*" + _TARGET + r"|tee\s+(?:-a\s+)?" + _TARGET + r")"
                r"\s+<<-?\s*(['\"])(\w+)\1\s*"),
@@ -287,7 +287,7 @@ def _segment_reads_big_md(cmd, base, tool, env):
     # "$f" from a loop all read big docs past a guard that took literal tokens only). What still
     # resolves to nothing - a search string, a file this command creates - reads nothing big.
     pattern = _search_pattern(cmd)
-    spelled = [s for tok in _candidates(cmd) for s in _spellings(tok, env(), base)
+    spelled = [s for tok in _candidates(cmd, quoted_globs=tool != "Bash") for s in _spellings(tok, env(), base)
                if s != pattern and "://" not in s and not s.startswith(("//", "\\\\"))]
     # A bare name may sit in a folder the segment names (`find <dir> -name x.md -exec cat`,
     # `bash -c "cd docs && cat x.md"`, `Get-Content (Join-Path docs x.md)`) - joined only when a
@@ -337,13 +337,18 @@ def _vars(cmd):
     return env
 
 
-def _candidates(seg):
+def _candidates(seg, quoted_globs=True):
     """Every token that may be a path: each shell word with its quotes removed (a path with
-    spaces, glued quoting) and its pieces (a path inside `python -c '...'`)."""
+    spaces, glued quoting) and its pieces (a path inside `python -c '...'`). quoted_globs=False
+    (bash): a path-like word whose wildcards all sit inside quotes names no file - bash passes
+    `"*.md"` on as written (`git ls-files "*.md" | ...` was denied 2026-10-11)."""
     out = []
     for word in _WORD.findall(seg):
         inner = re.sub(r"[\"']", "", word)
         if len(inner) > 1000:
+            continue
+        if (not quoted_globs and re.fullmatch(r"[\w./\\*?\[\]~:-]+", inner) and any(c in inner for c in "*?[")
+                and not any(c in _QUOTED.sub("", word) for c in "*?[")):
             continue
         out.append(inner)
         out += [p for p in _PIECES.split(inner) if p and p != inner]
@@ -594,7 +599,8 @@ def _first_output(stage, base):
 
 def _small_output(seg, base):
     """True when the segment's whole output is known and fits OUTPUT_BUDGET: its first stage
-    computed exactly, then each later stage a head/tail/grep/sort/uniq over it."""
+    computed exactly, then each later stage a head/tail or a filter over it (grep, sort, uniq,
+    wc, tr, cut, awk, sed - taken to print no more than they read) that names no .md of its own."""
     stages = _scan(seg, stages=True)
     if not stages:
         return False
@@ -615,7 +621,13 @@ def _small_output(seg, base):
                 continue
             lines = text.splitlines(True)
             text = "".join(lines[:spec[1]] if prog == "head" else (lines[-spec[1]:] if spec[1] else []))
-        elif prog not in ("grep", "sort", "uniq"):  # these print no more than they read
+        elif prog.removesuffix(".exe") in ("grep", "egrep", "fgrep", "rg", "sort", "uniq", "wc", "tr",
+                                           "cut", "awk", "gawk", "sed"):
+            # Over stdin (`| awk -F'|' '{print NF}'` was denied 2026-10-11); a stage naming a .md
+            # reads that file instead, which the first stage never measured.
+            if any(".md" in w.lower() for w in words[1:]):
+                return False
+        else:
             return False
     return len(text) <= OUTPUT_BUDGET
 
