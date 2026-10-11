@@ -71,8 +71,8 @@ try:
     t = transcript(root)
     r = run({"session_id": SID, "transcript_path": t, "cwd": root, "reason": "clear"}, root)
     ok(r.returncode == 0 and r.stdout == b"", "exit 0 and silent (Claude Code discards SessionEnd output)")
-    ok(digests(root) == [SID + ".json", SID + ".md", SID + ".state.md"],
-       "a session under 45% that wrote STATE.md: entry, verbatim digest and snapshot")
+    ok(digests(root) == [SID + ".json", SID + ".md", SID + ".state.md", SID + ".tools.md"],
+       "a session under 45% that wrote STATE.md: entry, verbatim digest, snapshot and tool trail")
     sessions = os.path.join(root, ".claude", "scratch", "alpha", "SESSIONS.md")
     ok(os.path.isfile(sessions) and f"## S1 · {SID}" in open(sessions, encoding="utf-8").read(),
        "SESSIONS.md lists the session")

@@ -74,13 +74,13 @@ kit-subagent-start: registered in settings.json
 kit-context: registered in settings.json
 kit-context (mid-turn): registered in settings.json
 kit-session-end: registered in settings.json
-md-guard self-check: 214/214 passed
+md-guard self-check: 220/220 passed
 kit-session-start self-check: 68/68 passed
 kit-subagent-report self-check: 16/16 passed
 kit-subagent-start self-check: 25/25 passed
 kit-context self-check: 62/62 passed
 kit_off self-check: 13/13 passed
-kit_digest self-check: 35/35 passed
+kit_digest self-check: 41/41 passed
 kit_chain self-check: 58/58 passed
 kit-session-end self-check: 8/8 passed
 kit-switch self-check: 18/18 passed
@@ -270,7 +270,7 @@ search passes whatever the file's size - one pattern, every alternative anchored
 `-A`/`-B`/`-C`/`-v` - because it prints only the outline: it is project-records' own index of
 decisions (`grep -n "^### " docs/DECISIONS.md` in a records project), which was denied before.
 
-Check: `python ~/.claude/hooks/md-guard_test.py` prints `214/214 passed`. The test
+Check: `python ~/.claude/hooks/md-guard_test.py` prints `220/220 passed`. The test
 builds its own fixtures in a temp folder, so it runs on any machine. The installer runs
 it for you.
 
@@ -289,10 +289,12 @@ Check: `python ~/.claude/hooks/kit-subagent-start_test.py` prints `25/25 passed`
 45%, up to 120 at 80%+) and tell you "/clear, then /continue"; the stop after that shows
 "Context N% full" once, and later stops in the same band say nothing. Once the model has
 written a bucket's `STATE.md` after that ask, every later stop writes the session digest
-(`kit_digest.py`, no model call) beside it: every user message and answer verbatim, the tool
-trail, output excerpts, secrets redacted, in `<bucket>/digests/<session>.md` (a folder with its
-own `*` `.gitignore`), current to the last turn before `/clear`; `/continue`
-reads it whole. Measured on 4 real handoffs: `STATE.md` alone answered 63% of what the next session
+(`kit_digest.py`, no model call) beside it: every user message and answer verbatim, secrets
+redacted, in `<bucket>/digests/<session>.md` (a folder with its own `*` `.gitignore`), current to
+the last turn before `/clear`; `/continue` reads it whole. Its tool trail - every call and an
+output excerpt, by turn - goes beside it in `<session>.tools.md`, grepped only on a gap (A/B,
+2026-10-11: 99.3% of the facts vs 98.6% one-file, 0 wrong answers, 31% fewer reader tokens;
+the digest read whole 64-84% smaller). Measured on 4 real handoffs: `STATE.md` alone answered 63% of what the next session
 needed, `STATE.md` + digest 95%, Claude Code's own `/compact` 73%. It stays silent while a
 background agent runs and never blocks a headless `claude -p` run. The window is 1M unless the
 model is a known 200K one (Haiku, Sonnet 4.x, Opus 4.6 and older, claude-3*, or a
@@ -304,7 +306,7 @@ Check: `python ~/.claude/hooks/kit-context_test.py` prints `62/62 passed`.
 
 The task timeline (`kit_chain.py`): every session that works on a bucket - at any context %,
 not only past 45% - leaves `<bucket>/digests/<sid>.json` (its entry), `<sid>.state.md` (STATE.md
-as it left it) and `<sid>.md` (the verbatim digest), and the bucket's `SESSIONS.md` lists those
+as it left it), `<sid>.md` (the verbatim digest) and `<sid>.tools.md` (its tool trail), and the bucket's `SESSIONS.md` lists those
 sessions oldest first, ~3 lines each. kit-context updates the entry after every turn;
 `~/.claude/hooks/kit-session-end.py`, a `SessionEnd` hook (on `/clear`, exit, logout; 5 s budget
 from its `timeout`), writes the digest; kit-session-start finishes a session whose window was
@@ -477,13 +479,13 @@ report format. The skill is worth keeping, so the kit ships its own copy at
 
 ## 7. Final checklist
 
-- [ ] `pwsh install.ps1` printed `md-guard self-check: 214/214 passed`
+- [ ] `pwsh install.ps1` printed `md-guard self-check: 220/220 passed`
 - [ ] the same run printed `kit-session-start self-check: 68/68 passed`
 - [ ] the same run printed `kit-subagent-report self-check: 16/16 passed`
 - [ ] the same run printed `kit-subagent-start self-check: 25/25 passed`
 - [ ] the same run printed `kit-context self-check: 62/62 passed`
 - [ ] the same run printed `kit_off self-check: 13/13 passed`
-- [ ] the same run printed `kit_digest self-check: 35/35 passed`
+- [ ] the same run printed `kit_digest self-check: 41/41 passed`
 - [ ] the same run printed `kit_chain self-check: 58/58 passed`
 - [ ] the same run printed `kit-session-end self-check: 8/8 passed`
 - [ ] the same run printed `kit-switch self-check: 18/18 passed`

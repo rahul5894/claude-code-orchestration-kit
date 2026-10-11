@@ -62,7 +62,8 @@ Then ask: continue one of these, or start something new?
   briefs/         with the first agent: orders given to agents; written once, never edited
   reports/        one per brief - the kit files each agent's final message here
   SESSIONS.md     the kit writes it: every session on this task, oldest first (never edit)
-  digests/        the kit writes it: per session <sid>.md (verbatim) + <sid>.state.md (its STATE)
+  digests/        the kit writes it: per session <sid>.md (what was said, verbatim), <sid>.tools.md
+                  (its tool calls and their output) and <sid>.state.md (its STATE)
 ```
 
 3. Seed the three files with exactly these headings and nothing else:
@@ -107,8 +108,10 @@ nothing from this conversation, in as few tokens as that takes:
   question, each with its why in one clause. A worry ("must not stall at 95% again") is a
   requirement. It is the one
   thing no file can give back; a cold-read test found the whys the part most often missing.
-- **No line contradicts another.** Rewrite from the last STATE.md: a fact that changed is
-  rewritten where it stands; the old one is deleted, never left beside the new one.
+- **Update it, never regenerate it.** Start from the last STATE.md and change only what
+  changed: a line still true stays word for word; a fact that changed is rewritten where it
+  stands, the old one deleted - no line contradicts another. A rewrite from memory drops what
+  the writer forgot it knew (merged-in summaries beat regenerated ones: Factory 2025, ACE 2026).
 - Fragments, not sentences. `→` for cause, numbers instead of adjectives. Paths, commands,
   errors, IDs and numbers are copied exactly, in backticks, never shortened or paraphrased.
   A trap or fix is written as it was seen, never inferred. One fact once: a finding or
@@ -120,7 +123,8 @@ nothing from this conversation, in as few tokens as that takes:
   lines at 60%, 100 at 70%, 120 at 80%+). Longer means history crept in: move it to FINDINGS.
 - **Every session that works on the bucket gets a record, written by the kit (not by you)**, at
   any context %: a session digest in the bucket's `digests/` (the whole conversation, every user
-  message and answer verbatim), this STATE.md as that session left it (`<sid>.state.md`), and
+  message and answer verbatim; its tool calls beside it in `<sid>.tools.md`), this STATE.md as
+  that session left it (`<sid>.state.md`), and
   its lines in SESSIONS.md, the task's timeline. Nothing of an earlier session is overwritten;
   the records go 7 days after the task closes. So STATE.md stays the curated snapshot of NOW -
   decisions, requirements and the next action are still yours to state; a long quote need not
@@ -179,14 +183,17 @@ going on: two windows writing one `STATE.md` lose each other's lines.
    - `digests/<sid>.md` - **whole**, and whole too the digest of any later session there marked
    `no STATE write` (it worked after the last handoff): that is the previous conversation word
    for word. Read it in `offset`/`limit` windows of ~300 lines to its end before you act (Read
-   refuses a file over 256 KB whole). No SESSIONS.md yet: the newest `digests/*.md` that is not
-   a `.state.md`. Measured on 4 real handoffs: STATE.md alone answered 63% of what the next
+   refuses a file over 256 KB whole). Its tool calls, each with an excerpt of its output, are in
+   `digests/<sid>.tools.md`: grep that on a gap (an exact command, path, number or result),
+   never read it whole. No SESSIONS.md yet: the newest `digests/*.md` that is not a
+   `.state.md` or `.tools.md`. Measured on 4 real handoffs: STATE.md alone answered 63% of what the next
    session needed, STATE.md + digest 95%. Where the two disagree, the later turn wins; where
    the repo disagrees with either, the repo wins.
    **Step back only on a gap** - a decision, requirement, trap or literal that STATE.md and the
    last digest do not explain: pick the session from SESSIONS.md by its `asked`/`next then`
    lines, FINDINGS range and decision ids; read its `digests/<sid>.state.md` (small) first,
-   then grep its `digests/<sid>.md`, last the raw transcript named in that digest's header. Say
+   then grep its `digests/<sid>.md` and `<sid>.tools.md`, last the raw transcript named in that
+   digest's header. Say
    which session you opened and why. **An earlier session is history**: take from it only what
    no later record says. Where it and a later session, STATE.md or DECISIONS.md disagree, the
    later one is true - an old snapshot's Next action is never yours. Never say a thing "was not

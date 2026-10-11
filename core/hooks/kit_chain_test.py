@@ -444,8 +444,8 @@ try:
         tk = transcript(sid, [u(sid, ts, "old work"), a(sid, ts, call("Write", file_path=note(root8, "alpha", "STATE.md"), content=state("alpha", "n")))], folder)
         os.utime(tk, (time.time() - 3600, time.time() - 3600))
     ok(kc.backfill(root8, folder) == 2 and view(root8, "alpha").count("## S") == 2
-       and "FINDINGS L" not in view(root8, "alpha") and len([f for f in os.listdir(note(root8, "alpha", "digests")) if f.endswith(".md")]) == 4,
-       "backfill: every session on disk gets entry, snapshot and digest; no line ranges guessed")
+       and "FINDINGS L" not in view(root8, "alpha") and len([f for f in os.listdir(note(root8, "alpha", "digests")) if f.endswith(".md")]) == 6,
+       "backfill: every session on disk gets entry, snapshot, digest and tool trail; no line ranges guessed")
 
     # 17. Shell commands: a note is written only when it is the write's target (2026-10-10: a
     # `2>/dev/null` made a READ of a closed task's STATE.md a write, and filed the session there).

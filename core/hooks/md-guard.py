@@ -73,7 +73,10 @@ _PATH = r"[\w./\\:~-]+"
 # A write target may also start with a plain `$VAR`/`${VAR}` or be one quoted string (masked to
 # `"___"`): the body still goes to cat/tee's stdin, and the head line is judged as it was.
 _TARGET = r"(?:\$\{?\w+\}?[\w./\\:~-]*|\"_*\"|'_*'|" + _PATH + r")"
-_CD = r"\s*(?:cd\s+" + _PATH + r"\s*&&\s*)?"
+# Before it: `cd <path> &&` and plain assignments, `B=<path or one quoted string> &&` - the way a
+# note gets written (`B=.claude/scratch/x && cat >> $B/FINDINGS.md <<'EOF'`, denied 2026-10-11).
+# No `$(`, backtick or separator fits a value, and the head line is judged as before.
+_CD = r"\s*(?:(?:cd\s+" + _PATH + r"|\w+=(?:\"_*\"|'_*'|" + _PATH + r"))\s*&&\s*)*"
 HEREDOC_WRITE_RES = (
     re.compile(_CD + r"(?:cat\s*>>?\s*" + _TARGET + r"|tee\s+(?:-a\s+)?" + _TARGET + r")"
                r"\s+<<-?\s*(['\"])(\w+)\1\s*"),

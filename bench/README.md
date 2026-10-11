@@ -325,6 +325,22 @@ The current-state points both kits still lose are one detail (`QB_ARMS fixroot`)
 short answer; it is in the current STATE.md. `note_writes_scan.py` holds the filing fix's own
 measure: of 642 note writes the old test saw, ~167 were reads, and it never saw 389 real ones.
 
+**Round 6 (2026-10-11, bucket kit-optimize-pass D003)** - the digest's tool trail (every call and
+its output excerpt, 63% of a digest's chars) moved to `<sid>.tools.md`, grepped on a gap. Arms
+built the same day from the same transcripts: `new6` = the shipped one-file digest and task.md
+at `9abc72e`, `app` = the split and the tree's task.md (`prep ... --arms new6`, then `--arms app`
+after the kit_digest change; `read ... --arms new6,app --samples 3 --memory`). The harness now
+scans each transcript as its real project (`_scan_as_real`): with the sandbox as root, a session
+that wrote its notes by absolute path had landed in the session log.
+
+| Test | One file (new6m) | Split (appm) |
+|---|---|---|
+| earlier / current-state / all | 98.3% / 99.1% / 98.6% | 99.4% / 99.1% / 99.3% |
+| confident wrong answers (of 144) | 1 | 0 |
+| by sessions back from the last (1-7) | 97-100% | 98-100%, never below new6m |
+| reader tokens / $ per run | 3.14M / $2.06 | 2.17M / $1.51 |
+| the last digest, read whole (b2s / savings / ui) | 27K / 62K / 34K tok | 10K / 15K / 5K tok |
+
 ## Kit + project-records (2026-10-11, Claude Code 2.1.29x, Opus 5.5; bucket kit-records-integration)
 
 Is the kit alone as it was before the records work (`432eae4`), does records file as much with the

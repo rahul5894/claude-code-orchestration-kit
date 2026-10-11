@@ -2,6 +2,7 @@
 Builds its own transcript in a temp dir and deletes it on the way out."""
 import json
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -174,7 +175,7 @@ try:
        "write() makes the digest and a `*` .gitignore beside it")
     for k in range(7):
         kd.write(path, os.path.join(out_dir, f"s{k + 2}.md"), {"session": f"s{k + 2}"}, 0)
-    left = [f for f in os.listdir(out_dir) if f.endswith(".md")]
+    left = [f for f in os.listdir(out_dir) if f.endswith(".md") and not f.endswith(kd.TRAIL)]
     ok(len(left) == 8 and not hasattr(kd, "KEEP") and not hasattr(kd, "prune"),
        "8 writes keep 8 digests: no count cap deletes session 1 of a long task")
     ok(not [f for f in os.listdir(out_dir) if f.endswith(".tmp")],
@@ -187,6 +188,35 @@ try:
     cut = open(os.path.join(out_dir, "cut.md"), encoding="utf-8").read()
     ok("please also check B2" in cut and "last question: what next?" not in cut,
        "write(turns=...) writes only the turns it is given")
+
+    # 2026-10-11 (bucket kit-optimize-pass D003): the tool trail goes beside the digest. The digest
+    # keeps the words, errors and reports and counts the calls; the trail holds every call and its
+    # output excerpt under the same turn numbers, redacted the same way.
+    dg = open(os.path.join(out_dir, "s1.md"), encoding="utf-8").read()
+    tr_path = os.path.join(out_dir, "s1" + kd.TRAIL)
+    tr = open(tr_path, encoding="utf-8").read() if os.path.isfile(tr_path) else ""
+    refs =re.findall(r"`s1\.tools\.md`, Turn (\d+)", dg)
+    ok(refs and all(f"### Turn {n} - " in tr for n in refs) and "`s1.tools.md`" in dg.splitlines()[4],
+       "write(): the header names the trail; each turn's call count points at the trail's same turn")
+    i_tr = tr.find("Bash: python check.py --all")
+    ok("RESULT: 41/41 passed" not in dg and "python check.py" not in dg and "Bash x" in dg
+       and i_tr >= 0 and "RESULT: 41/41 passed" in tr[i_tr:i_tr + 900],
+       "a call and its output excerpt are in the trail only; the digest counts the calls")
+    ok(LONG in dg and "**Error:**" in dg and "**User refused:**" in dg and "Report: the cap is 4096 tokens" in dg
+       and "Never force-push" in dg and "Files Edit/Write was called on" in dg,
+       "the digest keeps every user word, error, refusal, report and the files-changed line")
+    ok("[redacted]" in tr and not any(s in tr for s in ("sk-ant-api03", "3f1c0a9b8c7d6e5f6666", "Sup3rS3cretPw",
+                                                         "hunter2hunter2")),
+       "the trail is redacted like the digest")
+    ok(len(dg) < len(full) and tr and os.path.getmtime(os.path.join(out_dir, "s1.md")) >= os.path.getmtime(tr_path),
+       "the digest a resume reads whole is smaller than the one-file form, and written after its trail")
+    words = os.path.join(tmp, "words.jsonl")
+    with open(words, "w", encoding="utf-8") as f:
+        f.write(json.dumps(user("just a question")) + "\n" + json.dumps(asst(text("just an answer"))) + "\n")
+    kd.write(words, os.path.join(out_dir, "w.md"), {"session": "w"}, 0)
+    ok(os.path.isfile(os.path.join(out_dir, "w.md")) and not os.path.exists(os.path.join(out_dir, "w" + kd.TRAIL))
+       and kd.TRAIL not in open(os.path.join(out_dir, "w.md"), encoding="utf-8").read(),
+       "a session that called no tool gets no trail, and its digest names none")
     ok(kd.local_time("2026-10-07T08:15:00Z") == time.strftime(
         "%H:%M", time.localtime(1791360900)) and kd.local_time("garbage-not-a-time") == "-a-ti",
        "turn times are shown in local time; an unparsable stamp falls back to its raw slice")

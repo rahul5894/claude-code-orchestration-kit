@@ -10,6 +10,10 @@ bucket (a distractor: never the place to look).
        past 45%), no SESSIONS.md, no STATE snapshots; the old task.md resume rules.
   new  every session's digest + STATE snapshot + SESSIONS.md (kit_chain.finish over the
        transcripts); the new task.md resume rules.
+Round 6 (2026-10-11, bucket kit-optimize-pass D001 phase 2): any other arm name is built like
+`new` by the code in the tree; `new*` arms read task.md at NEW_REF, `app` reads the tree's -
+the digest's tool trail moved into <sid>.tools.md, read on a gap. Build a `new*` arm before the
+tree's kit_digest changes: prep runs the code it imports.
 Opus writes 16 probes from the whole record: 10 "earlier" (the answer is only in an earlier
 session, not in the current handoff nor the last session's digest) + 6 "any". A reader (Opus,
 Read/Grep/Glob only, --safe-mode, cwd = the sandbox) follows its arm's rules, then answers; a
@@ -46,6 +50,7 @@ CHAINS = {
     "ector": ("D:/Projects/my-scraper-project", "ector-takeoff-assumed-names", "angelina-onboarding"),
 }
 OLD_REF = "47538bf"
+NEW_REF = "9abc72e"  # round 6: the shipped task.md every `new*` arm reads
 PROBE_CAP = 30_000  # tokens per earlier-session digest shown to the probe writer
 
 PROBE_PROMPT = """You are building a test of whether an AI that resumes a LONG task after /clear can
@@ -96,6 +101,21 @@ def chain_dir(chain, *parts):
     return os.path.join(OUT, chain, *parts)
 
 
+# Round 6: since kit_chain.scan(root=...) names no bucket for a note path outside root's scratch,
+# a sandbox root filed every session that wrote its notes by absolute path in the session log
+# (savings 13c93777, b2s e0299790) and dropped their STATE snapshots. The project the transcript
+# was written in judges the paths; the records still land in the sandbox.
+_REAL = {}
+_scan = kc.scan
+
+
+def _scan_as_real(transcript, sid="", root=None, cache=None):
+    return _scan(transcript, sid, _REAL.get(root, root), cache)
+
+
+kc.scan = _scan_as_real
+
+
 def bucket_src(root, slug):
     for base in (os.path.join(root, ".claude", "scratch"), os.path.join(root, ".claude", "scratch", "_closed")):
         if os.path.isdir(os.path.join(base, slug)):
@@ -134,6 +154,11 @@ def rules(ref=None):
     return layout + "\n\n" + step
 
 
+def arm_rules(arm):
+    """old: task.md at OLD_REF; app: the tree's (round 6's candidate); any other: NEW_REF."""
+    return rules(OLD_REF if arm == "old" else None if arm == "app" else NEW_REF)
+
+
 def copy_bucket(src, dst, notes_only=True):
     os.makedirs(dst, exist_ok=True)
     for f in ("STATE.md", "FINDINGS.md", "DECISIONS.md"):
@@ -158,16 +183,20 @@ def prep(chain, arms=("new", "old")):
         copy_bucket(bucket_src(root, other), os.path.join(sb, ".claude", "scratch", other))
         with open(os.path.join(sb, "CLAUDE.md"), "w", encoding="utf-8") as f:
             f.write("# sandbox\n")
-    # new: every session's records, in both buckets, by the shipped code
-    nb = chain_dir(chain, "new")
-    if "new" in arms:
+    # every arm but old: every session's records, in both buckets, by the code imported here
+    full = [a for a in arms if a != "old"]
+    nb = chain_dir(chain, full[0] if full else "new")
+    for arm in full:
+        _REAL[chain_dir(chain, arm)] = root
         for _, sid, path in sorted(set(ss) | set(so)):
-            kc.finish(path, sid, nb, counts=False)
+            kc.finish(path, sid, chain_dir(chain, arm), counts=False)
     # old: the newest 5 digests per bucket, nothing else
     for s, lst in ((slug, ss), (other, so)) if "old" in arms else ():
         folder = os.path.join(chain_dir(chain, "old"), ".claude", "scratch", s, "digests")
-        for _, sid, path in lst[-5:]:
-            kd.write(path, os.path.join(folder, sid + ".md"), {"session": sid}, kd.cap_tokens(0, 1_000_000))
+        for _, sid, path in lst[-5:]:  # one file, the tool trail inline, as the old kit wrote it
+            if kd.ensure_folder(folder):
+                kd.write_atomic(os.path.join(folder, sid + ".md"), kd.render(
+                    kd.extract(path), {"session": sid, "transcript": path}, kd.cap_tokens(0, 1_000_000)))
     # material for the probe writer
     recs = []
     for i, (_, sid, path) in enumerate(ss[:-1], 1):
@@ -180,9 +209,9 @@ def prep(chain, arms=("new", "old")):
             "sessions_md_tokens": len(open(os.path.join(bucket, "SESSIONS.md"), encoding="utf-8").read()) // 4
             if os.path.isfile(os.path.join(bucket, "SESSIONS.md")) else 0}
     if "old" not in arms:  # the probes stay as they were; only say whether the material moved
-        with open(chain_dir(chain, "meta-new.json"), "w", encoding="utf-8") as f:
+        with open(chain_dir(chain, f"meta-{full[0]}.json"), "w", encoding="utf-8") as f:
             json.dump(meta, f, indent=1)
-        return f"{chain}: new arm rebuilt, {len(ss)} sessions, SESSIONS.md ~{meta['sessions_md_tokens']} tok"
+        return f"{chain}: {','.join(full)} rebuilt, {len(ss)} sessions, SESSIONS.md ~{meta['sessions_md_tokens']} tok"
     with open(chain_dir(chain, "meta.json"), "w", encoding="utf-8") as f:
         json.dump(meta, f, indent=1)
     with open(chain_dir(chain, "probe_input.md"), "w", encoding="utf-8") as f:
@@ -222,8 +251,7 @@ def reader(chain, arm, k, mem=False):
         return f"{chain}/{arm}-{k}: cached"
     ps = json.load(open(chain_dir(chain, "probes.json"), encoding="utf-8"))["probes"]
     q = "\n".join(f"{p['id']}: {p['question']}" for p in ps)
-    prompt = (READER_PROMPT.replace("{SLUG}", slug).replace("{RULES}", rules(OLD_REF if arm == "old" else None))
-              .replace("{Q}", q))
+    prompt = READER_PROMPT.replace("{SLUG}", slug).replace("{RULES}", arm_rules(arm)).replace("{Q}", q)
     if mem and memory_index(root):
         prompt = ("Claude Code loaded this project's auto memory index at session start (as it does in "
                   "every session):\n=== MEMORY.md ===\n" + memory_index(root) + "\n=== END MEMORY.md ===\n\n" + prompt)
@@ -309,7 +337,8 @@ def report(chains):
         return f"{x[0] * 100 / max(x[1], 1):5.1f}%"
     print(f"{'arm':5} {'earlier':>8} {'any':>8} {'all':>8} {'wrong':>5} {'avg in tok':>10} {'avg $':>7} {'calls':>6} {'distractor':>10}  "
           + " ".join(f"{c:>8}" for c in chains))
-    for arm in ("old", "new", "oldm", "newm"):  # m = with the project's MEMORY.md index (round 5)
+    known = ["old", "new", "oldm", "newm"]  # m = with the project's MEMORY.md index (round 5)
+    for arm in known + sorted(set(rows) - set(known)):
         r = rows.get(arm)
         if not r:
             continue

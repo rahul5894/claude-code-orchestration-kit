@@ -20,6 +20,11 @@ Size: BANDS is the user's table (2026-10-07) - by how full the session was, the 
 it, the oldest turns lose detail first (tool output, then narration, a folded tool trail and cut
 answers); user messages and the newest TAIL turns are never cut.
 
+Two files (bucket kit-optimize-pass D003): write() puts the tool trail - every call and its
+output excerpt, 63% of the chars of 189 real digests - in <sid>.tools.md beside <sid>.md, which
+keeps the words and a per-turn count of the calls. A resume reads <sid>.md whole and greps the
+trail only on a gap. render() without `trail` still gives the old one-file form (the bench).
+
     python kit_digest.py <transcript.jsonl> [--upto-line N] [--pct P --window W] [--out f.md]
 """
 import json
@@ -47,6 +52,7 @@ SHELLS = ("Bash", "PowerShell")
 FILE_TOOLS = ("Read", "Edit", "Write", "NotebookEdit", "MultiEdit")
 WRITE_TOOLS = FILE_TOOLS[1:]
 MAX_FILES = 80           # paths named in the header's files-changed line
+TRAIL = ".tools.md"      # the tool trail beside <sid>.md (render_trail)
 AGENTS = ("Agent", "Task")
 # Tools whose output is the file itself (on disk), a report kept apart, or bookkeeping.
 NO_OUTPUT = set(FILE_TOOLS) | set(AGENTS) | {"TodoWrite", "Skill", "ToolSearch", "TaskStop",
@@ -315,9 +321,10 @@ def _cut(body, line, what, keep=CUT_CHARS):
     return body[:keep] + f"\n[... {what} cut, {len(body) - keep} chars more at line {line}]"
 
 
-def _render_turn(i, t, level):
+def _render_turn(i, t, level, trail=None):
     """One turn as markdown. Level 0 = whole; 1 = no tool output; 2 = the user's words, a
-    folded tool trail and the answer and reports cut (narration dropped)."""
+    folded tool trail and the answer and reports cut (narration dropped). With `trail` (the
+    tool trail's file name) the calls are folded at every level: each one is in that file."""
     texts = [k for k, it in enumerate(t["items"]) if it[0] == "text"]
     last = texts[-1] if texts else -1
     out = [f"### Turn {i} - {t['at']} (transcript line {t['line']})"]
@@ -343,27 +350,28 @@ def _render_turn(i, t, level):
         elif kind == "text" and (k == last or level < 2):
             body = _cut(text, line, "answer") if level == 2 else text
             out.append(("**Assistant:** " if k == last else "*(working)* ") + body)
-    if tools and level == 2:
+    if tools and (level == 2 or trail):
         names = Counter(x.split(" ", 1)[0].rstrip(":") for x in tools)
         out.append("**Tools:** " + ", ".join(f"{n} x{c}" for n, c in names.items())
+                   + (f" - each call and its output: `{trail}`, Turn {i}" if trail else "")
                    + (f"; changed: {', '.join(dict.fromkeys(files))}" if files else ""))
     elif tools:
         out.append("**Tools:**\n" + "\n".join("- " + x for x in tools))
     return "\n\n".join(out)
 
 
-def render(turns, meta, cap):
+def render(turns, meta, cap, trail=None):
     """The digest as markdown within `cap` tokens (0 = no cap) if the cap allows it; user
     messages and the newest TAIL turns are never cut, so a tiny cap can be exceeded - said in
-    the header."""
-    parts = [_render_turn(i + 1, t, 0) for i, t in enumerate(turns)]
+    the header. `trail`: the tool trail's file name - the calls are then only counted here."""
+    parts = [_render_turn(i + 1, t, 0, trail) for i, t in enumerate(turns)]
     total = sum(map(len, parts))
     old = max(0, len(turns) - TAIL) if cap else 0
     for level in (1, 2):
         for i in range(old):
             if total // CHARS_PER_TOKEN <= cap:
                 break
-            new = _render_turn(i + 1, turns[i], level)
+            new = _render_turn(i + 1, turns[i], level, trail)
             total += len(new) - len(parts[i])
             parts[i] = new
     est = total // CHARS_PER_TOKEN
@@ -380,6 +388,9 @@ def render(turns, meta, cap):
         f"Written: {meta.get('written', '')} · context {meta.get('pct', '?')}% "
         f"({meta.get('used_k', '?')}K of {meta.get('window_k', '?')}K) · {len(turns)} turns, "
         f"{users} user messages · ~{est // 1000}K tokens{capnote}",
+        "Order: oldest first. User messages are verbatim; secrets are redacted. A turn's tool calls "
+        f"are only counted here: each call and an excerpt of its output are in `{trail}` beside "
+        "this file - grep it on a gap (an exact command, path, number or result)." if trail else
         "Order: oldest first. User messages are verbatim; most tool output is left out (re-read "
         "the file or re-run the command); secrets are redacted.",
     ]
@@ -388,6 +399,34 @@ def render(turns, meta, cap):
         head.append(f"Files Edit/Write was called on ({len(changed)}, in order; a failed call is listed "
                     "too, a shell edit is not - `git status` is the truth): " + ", ".join(f"`{p}`" for p in changed[:MAX_FILES])
                     + (f" (+{len(changed) - MAX_FILES} more)" if len(changed) > MAX_FILES else ""))
+    return "\n".join(head) + "\n\n" + "\n\n".join(parts) + "\n"
+
+
+def trail_path(path):
+    """<sid>.tools.md, the tool trail beside the digest <sid>.md."""
+    return (path[:-3] if path.endswith(".md") else path) + TRAIL
+
+
+def render_trail(turns, meta):
+    """The tool trail: every call of every turn and its output excerpt, under the digest's turn
+    numbers. Never capped - it is grepped on a gap, never read whole. "" when no tool ran."""
+    parts = []
+    for i, t in enumerate(turns):
+        calls = [text + (f"\n  -> {t['outs'][k]}" if t["outs"].get(k) else "")
+                 for k, (kind, text, _) in enumerate(t["items"]) if kind == "tool"]
+        if calls:
+            parts.append(f"### Turn {i + 1} - {t['at']} (transcript line {t['line']})\n\n"
+                         + "\n".join("- " + c for c in calls))
+    if not parts:
+        return ""
+    head = [
+        f"# TOOL TRAIL - {meta.get('session', '?')}",
+        "<!-- Written by the kit beside the session digest, no model in the loop: every tool call "
+        "and an excerpt of its output, by the digest's turn numbers. Grep it on a gap; never read "
+        "it whole. -->",
+        f"Transcript: `{meta.get('transcript', '?')}` · written {meta.get('written', '')}. Most tool "
+        "output is left out (re-read the file or re-run the command); secrets are redacted.",
+    ]
     return "\n".join(head) + "\n\n" + "\n\n".join(parts) + "\n"
 
 
@@ -425,13 +464,18 @@ def ensure_folder(folder):
 
 
 def write(transcript, out_path, meta, cap, turns=None):
-    """Write the digest of `turns` (default: the whole transcript). Returns the estimated
-    tokens written, or -1 when there was nothing to write or the bucket is gone."""
+    """Write the digest of `turns` (default: the whole transcript) and its tool trail beside it.
+    Returns the estimated tokens of the digest - what a resume reads whole - or -1 when there was
+    nothing to write or the bucket is gone."""
     if turns is None:
         turns = extract(transcript)
     if not turns or not ensure_folder(os.path.dirname(out_path)):
         return -1
-    text = render(turns, dict(meta, transcript=transcript, written=time.strftime("%Y-%m-%d %H:%M")), cap)
+    meta = dict(meta, transcript=transcript, written=time.strftime("%Y-%m-%d %H:%M"))
+    trail = render_trail(turns, meta)
+    if trail:  # before the digest: kit_chain.finish dates the pair by the digest's mtime
+        write_atomic(trail_path(out_path), trail)
+    text = render(turns, meta, cap, os.path.basename(trail_path(out_path)) if trail else None)
     write_atomic(out_path, text)
     return len(text) // CHARS_PER_TOKEN
 

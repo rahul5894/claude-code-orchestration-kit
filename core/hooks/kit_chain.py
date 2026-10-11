@@ -497,8 +497,8 @@ def render(bucket):
            [f"# SESSIONS — {os.path.basename(bucket)}",
             "<!-- Written by the kit from digests/<sid>.json - never edit. Oldest first; times local "
             f"(UTC{time.strftime('%z')}). S<n> is display order: cite a session by its sid. Per session: "
-            "digests/<sid>.md = what was said, verbatim; digests/<sid>.state.md = STATE.md as it "
-            "left it. -->",
+            "digests/<sid>.md = what was said, verbatim; <sid>.tools.md = its tool calls, grepped on a "
+            "gap; <sid>.state.md = STATE.md as it left it. -->",
             "History, oldest first: a later session overrides an earlier one, and `next then` was "
             "that session's next step - the current one is in STATE.md."])
     for i, e in enumerate(entries):

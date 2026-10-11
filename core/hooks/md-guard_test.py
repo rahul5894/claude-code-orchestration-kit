@@ -99,6 +99,14 @@ CASES = [
     # read after the string closes is real (found by /code-review 2026-09-23)
     ("DENY",  "Bash", {"command": f"echo \"\ncat > {tmp}/f <<'EOF'\n\"; cat {BIG}\nEOF"}, None),
     ("ALLOW", "Bash", {"command": f"cd {tmp} && cat >> {SMALL} <<'EOF'\n- type continue then read STATE.md\nEOF"}, None),
+    # a plain assignment before it, as notes get written (`B=<bucket> && cat >> $B/FINDINGS.md`,
+    # denied 2026-10-11): the body is data; a value that runs something keeps the line judged
+    ("ALLOW", "Bash", {"command": f"B={tmp} && cat >> $B/notes.md <<'EOF'\n- the doc: `cat {BIG}`\nEOF"}, None),
+    ("ALLOW", "Bash", {"command": f"B=\"{tmp}\" && cd {tmp} && cat >> $B/notes.md <<'EOF'\n- see cat {BIG}\nEOF"}, None),
+    ("DENY",  "Bash", {"command": f"B=$(cat {BIG}) && cat >> {tmp}/f <<'EOF'\nrow\nEOF"}, None),
+    ("DENY",  "Bash", {"command": f"B=\"$(cat {BIG})\" && cat >> {tmp}/f <<'EOF'\nrow\nEOF"}, None),
+    ("DENY",  "Bash", {"command": f"B=`bash` && cat >> {tmp}/f <<'EOF'\ncat {BIG}\nEOF"}, None),
+    ("DENY",  "Bash", {"command": f"B=x;bash <<'EOF'\ncat {BIG}\nEOF"}, None),
     # only a whitelisted write line strips its body: a separator glued to the target, a
     # second heredoc, or a process substitution hands the body to an interpreter (refuter-01)
     ("DENY",  "Bash", {"command": f"cat > {tmp}/f;bash <<'EOF'\ncat {BIG}\nEOF"}, None),

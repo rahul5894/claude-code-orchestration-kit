@@ -26,7 +26,8 @@ If it says the kit is off in this project (the default): tell the user, offer `/
 - No such card, but the note's `Recent sessions with no task` marks one
   `(this window's last session)`: before `/clear` this window talked with no task open - resume
   that conversation without asking: read its record, `.claude/scratch/_sessions/digests/<sid>.md`,
-  whole and go on from its last turn; name the open tasks in one line. It becomes a task only when
+  whole (its tool calls, `<sid>.tools.md`, only on a gap) and go on from its last turn; name the
+  open tasks in one line. It becomes a task only when
   the work does.
 - A card marked `(open in another window)` is being worked there: never take it unless named.
 - None open in a project-records project (the note's `orchestration-kit + project-records`

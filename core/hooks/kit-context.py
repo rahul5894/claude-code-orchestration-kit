@@ -26,8 +26,8 @@ the temp dir and removed once usage falls under 45% (after a compaction), so the
 crossing blocks again. Transcripts reach tens of MB: only lines containing `"usage"` or
 `"modelId"` are parsed.
 
-The session digest (kit_digest.py: every user message and answer verbatim, the tool trail,
-output excerpts; no model call) goes into the handoff's own bucket. The block writes nothing
+The session digest (kit_digest.py: every user message and answer verbatim; the tool trail and
+output excerpts beside it in <session>.tools.md; no model call) goes into the handoff's own bucket. The block writes nothing
 and names no path; every stop after it finds the bucket whose STATE.md THIS session wrote last
 (its own transcript says which) and keeps <bucket>/digests/<session>.md current, so it reaches
 the last turn before /clear and /continue finds it beside the STATE.md it reads. REASON sizes STATE.md by the band
@@ -103,7 +103,8 @@ REASON = HEAD + (
           "then type /continue.")
 # Named from the session's own transcript: "the OPEN bucket" let a window with no bucket of its
 # own hand off into a parallel window's (bucket parallel-window-resume, F5).
-WHERE_MINE = "This session's bucket is `{slug}`: rewrite .claude/scratch/{slug}/STATE.md."
+WHERE_MINE = ("This session's bucket is `{slug}`: update .claude/scratch/{slug}/STATE.md - change only "
+              "what changed, every line still true kept word for word.")
 WHERE_NONE = ("This session has touched no bucket: open one for what this conversation did, the "
               "/task way, and write its STATE.md - never another task's bucket, which may be a "
               "parallel window's.")
