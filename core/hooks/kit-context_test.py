@@ -396,6 +396,70 @@ try:
         f.write(late[25:])
     ok(first == torn == (60_000, 200_000) and kctx.usage(p, "", c) == kctx.usage(p) == (90_000, 200_000)
        and os.path.isfile(c), "usage from a kept state = a whole read; a torn last line waits for the next turn")
+
+    # 21. Mid-turn (PostToolBatch, bucket kit-optimize-pass D001): the first batch past 45% gives
+    # the model the handoff as context; the next batch in the band says nothing; a subagent's
+    # batch never counts; the turn's Stop blocks only when no STATE.md was written since.
+    def batch(path, sid, agent_id=None, env=None):
+        payload = {"session_id": sid, "transcript_path": path, "cwd": tmp,
+                   "hook_event_name": "PostToolBatch", "tool_calls": []}
+        if agent_id:
+            payload["agent_id"] = agent_id
+        return run(path, sid, raw=json.dumps(payload).encode("utf-8"), env=env)
+
+    def told(res, pct):
+        code, out = res
+        ctx = (out.get("hookSpecificOutput") or {}) if isinstance(out, dict) else {}
+        text = ctx.get("additionalContext", "")
+        return (code == 0 and ctx.get("hookEventName") == "PostToolBatch" and "decision" not in out
+                and f"{pct}%" in text and "Finish the step you are on" in text
+                and "~/.claude/commands/task.md" in text and "INDEX.md row" in text)
+
+    def add(path, *lines):
+        with open(path, "a", encoding="utf-8") as f:
+            for line in lines:
+                f.write(json.dumps(line) + "\n")
+
+    def call(name, **inp):
+        return {"type": "assistant", "isSidechain": False, "message": {"model": SMALL, "content": [
+            {"type": "tool_use", "id": uuid.uuid4().hex, "name": name, "input": inp}]}}
+
+    s = session()
+    p = transcript(asst(80_000))
+    ok(quiet(batch(p, s)), "batch at 40% -> nothing")
+    add(p, asst(92_000))
+    ok(told(batch(p, s), 46), "first batch past 45% -> the handoff as context, 'finish the step you are on'")
+    ok(quiet(batch(p, s)), "the next batch in the same band -> nothing")
+    ok(blocked(run(p, s), 46), "turn ends with no STATE.md written since the notice -> the usual block")
+    ok(quiet(run(p, s)), "and that block is the band's last word: the next stop says nothing")
+
+    s = session()
+    p = transcript(asst(92_000))
+    ok(told(batch(p, s), 46), "a second session: told mid-turn")
+    os.makedirs(os.path.join(tmp, ".claude", "scratch", "mid-a"), exist_ok=True)
+    add(p, call("Write", file_path=os.path.join(tmp, ".claude", "scratch", "mid-a", "STATE.md"), content="# STATE"))
+    ok(notice(run(p, s), 46) and not blocked(run(p, s), 46),
+       "handoff written mid-turn (Write) -> the turn's end tells the user once, never blocks")
+
+    s = session()
+    p = transcript(asst(92_000))
+    told(batch(p, s), 46)
+    os.makedirs(os.path.join(tmp, ".claude", "scratch", "mid-b"), exist_ok=True)
+    add(p, call("Bash", command="cat > .claude/scratch/mid-b/STATE.md <<'EOF'\n# STATE\nEOF"))
+    ok(notice(run(p, s), 46), "handoff written mid-turn through the shell -> told, not blocked")
+
+    s = session()
+    p = transcript(asst(92_000))
+    ok(quiet(batch(p, s, agent_id="a1b2")) and told(batch(p, s), 46),
+       "a subagent's batch says nothing and marks nothing; the main session's next batch tells")
+    s = session()
+    p = transcript(asst(92_000))
+    ok(quiet(batch(p, s, env={"CLAUDE_CODE_SESSION_ATTENDED": "0"})), "headless batch -> nothing")
+    s = session()
+    p = transcript(asst(92_000))
+    told(batch(p, s), 46)
+    add(p, asst(112_000))
+    ok(blocked(run(p, s), 56), "told at 46% mid-turn, the turn ends at 56% -> the new band blocks")
 finally:
     shutil.rmtree(tmp, ignore_errors=True)
     for sid in sessions:

@@ -1,4 +1,10 @@
-"""Stop hook: at 45% context, the finished turn hands off and the user is told to /clear.
+"""Stop + PostToolBatch hook: at 45% context the session hands off and the user is told to /clear.
+
+PostToolBatch (after each batch of tool calls, the main session's only - a payload with agent_id
+is a subagent's) gives the model STEP_REASON as additionalContext the first time a band is
+crossed mid-turn, and the band marker keeps the transcript's size at that moment. The Stop that
+ends the turn then checks: a STATE.md written since = the user is told (NOTICE); none = the
+usual block. Stop alone used to see only finished turns (bucket kit-optimize-pass D001).
 
 The user never watches the context meter, and past about half of it the model's grip on a
 long task degrades. No hook payload carries context usage or the window (probed on Claude Code
@@ -54,7 +60,7 @@ import re  # noqa: E402
 import time  # noqa: E402
 
 from kit_index import (MAX_TRANSCRIPT, context_marker, keep, read_state, records_project, resumed,  # noqa: E402
-                       scratch_root, session_bucket, session_root, write_atomic)
+                       scratch_root, session_bucket, session_root, shell_notes, write_atomic)
 from kit_index import window as window_id  # noqa: E402
 
 THRESHOLD = 45
@@ -70,8 +76,17 @@ TRUTHY = ("1", "true", "yes", "on")
 # from "next item") looked for skills/task/SKILL.md and then ran `find /` over the whole disk,
 # 2 of 2 live runs (bucket kit-records-integration, T14on); install.ps1 copies it there. Told
 # "section 4" alone, 2 of 2 runs wrote STATE.md and no INDEX.md row (T15on), so both are named.
-REASON = ("orchestration-kit: context is at {pct}% ({used}K of {window}K). Hand off now, before "
-          "any new work. {where} It is the handoff: write it by the task "
+HEAD = ("orchestration-kit: context is at {pct}% ({used}K of {window}K). Hand off now, before "
+        "any new work. ")
+# Mid-turn (PostToolBatch, bucket kit-optimize-pass D001): Stop runs only when a turn ends, and a
+# long turn crossed the bands silently - of 70 real sessions with a block the first came at 60%+
+# in 20, and one turn went 45% -> 96% and auto-compacted with no alert at all (842 tool calls,
+# qartez-mcp, 2026-10-10). A block here would stop the agentic loop until the user speaks, so the
+# same handoff goes in as context, and the Stop that ends the turn is the backstop.
+STEP_HEAD = ("orchestration-kit: context is at {pct}% ({used}K of {window}K), in the middle of "
+             "this turn. Finish the step you are on, start nothing new, then hand off. ")
+REASON = HEAD + (
+          "{where} It is the handoff: write it by the task "
           "skill's STATE rules (~/.claude/commands/task.md, sections 1 and 4: the bucket's "
           "INDEX.md row and its STATE.md - read that file, never search for it), in at most "
           "~{lines} lines (sized to how full this session is). "
@@ -101,6 +116,8 @@ RECORDS_HANDOFF = (" This project keeps project-records: with the handoff, its o
                    "STATE.md names their ids and never repeats them.")
 # Not "saved": REASON lets the model skip the handoff when nothing carries over (code-review).
 NOTICE = ("Context {pct}% full - handoff written? Next: /clear, then type /continue.")
+STEP_REASON = STEP_HEAD + REASON[len(HEAD):]
+WRITE_TOOLS = ("Write", "Edit", "MultiEdit")
 
 
 def flag(name):
@@ -251,6 +268,46 @@ def sync_digest(data, sid, pct, used, size, every=0):
     write_atomic(stamp, "")
 
 
+def read_marker(marker):
+    """(band, offset): the band last said, and - when it was said mid-turn - the transcript's
+    size at that moment; nothing said = (-1, None). A band alone is the Stop's own block."""
+    try:
+        with open(marker, encoding="utf-8") as f:
+            band, _, at = f.read().strip().partition(":")
+        return int(band), (int(at) if at else None)
+    except (OSError, ValueError):
+        return -1, None
+
+
+def wrote_state_since(data, offset):
+    """Did this session write a bucket's STATE.md after byte `offset` of its transcript: a
+    Write/Edit/MultiEdit on it, or a shell command whose write target it is (kit_index.shell_notes)?"""
+    transcript = data.get("transcript_path") or ""
+    root = scratch_root(data)
+    with open(transcript, "rb") as f:
+        f.seek(offset)
+        for raw in f:
+            if b"STATE.md" not in raw or b'"tool_use"' not in raw:
+                continue
+            try:
+                obj = json.loads(raw.decode("utf-8", "replace"))
+            except ValueError:
+                continue
+            if not isinstance(obj, dict) or obj.get("type") != "assistant" or obj.get("isSidechain"):
+                continue
+            for b in (obj.get("message") or {}).get("content") or []:
+                if not isinstance(b, dict) or b.get("type") != "tool_use":
+                    continue
+                inp = b.get("input") or {}
+                path = str(inp.get("file_path") or "").replace("\\", "/")
+                if b.get("name") in WRITE_TOOLS and path.endswith("/STATE.md") and "/.claude/scratch/" in path:
+                    return True
+                if b.get("name") in ("Bash", "PowerShell") and root and any(
+                        note == "STATE" and written for _, note, written in shell_notes(inp.get("command"), root)):
+                    return True
+    return False
+
+
 def main():
     try:
         # Explicit UTF-8, same as the other hooks: sys.stdin uses the locale codec (cp1252 on
@@ -259,17 +316,24 @@ def main():
     except Exception:
         return
     sid = str(data.get("session_id") or "")
-    used, size = usage(data.get("transcript_path") or "", sid, read_state(sid, ".usage") if sid else None)
+    step = data.get("hook_event_name") == "PostToolBatch"
+    if step and data.get("agent_id"):
+        return  # a subagent's own batch: its context is not this session's
+    transcript = data.get("transcript_path") or ""
+    used, size = usage(transcript, sid, read_state(sid, ".usage") if sid else None)
     pct = used * 100 // size
-    # The timeline entry first: a headless session or one with an agent still running is still
-    # a session that worked on its bucket (bucket handoff-timeline).
-    _try(chain_touch, data, sid, pct, size)
+    if not step:
+        # The timeline entry first: a headless session or one with an agent still running is
+        # still a session that worked on its bucket (bucket handoff-timeline). Stop only: a
+        # batch comes many times a turn, and the turn's Stop makes the entry.
+        _try(chain_touch, data, sid, pct, size)
     if os.environ.get("CLAUDE_CODE_SESSION_ATTENDED") == "0":
         return
     # A running shell (a dev server, a watcher) does not mean the task is unfinished; anything
-    # else, including an entry of unknown shape, does.
-    if any(not isinstance(t, dict) or t.get("type") != "shell"
-           for t in data.get("background_tasks") or []):
+    # else, including an entry of unknown shape, does - at Stop. Mid-turn the notice still goes:
+    # a session that always had an agent out was never told at all (qartez-mcp, 2026-10-10).
+    if not step and any(not isinstance(t, dict) or t.get("type") != "shell"
+                        for t in data.get("background_tasks") or []):
         return
     marker = context_marker(sid)
     if pct < THRESHOLD:
@@ -279,11 +343,17 @@ def main():
             pass
         return
     band = (pct - THRESHOLD) // BAND
-    try:
-        with open(marker, encoding="utf-8") as f:
-            stored = int(f.read().strip())
-    except (OSError, ValueError):
-        stored = -1
+    stored, said_at = read_marker(marker)
+    fmt = dict(pct=pct, used=used // 1000, window=size // 1000, lines=state_lines(pct))
+    if step:
+        if band > stored:
+            # Where in the transcript it was said: the Stop then knows whether a handoff followed.
+            write_atomic(marker, f"{band}:{os.path.getsize(transcript) if os.path.isfile(transcript) else 0}")
+            text = (STEP_REASON.format(where=where(data), **fmt)
+                    + (RECORDS_HANDOFF if _try(records_project, _try(session_root, data)) else ""))
+            sys.stdout.write(json.dumps({"hookSpecificOutput": {"hookEventName": "PostToolBatch",
+                                                                 "additionalContext": text}}))
+        return
     # stop_hook_active = this stop follows a block: the handoff was just written, so the user is
     # told once - unless no block of ours came first (another Stop hook blocked). Every stop
     # after our block keeps the digest current; a failure there never costs the notice.
@@ -292,14 +362,19 @@ def main():
             return
         _try(sync_digest, data, sid, pct, used, size)
         out = {"systemMessage": NOTICE.format(pct=pct)}
-    elif band > stored:
-        # The block itself writes no digest: it stays as fast as before, and the digest goes
-        # where the model puts the handoff, known once it has written STATE.md.
+    elif band > stored or (said_at is not None and not _try(wrote_state_since, data, said_at)):
+        # A band said mid-turn and no STATE.md written since: the turn's end asks as before. The
+        # block itself writes no digest: it stays as fast as before, and the digest goes where
+        # the model puts the handoff, known once it has written STATE.md.
         write_atomic(marker, str(band))
         out = {"decision": "block",
-               "reason": REASON.format(pct=pct, used=used // 1000, window=size // 1000,
-                                       lines=state_lines(pct), where=where(data))
+               "reason": REASON.format(where=where(data), **fmt)
                + (RECORDS_HANDOFF if _try(records_project, _try(session_root, data)) else "")}
+    elif said_at is not None:
+        # The handoff was written mid-turn: the user is told once, as after a block.
+        write_atomic(marker, str(band))
+        _try(sync_digest, data, sid, pct, used, size)
+        out = {"systemMessage": NOTICE.format(pct=pct)}
     else:
         # Same band again: already said. A notice on every stop reached 56 in one session.
         _try(sync_digest, data, sid, pct, used, size, DIGEST_EVERY_S)

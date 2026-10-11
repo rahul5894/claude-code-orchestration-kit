@@ -75,9 +75,10 @@ stop. Nothing else before the answer - no file edited, no command that changes a
   record - and checks it against git. Never open another task's files. With a request: first
   quote it, dated, under `## User said` in that task's STATE.md; it is now the current step and
   overrides an older next step it conflicts with.
-- **Reopen a closed task**: set its STATE.md `Status:` back to `OPEN` (`reopened <date>`) and
-  its INDEX.md row to OPEN, then as above. Its verbatim records go 7 days after a close; STATE,
-  DECISIONS, FINDINGS and SESSIONS.md stay.
+- **Reopen a closed task**: a task the kit moved into `.claude/scratch/_closed/` comes back to
+  `.claude/scratch/<slug>/` first; set its STATE.md `Status:` back to `OPEN` (`reopened <date>`)
+  and its INDEX.md row to OPEN, then as above. Its verbatim records go 7 days after a close;
+  STATE, DECISIONS, FINDINGS and SESSIONS.md stay.
 - **A new task**: invoke the `task` skill with `new: <the request>` - it opens the bucket, its
   `About:` line made from the request, and starts without asking about the scope again.
 - **Finish another first**: invoke the `task` skill with `queue: <the request>` - it opens the

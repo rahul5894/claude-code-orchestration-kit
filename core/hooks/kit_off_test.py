@@ -38,7 +38,8 @@ def project(off):
     with open(os.path.join(scratch, "alpha", "DECISIONS.md"), "w", encoding="utf-8") as f:
         f.write("- D001 use X\n")
     with open(os.path.join(root, "big.md"), "w", encoding="utf-8") as f:
-        f.write("line\n" * 400)
+        # Long enough lines that `cat` really prints more than md-guard's OUTPUT_BUDGET (D001).
+        f.write(("line " + "x" * 60 + "\n") * 400)
     usage = {"input_tokens": 2, "cache_creation_input_tokens": 1000,
              "cache_read_input_tokens": 150_000, "output_tokens": 50}
     # Haiku: a 200K model, so 151K is 75% and kit-context speaks (on a 1M Opus it is 15%).

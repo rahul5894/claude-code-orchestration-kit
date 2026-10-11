@@ -40,16 +40,23 @@ with open(SMALL, "w") as f:
     f.write("".join(f"line {i}\n" for i in range(10)))
 with open(BIG_ACCENT, "w", encoding="utf-8") as f:
     f.write("".join(f"line {i} " + "x" * 200 + "\n" for i in range(400)))
+# A big doc whose every other line is a heading and the rest hold "gate" and "use -all mode": a
+# search with context or a body pattern really prints most of it (the measured-output cases).
+HEADY = os.path.join(tmp, "heady.md").replace("\\", "/")
+with open(HEADY, "w") as f:
+    f.write("".join((f"### H{i} " + "h" * 150 + "\n") if i % 2 == 0 else
+                    (f"body {i} gate use -all mode " + "x" * 150 + "\n") for i in range(400)))
 # A big doc with headings (its outline goes with a shell denial), and a big bucket file.
 DOC = os.path.join(tmp, "guide.md").replace("\\", "/")
 with open(DOC, "w", encoding="utf-8") as f:
-    f.write("".join((f"## Part {i // 50}\n" if i % 50 == 0 else f"text {i}\n") for i in range(700)))
+    # Lines long enough that the whole file prints more than OUTPUT_BUDGET (measured, D001).
+    f.write("".join((f"## Part {i // 50}\n" if i % 50 == 0 else f"text {i} " + "t" * 40 + "\n") for i in range(700)))
 # A big doc under a folder with a space, the $env: variable the PowerShell case reads, and the
 # temp dir as Git Bash spells it (/c/Users/... on Windows).
 SPACED = os.path.join(tmp, "sub dir", "big.md").replace("\\", "/")
 os.makedirs(os.path.dirname(SPACED), exist_ok=True)
 with open(SPACED, "w") as f:
-    f.write("".join(f"line {i}\n" for i in range(400)))
+    f.write("".join(f"line {i} " + "s" * 40 + "\n" for i in range(400)))
 os.environ["KIT_MDG_DIR"] = tmp
 GITBASH_TMP = ("/" + tmp[0].lower() + tmp[2:].replace("\\", "/")) if os.name == "nt" and tmp[1] == ":" else tmp
 MUST = []
@@ -57,7 +64,7 @@ for rel in (".claude/scratch/b1/STATE.md",):
     p_ = os.path.join(tmp, rel).replace("\\", "/")
     os.makedirs(os.path.dirname(p_), exist_ok=True)
     with open(p_, "w", encoding="utf-8") as f:
-        f.write("".join(f"row {i}\n" for i in range(500)))
+        f.write("".join(f"row {i} " + "r" * 40 + "\n" for i in range(500)))
     MUST.append(p_)
 
 CASES = [
@@ -129,12 +136,39 @@ CASES = [
     ("ALLOW", "Bash", {"command": f'grep -n "^## \\|^### " {BIG} | tail -5'}, None),
     ("ALLOW", "Bash", {"command": f"grep -nE '^#|^##' {BIG}"}, None),
     ("ALLOW", "Bash", {"command": f"rg -n '^#' {BIG}"}, None),
-    ("DENY",  "Bash", {"command": f'grep -n -A3 "^### " {BIG}'}, None),
+    # Since the guard measures what a read prints (kit-optimize-pass D001), these run on HEADY,
+    # where they really print the body: a search that finds nothing prints nothing and passes.
+    ("DENY",  "Bash", {"command": f'grep -n -A3 "^### " {HEADY}'}, None),
     ("DENY",  "Bash", {"command": f'grep -nv "^#" {BIG}'}, None),
-    ("DENY",  "Bash", {"command": f'grep -n -C 2 "^#" {BIG}'}, None),
-    ("DENY",  "Bash", {"command": f'grep -5 "^#" {BIG}'}, None),
-    ("DENY",  "Bash", {"command": f'grep -n "^#\\|gate" {BIG}'}, None),
-    ("DENY",  "Bash", {"command": f'grep -n -e "^#" -e gate {BIG}'}, None),
+    ("DENY",  "Bash", {"command": f'grep -n -C 2 "^#" {HEADY}'}, None),
+    ("DENY",  "Bash", {"command": f'grep -5 "^#" {HEADY}'}, None),
+    ("DENY",  "Bash", {"command": f'grep -n "^#\\|gate" {HEADY}'}, None),
+    ("DENY",  "Bash", {"command": f'grep -n -e "^#" -e gate {HEADY}'}, None),
+    # Measured output (D001): a read of a big doc that really prints little passes - the next
+    # call after ~250 real denials was the same command + `| cut`. Big output, or a shape bash
+    # would expand ($, globs, ~, subshells), is denied as before.
+    ("ALLOW", "Bash", {"command": f'grep -n "line 7 " {BIG}'}, None),
+    ("ALLOW", "Bash", {"command": f"grep -q line {BIG} && echo has"}, None),
+    ("ALLOW", "Bash", {"command": f'for f in {BIG} {SMALL}; do grep --quiet x "$f" && echo "$f"; done'}, None),
+    ("ALLOW", "Bash", {"command": f'grep -n "line 7 " {BIG} 2>/dev/null'}, None),
+    ("ALLOW", "Bash", {"command": f'grep -n "line 1" {BIG} | head -3'}, None),
+    ("DENY",  "Bash", {"command": f'grep -n "line" {BIG} | head -100'}, None),
+    ("ALLOW", "Bash", {"command": f"sed -n 10,20p {BIG}"}, None),
+    ("ALLOW", "Bash", {"command": f"sed -n '12p' {BIG}"}, None),
+    ("DENY",  "Bash", {"command": f"sed -n 1,100p {BIG}"}, None),
+    ("ALLOW", "Bash", {"command": f"head -c 1500 {BIG}"}, None),
+    ("ALLOW", "Bash", {"command": f"tail -c 400 {BIG}"}, None),
+    ("DENY",  "Bash", {"command": f"head -c 20000 {BIG}"}, None),
+    ("ALLOW", "Bash", {"command": f"head -30 {BIG}"}, None),
+    ("DENY",  "Bash", {"command": f"head -50 {BIG}"}, None),
+    ("ALLOW", "Bash", {"command": f"tail -n 5 {BIG}"}, None),
+    ("DENY",  "Bash", {"command": f"tail -n +10 {BIG}"}, None),
+    ("ALLOW", "Bash", {"command": f"cat {BIG} | head -3"}, None),
+    ("DENY",  "Bash", {"command": f"cat {BIG} | head -100"}, None),
+    ("DENY",  "Bash", {"command": f'X=1; grep -n "line $X" {BIG}'}, None),
+    ("ALLOW", "Bash", {"command": f'grep -n "line 7 " {BIG[:-len("big.md")]}big*.md'}, None),
+    ("DENY",  "Bash", {"command": f'grep -n "line" {BIG[:-len("big.md")]}big*.md'}, None),
+    ("DENY",  "Bash", {"command": f'grep -n "line" {BIG} | rev'}, None),
     ("DENY",  "Bash", {"command": f'grep -n "^#" {BIG}; cat {BIG}'}, None),
     # `grep -l` prints names only, so allowing it LOOKS free. It is not: the four cases
     # below pin the reverted 2026-09-19 relaxation. The first two are the bypasses it
@@ -142,7 +176,7 @@ CASES = [
     # meant to buy - denied, because no pattern separated it from the first three.
     ("DENY",  "Bash", {"command": f"grep -rl gate --include=*.md {tmp} | xargs cat"}, None),
     ("DENY",  "Bash", {"command": f"rg --files-with-matches gate -g *.md {tmp} | xargs cat"}, None),
-    ("DENY",  "Bash", {"command": f'grep -rn "use -all mode" {BIG}'}, None),
+    ("DENY",  "Bash", {"command": f'grep -rn "use -all mode" {HEADY}'}, None),
     ("DENY",  "Bash", {"command": f'grep -rl "gate" --include=*.md {tmp}'}, None),
     ("ALLOW", "Bash", {"command": f"sed -n 1,5p {SMALL}"}, None),
     ("DENY",  "Bash", {"command": f"cat {BIG_WIN}"}, None),
@@ -219,7 +253,7 @@ CASES = [
     ("DENY",  "Bash", {"command": f"python - <<'EOT'\nimport os; os.system('cat {BIG}')\nEOT"}, None),
     ("DENY",  "Bash", {"command": f"git show HEAD:{BIG}"}, None),
     ("ALLOW", "Bash", {"command": f"rm -f {BIG}; git status --short | head -5"}, None),
-    ("DENY",  "Bash", {"command": f"git status && cat {BIG} | head -5"}, None),
+    ("DENY",  "Bash", {"command": f"git status && cat {BIG} | head -100"}, None),
     ("DENY",  "PowerShell", {"command": f"Get-Content {BIG_WIN}"}, None),
     ("ALLOW", "PowerShell", {"command": f"Get-Content {BIG_WIN} -TotalCount 40 | % {{ $_.Substring(0, [Math]::Min(300, $_.Length)) }}"}, None),
     # Read is Claude Code's own (D005, 2026-10-07): whole up to 25K tokens, then pages with a

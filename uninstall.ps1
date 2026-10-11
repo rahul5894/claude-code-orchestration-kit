@@ -47,8 +47,10 @@ $styles    = (Get-ChildItem (Join-Path $kit 'core\output-styles\*.md')).BaseName
 #    settings before the kit, or the copy is gone: the kit's values simply go.
 function Test-KitCommand($h) {
     $c = "$($h['command'])".Replace('\', '/')
-    # the same exact test as install.ps1's Test-Runs: the command ENDS in .claude/hooks/<file>
-    $hookFiles | Where-Object { $c -match ('/\.claude/hooks/' + [regex]::Escape($_) + '["'']?\s*$') }
+    $last = "$(@($h['args'])[-1])".Replace('\', '/')
+    # the same exact test as install.ps1's Test-Runs: the command, or in exec form its last
+    # argument, ENDS in .claude/hooks/<file>
+    $hookFiles | Where-Object { $re = '/\.claude/hooks/' + [regex]::Escape($_) + '["'']?\s*$'; ($c -match $re) -or ($last -match $re) }
 }
 function Test-HasKitHook($s) {
     if ($s -isnot [Collections.IDictionary] -or $s['hooks'] -isnot [Collections.IDictionary]) { return $false }

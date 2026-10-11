@@ -52,15 +52,15 @@ Then ask: continue one of these, or start something new?
 
 1. Make the slug from the sentence: 2 to 4 words, lowercase, digits and hyphens only.
    "fix the ACL permission on the share page" becomes `acl-share-permission`.
-2. Create `.claude/scratch/<slug>/` with these files and folders:
+2. Create `.claude/scratch/<slug>/` with the three files below; the rest comes when it is needed:
 
 ```
 .claude/scratch/<slug>/
   STATE.md        replaced each update — what is true NOW
   FINDINGS.md     append-only — evidence, file:line
   DECISIONS.md    append-only — what changed and WHY
-  briefs/         orders given to agents; written once, never edited
-  reports/        one per brief
+  briefs/         with the first agent: orders given to agents; written once, never edited
+  reports/        one per brief - the kit files each agent's final message here
   SESSIONS.md     the kit writes it: every session on this task, oldest first (never edit)
   digests/        the kit writes it: per session <sid>.md (verbatim) + <sid>.state.md (its STATE)
 ```
@@ -209,15 +209,16 @@ going on: two windows writing one `STATE.md` lose each other's lines.
   is on, do the work yourself and spawn builder, refuter, verifier or debugger only when I
   ask. Briefs already in `briefs/` are history, not a pattern to continue.
 - When you do spawn, write the brief to `briefs/<NN>-<task>.md` first. NN counts up from 01.
-  Make it read-only (`attrib +R` on Windows, `chmod a-w` elsewhere). Do not show me
-  briefs unless I ask.
+  Make it read-only (`attrib +R` on Windows, `chmod a-w` elsewhere), and name its path in the
+  agent's prompt - the kit files the report by it. Do not show me briefs unless I ask.
 - Every brief must name the bucket and require the agent to read `DECISIONS.md` before
   changing anything, append to `FINDINGS.md`, and never edit anything under `briefs/`.
   **Agents do not write `STATE.md`** — two writers to a replaced-not-appended `STATE.md` lose
   each other's content. A builder writes its own `reports/<NN>-builder.md`.
 - Record the launch in `STATE.md` under Active agents. When the agent returns, mark it
-  terminal; for every agent but the builder, **write `reports/<NN>-<agent>.md` yourself from
-  its final message** (the SubagentStop hook also files it under `.claude/scratch/_inbox/`).
+  terminal. The kit files its final message as `reports/<NN>-<agent>.md` when the agent's
+  prompt names its brief's path (a builder writes its own first); check the report is there,
+  and write it from the final message only when it is not.
 - Update the bucket's line in the index whenever its status or next action changes.
 - If two rounds start swapping between the same two fixes, **stop the loop**, read
   `DECISIONS.md` yourself, and sort it out with me. Do not let it run.
@@ -230,10 +231,14 @@ candidates or the verifier marked every forwarded item FIXED; and nothing is ope
 1. Set `STATE.md` status to `CLOSED <date>` with a two-line outcome summary. That line IS the
    close: the hooks stop offering the bucket, and the kit deletes its verbatim records
    (`digests/*.md`) 7 days later; SESSIONS.md, STATE, DECISIONS and FINDINGS stay.
-2. Write anything that outlives the task into the project's handoff note and backlog
-   (see the project `CLAUDE.md`). Recording a follow-up never authorizes doing it.
-3. Optionally move `.claude/scratch/<slug>/` to `.claude/scratch/_closed/<slug>/` (a Windows
-   file lock or a deny rule often refuses it; leave it in place then). Never delete a bucket.
+2. Carry on what outlives the task - no later task reads this bucket. Each `[gotcha]` and
+   `[dead-end]` in FINDINGS.md that holds beyond this task goes in one line (what, why, the
+   evidence's file:line) into the project's `CLAUDE.md`, under its gotchas or danger list (a
+   records project: a lesson, through its skill); something about me or how I work goes into
+   the auto-memory. Anything else that outlives it goes into the project's handoff note and
+   backlog (see the project `CLAUDE.md`). Recording a follow-up never authorizes doing it.
+3. Leave the folder where it is: 7 days after the close the kit moves it into
+   `.claude/scratch/_closed/<slug>/` itself. Never delete a bucket.
 4. Mark the bucket DONE in the index. Tell me in one line.
 
 Do not close if any brief has no report, or if the agent count in `STATE.md` does not

@@ -1014,6 +1014,26 @@ _ks = open('core/hooks/kit-session-start.py', encoding='utf-8').read() if os.pat
 chk('import kit_digest' in _kc and 'def sync_digest' in _kc and 'session_bucket(' in _kc
     and 'def session_bucket' in _ki and '"digests"' in _kc and 'digests/' in _kc,
     "kit-context keeps the session digest in the bucket THIS session handed off to, in digests/")
+# kit-optimize-pass D001 (2026-10-11), each clause one a rewrite could drop silently: the mid-turn
+# alert (a turn went 45% -> 96% with no Stop between), the exec-form hooks through the py launcher
+# (a moved Python silently killed every kit hook), md-guard measuring what a read prints (half of
+# 110 real denials only cost a turn), reports filed by the brief (44 of 156 briefs had none), and
+# a closed bucket moving into _closed/ (27 sat in scratch roots).
+_ip = open('install.ps1', encoding='utf-8').read()
+_sr = open('core/hooks/kit-subagent-report.py', encoding='utf-8').read() if os.path.isfile('core/hooks/kit-subagent-report.py') else ''
+_kch = open('core/hooks/kit_chain.py', encoding='utf-8').read() if os.path.isfile('core/hooks/kit_chain.py') else ''
+_mgo = open('core/hooks/md-guard.py', encoding='utf-8').read() if os.path.isfile('core/hooks/md-guard.py') else ''
+chk('"PostToolBatch"' in _kc and 'data.get("agent_id")' in _kc and 'def wrote_state_since' in _kc
+    and "Register-Hook $set 'PostToolBatch' $null 'kit-context.py'" in _ip,
+    'kit-context tells a long turn mid-way (PostToolBatch, main session only), the Stop is the backstop')
+chk('args = $hookArgs' in _ip and "$pyArgs = @('-3')" in _ip and 'Get-Command py ' in _ip,
+    'install.ps1 registers every kit hook in exec form, through the py launcher when there is one')
+chk('OUTPUT_BUDGET' in _mgo and '_small_output(seg, base)' in _mgo and 'stdin=subprocess.DEVNULL' in _mgo,
+    'md-guard measures what a read of a big doc really prints before it denies')
+chk('def report_path' in _sr and 'def prune(' in _sr and '"reports"' in _sr,
+    "kit-subagent-report files an agent's report by the brief its prompt names; _inbox is pruned")
+chk('def tidy(' in _kch and '_try(tidy, root, now)' in _kch and 'still_open' in _kch,
+    'kit_chain moves a bucket closed 7+ days into _closed/ (never one INDEX.md still lists open)')
 # Parallel windows (2026-10-09, bucket parallel-window-resume D001): two windows that hand off and
 # /clear each get their own task back. Each clause is one a rewrite could drop silently: the
 # window id, the marks the model resumes by, the handoff naming its own bucket - or a liveness

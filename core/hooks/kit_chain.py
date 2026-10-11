@@ -36,7 +36,8 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import kit_digest  # noqa: E402
 from kit_index import (MAX_TRANSCRIPT, NOTE_PATH, SHELLS, WRITERS, alive, bucket_dir, keep,  # noqa: E402
-                       linked, note_here, read_window, resumed, safe_dir, scratch_ok, shell_notes)
+                       linked, note_here, open_rows, read_window, resumed, safe_dir, scratch_ok,
+                       shell_notes)
 
 SCRATCH_PATH = re.compile(r"\.claude[/\\]scratch[/\\]", re.IGNORECASE)
 SLUG_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
@@ -709,10 +710,49 @@ def prune(root, now=None):
                 pass
         if gone > before:
             _try(render, bucket)
+    _try(tidy, root, now)
     log = log_dir(root)
     if log:
         gone += _try(_prune_log, log, now) or 0
     return gone
+
+
+def tidy(root, now=None):
+    """The scratch dir kept in order (bucket kit-optimize-pass D001): a bucket closed more than
+    KEEP_DAYS days ago moves into _closed/ - 27 closed buckets sat in the scratch root of 9
+    projects, the model's own move refused by a Windows lock - and an empty briefs/ or reports/
+    goes (60 of them: every bucket got both, most never had an agent). A lock or a name already
+    in _closed/ leaves it for the next day. Returns how many buckets moved."""
+    now = now or time.time()
+    scratch = os.path.join(root, ".claude", "scratch")
+    closed_dir = os.path.join(scratch, "_closed")
+    # STATE.md says CLOSED but INDEX.md still lists the task open: the two disagree, so it stays
+    # where the user's index and cards still look for it.
+    still_open = {slug for slug, _, _ in open_rows(os.path.join(scratch, "INDEX.md"))}
+    moved = 0
+    for bucket in _buckets(root, closed=True):
+        for sub in ("briefs", "reports"):
+            p = os.path.join(bucket, sub)
+            try:
+                if os.path.isdir(p) and not linked(p) and not os.listdir(p):
+                    os.rmdir(p)
+            except OSError:
+                pass
+        if os.path.dirname(bucket) != scratch or os.path.basename(bucket) in still_open:
+            continue  # already in _closed/, or the index still has it open
+        closed = _closed_at(bucket)
+        if closed is None or now - closed <= KEEP_DAYS * 86400:
+            continue
+        target = os.path.join(closed_dir, os.path.basename(bucket))
+        if os.path.lexists(target) or (os.path.lexists(closed_dir) and linked(closed_dir)):
+            continue
+        try:
+            os.makedirs(closed_dir, exist_ok=True)
+            os.rename(bucket, target)
+            moved += 1
+        except OSError:
+            pass  # a Windows lock: the next day's upkeep tries again
+    return moved
 
 
 def _prune_log(log, now):

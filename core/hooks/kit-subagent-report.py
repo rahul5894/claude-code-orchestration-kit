@@ -1,11 +1,17 @@
 """SubagentStop hook: file every finished subagent's final message, so none is lost.
 
-Writes one <root>/.claude/scratch/_inbox/<UTC>-<agent_type>-<id8>.md per subagent from the
-payload's `last_assistant_message`, where <root> is the first of CLAUDE_PROJECT_DIR and the
-payload's `cwd` that has a .claude/scratch/ dir; the transcript is never parsed. The hook is global, so
-a project with no .claude/scratch/ is left completely alone, and so is one whose git would
-show the file. Prints nothing in any path: stdout from a hook can reach the model. Any
-crash = write nothing (fail open, dev tool).
+The report goes where the task's rules want it: when the agent's first prompt names a brief of
+this project, `.claude/scratch/<slug>/briefs/<NN>-*.md`, the message becomes that bucket's
+`reports/<NN>-<agent_type>.md` - unless a report for <NN> is already there (a builder writes
+its own). Measured 2026-10-11: 44 of 156 briefs had no report, the hand-written copy forgotten
+(bucket kit-optimize-pass D001). Any other agent's message goes to
+<root>/.claude/scratch/_inbox/<UTC>-<agent_type>-<id8>.md, and an _inbox file older than
+INBOX_DAYS is pruned: nothing ever read it back. <root> is the first of CLAUDE_PROJECT_DIR and
+the payload's `cwd` that has a .claude/scratch/ dir. The message is the payload's
+`last_assistant_message`; only the agent transcript's first prompt is read. The hook is global,
+so a project with no .claude/scratch/ is left completely alone, and so is one whose git would
+show the file. Prints nothing in any path: stdout from a hook can reach the model. Any crash =
+write nothing (fail open, dev tool).
 Self-check: python kit-subagent-report_test.py
 """
 import os
@@ -25,6 +31,59 @@ import re  # noqa: E402
 import subprocess  # noqa: E402
 
 UNSAFE = re.compile(r"[^A-Za-z0-9._-]")
+# A brief path in the agent's prompt, absolute or relative, either slash.
+BRIEF = re.compile(r"\.claude[\\/]+scratch[\\/]+([A-Za-z0-9][A-Za-z0-9._-]*)[\\/]+briefs[\\/]+"
+                   r"((\d{2,3})-[A-Za-z0-9._-]+\.md)")
+INBOX_DAYS = 30
+PROMPT_LINES = 40  # the first prompt is among the transcript's first lines
+
+
+def first_prompt(transcript):
+    """The text of the agent transcript's first user message, or ""."""
+    try:
+        with open(transcript, encoding="utf-8", errors="replace") as f:
+            for _, line in zip(range(PROMPT_LINES), f):
+                if '"user"' not in line:
+                    continue
+                obj = json.loads(line)
+                if not isinstance(obj, dict) or obj.get("type") != "user":
+                    continue
+                c = (obj.get("message") or {}).get("content")
+                if isinstance(c, list):
+                    c = " ".join(b.get("text", "") for b in c if isinstance(b, dict))
+                if isinstance(c, str) and c.strip():
+                    return c
+    except (OSError, TypeError, ValueError):
+        pass
+    return ""
+
+
+def report_path(scratch, prompt, agent_type):
+    """<bucket>/reports/<NN>-<agent_type>.md for the first brief of THIS project the prompt names,
+    or None: no brief, a brief that is not there, or a report for <NN> already written."""
+    for m in BRIEF.finditer(prompt):
+        slug, name, nn = m.group(1), m.group(2), m.group(3)
+        bucket = os.path.join(scratch, slug)
+        if not os.path.isfile(os.path.join(bucket, "briefs", name)) or os.path.islink(bucket):
+            continue
+        reports = os.path.join(bucket, "reports")
+        if os.path.isdir(reports) and any(n.startswith(nn + "-") for n in os.listdir(reports)):
+            return None
+        return os.path.join(reports, f"{nn}-{agent_type}.md")
+    return None
+
+
+def prune(inbox):
+    """Drop _inbox files older than INBOX_DAYS: copies of agent messages nothing reads back."""
+    import time
+    cut = time.time() - INBOX_DAYS * 86400
+    for n in os.listdir(inbox):
+        p = os.path.join(inbox, n)
+        try:
+            if n.endswith(".md") and os.path.isfile(p) and os.path.getmtime(p) < cut:
+                os.remove(p)
+        except OSError:
+            pass
 
 
 def git_would_see(scratch):
@@ -69,12 +128,14 @@ def main():
         return
     if git_would_see(scratch):
         return
-    inbox = os.path.join(scratch, "_inbox")
-    os.makedirs(inbox, exist_ok=True)
-
     stamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d-%H%M%S")
     agent_type = clean(data.get("agent_type"))
     agent_id = clean(data.get("agent_id"))
+    target = report_path(scratch, first_prompt(str(data.get("agent_transcript_path") or "")), agent_type)
+    inbox = os.path.join(scratch, "_inbox")
+    if not target:
+        os.makedirs(inbox, exist_ok=True)
+        prune(inbox)
     raw = data.get("last_assistant_message")
     # Anything but a str is a payload shape change (content blocks, say). str() would turn a
     # list into a non-empty repr and present it as the verbatim report, so it counts as
@@ -89,6 +150,15 @@ def main():
         if raw is not None and not isinstance(raw, str):
             body += f"\n\nlast_assistant_message was: {raw!r}"
     header = f"agent_type: {agent_type}\nagent_id: {agent_id}\nutc: {stamp}\n\n"
+    if target:
+        os.makedirs(os.path.dirname(target), exist_ok=True)
+        try:
+            with open(target, "x", encoding="utf-8") as f:  # `x`: a report written meanwhile wins
+                f.write("<!-- filed by the kit from the agent's final message (SubagentStop) -->\n"
+                        + header + body)
+            return
+        except FileExistsError:
+            os.makedirs(inbox, exist_ok=True)
     # Two subagents of one type can finish inside the same second, and agent_id is `unknown`
     # when absent - same name, second report silently wins. `x` mode claims the first free
     # suffix instead, and is atomic against the other hook process doing the same.

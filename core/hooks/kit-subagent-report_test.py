@@ -182,6 +182,66 @@ _, names = inbox(d)
 cases.append((len(names) == 1 and tree(parent) == [],
               "CLAUDE_PROJECT_DIR without scratch, payload cwd with it -> filed under cwd"))
 
+
+# 12-15. A prompt that names a brief of this project: the message becomes that bucket's
+# reports/<NN>-<agent>.md (bucket kit-optimize-pass D001: 44 of 156 briefs had no report).
+def agent_transcript(d, prompt):
+    p = os.path.join(d, "agent-" + str(len(os.listdir(d))) + ".jsonl")
+    with open(p, "w", encoding="utf-8") as f:
+        f.write(json.dumps({"type": "system", "subtype": "init"}) + "\n")
+        f.write(json.dumps({"type": "user", "message": {"role": "user", "content": prompt}}) + "\n")
+    return p
+
+
+def bucket(d, slug, brief):
+    os.makedirs(os.path.join(d, ".claude", "scratch", slug, "briefs"), exist_ok=True)
+    with open(os.path.join(d, ".claude", "scratch", slug, "briefs", brief), "w", encoding="utf-8") as f:
+        f.write("# brief\n")
+    return os.path.join(d, ".claude", "scratch", slug, "reports")
+
+
+d = repo()
+reports = bucket(d, "fix-login", "02-refute-the-diff.md")
+brief_abs = os.path.join(d, ".claude", "scratch", "fix-login", "briefs", "02-refute-the-diff.md")
+p = run({"cwd": d, "agent_type": "refuter", "agent_id": "a1b2c3d4e5",
+         "agent_transcript_path": agent_transcript(d, f"Your brief is {brief_abs} - read it whole first."),
+         "last_assistant_message": "## Candidates\n- none"})
+quiet &= p.stdout == b""
+got = os.listdir(reports) if os.path.isdir(reports) else []
+cases.append((got == ["02-refuter.md"] and "## Candidates\n- none" in read(os.path.join(reports, got[0]))
+              and inbox(d)[1] == [],
+              "prompt names a brief (absolute path) -> the bucket's reports/02-refuter.md, no _inbox copy"))
+
+p = run({"cwd": d, "agent_type": "verifier", "agent_id": "f6e5d4c3b2",
+         "agent_transcript_path": agent_transcript(d, "Brief: .claude/scratch/fix-login/briefs/02-refute-the-diff.md"),
+         "last_assistant_message": "second word on 02"})
+quiet &= p.stdout == b""
+cases.append(((sorted(os.listdir(reports)) if os.path.isdir(reports) else []) == ["02-refuter.md"]
+              and len(inbox(d)[1]) == 1,
+              "a report for 02 already there -> never overwritten; the message goes to _inbox"))
+
+d = repo()
+p = run({"cwd": d, "agent_type": "builder", "agent_id": "0a0b0c0d",
+         "agent_transcript_path": agent_transcript(d, "Brief: .claude/scratch/nope/briefs/01-x.md"),
+         "last_assistant_message": "built"})
+quiet &= p.stdout == b""
+cases.append((len(inbox(d)[1]) == 1 and not os.path.isdir(os.path.join(d, ".claude", "scratch", "nope")),
+              "a brief that is not in this project -> _inbox, no bucket created"))
+
+d = repo()
+box = os.path.join(d, ".claude", "scratch", "_inbox")
+os.makedirs(box)
+for name, days in (("old.md", 40), ("new.md", 2)):
+    with open(os.path.join(box, name), "w", encoding="utf-8") as f:
+        f.write("x")
+    t = datetime.datetime.now().timestamp() - days * 86400
+    os.utime(os.path.join(box, name), (t, t))
+p = run({"cwd": d, "agent_type": "researcher", "agent_id": "77", "last_assistant_message": "found"})
+quiet &= p.stdout == b""
+left = inbox(d)[1]
+cases.append(("old.md" not in left and "new.md" in left and len(left) == 2,
+              "an _inbox write prunes copies older than 30 days, keeps the rest"))
+
 cases.append((quiet, "stdout is empty on every run"))
 
 fails = sum(1 for ok, _ in cases if not ok)

@@ -5,8 +5,11 @@ returns a doc whole up to 25K tokens, pages a longer one with a PARTIAL-view not
 the next offset and says not to answer from one page, and refuses one over 256 KB with "use
 offset and limit". A shell has none of that - long paragraph-lines blow its output - so:
 Bash  -> deny when cat/sed/awk/grep/rg/head/tail READ a .md path that resolves to a file over
-         300 lines, with no column cap. Writes (heredoc, redirect, sed -i, tee), counts and
-         capped output pass. Shell spellings are expanded first (quoted or glued words,
+         300 lines, with no column cap, and the read's real output is not known to fit
+         OUTPUT_BUDGET (8000 chars): cat/head/tail/sed -n are computed exactly, a grep is run
+         read-only, then head/tail/grep/sort/uniq stages applied; anything else is denied as
+         before (bucket kit-optimize-pass D001). Writes (heredoc, redirect, sed -i, tee), counts
+         and capped output pass. Shell spellings are expanded first (quoted or glued words,
          $VAR/${VAR}/$env:X from the env or the command's own assignments and for-loops,
          $(pwd), {a,b}, git rev:path, a bare name under a folder a file reader names); a grep's
          pattern, a URL and a path that resolves to nothing (a file the same command creates)
@@ -49,7 +52,8 @@ CAP_RE = re.compile(
     # pattern also matched inside a search string (`grep -rn "use -all mode" big.md`).
     # Both were allowed by that hunk and both print content. The one-token `| cut -c1-300`
     # in the deny message is the supported way through.
-    r"\bqmd\b|cut -c|--max-columns|\s-o\s|\bwc\b|\b(?:grep|rg)\b[^|]*\s-c\b"
+    # `grep -q` prints nothing at all: a loop of them over big docs was denied (2026-10-11, D001).
+    r"cut -c|--max-columns|\s-o\s|\bwc\b|\b(?:grep|rg)\b[^|]*\s-c\b|\b(?:grep|rg)\b[^|]*\s(?:-q|--quiet)\b"
     r"|\.Substring\(|Measure-Object"
 )
 WRITE_RE = re.compile(
@@ -164,7 +168,9 @@ def line_count(path):
 
 
 HEADING = re.compile(r"^(#{1,4})\s+(.+?)\s*#*\s*$")
-MAX_OUTLINE = 4000  # characters of headings handed over with a shell denial
+# Characters of headings handed over with a shell denial: 4000 made one denial ~5 KB of context
+# (OPI's DECISIONS.md); the rest is a `grep -n '^#'` away (kit-optimize-pass D001).
+MAX_OUTLINE = 2000
 
 
 def outline(path):
@@ -423,6 +429,184 @@ def _spellings(tok, env, base, depth=0):
     return [tok, rev.group(1)] if rev else [tok]
 
 
+# What a read of a big doc really prints, measured before a denial (bucket kit-optimize-pass D001):
+# of ~467 denials in 30 days the next call was the same command + `| cut` 246 times - the
+# denial spent a turn on `grep -n "D-044" DECISIONS.md` (3 short lines), `sed -n 10,20p`, `tail -c
+# 400`. Output that fits OUTPUT_BUDGET passes; anything not computed exactly is denied as before.
+OUTPUT_BUDGET = 8000  # characters, ~2K tokens
+_SED_RANGE = re.compile(r"^(\d+)(?:,(\d+|\$))?p$")
+_STDERR = re.compile(r"\s2>(?:/dev/null|&1)(?=\s|$)")
+
+
+def _words(stage, base):
+    """The stage's words exactly as bash hands them over, or None when bash would change one in a
+    way not modelled here: a `$` or backtick outside single quotes, an unquoted brace, redirect,
+    subshell, separator, `~` or backslash. An unquoted `*`/`?` word is expanded as bash does
+    (sorted matches, the word itself when none). A stderr redirect (2>/dev/null, 2>&1) goes first."""
+    stage = _STDERR.sub(" ", stage)
+    words, cur, have, q, globby = [], [], False, None, False
+
+    def flush():
+        w = "".join(cur)
+        if globby:
+            import glob  # here, not at the top: only an unquoted wildcard needs it
+            hits = sorted(glob.glob(_local(w, base)))
+            if hits:
+                return [h.replace("\\", "/") for h in hits]
+        return [w]
+
+    i = 0
+    while i < len(stage):
+        ch = stage[i]
+        i += 1
+        if q == "'":
+            if ch == "'":
+                q = None
+            else:
+                cur.append(ch)
+        elif q == '"':
+            if ch == '"':
+                q = None
+            elif ch in "$`":
+                return None
+            elif ch == "\\":
+                # Inside double quotes a backslash escapes only $ ` " \ - `"a\|b"` keeps it.
+                if i < len(stage) and stage[i] in '$`"\\':
+                    cur.append(stage[i])
+                    i += 1
+                else:
+                    cur.append(ch)
+            else:
+                cur.append(ch)
+        elif ch in "'\"":
+            q, have = ch, True
+        elif ch.isspace():
+            if cur or have:
+                words += flush()
+            cur, have, globby = [], False, False
+        elif ch in "*?":
+            globby = True
+            cur.append(ch)
+        elif ch in "$`[]{}<>()\\|;&~":
+            return None
+        else:
+            cur.append(ch)
+    if q:
+        return None
+    if cur or have:
+        words += flush()
+    return words
+
+
+def _count_arg(words, i, flag_n="-n"):
+    """(how, n) of a head/tail option list from index i on: ("lines"|"bytes"|"from", n)."""
+    how, n, files = "lines", 10, []
+    while i < len(words):
+        w = words[i]
+        if w in (flag_n, "-c", "--lines", "--bytes") and i + 1 < len(words):
+            how, val = ("bytes" if w in ("-c", "--bytes") else "lines"), words[i + 1]
+            if val.startswith("+"):
+                how, val = ("from", val[1:]) if how == "lines" else (None, val)
+            n = int(val) if val.isdigit() else -1
+            i += 2
+            continue
+        if re.fullmatch(r"-\d+", w):
+            n, i = int(w[1:]), i + 1
+            continue
+        if w.startswith("-"):
+            return None  # an option this model does not know
+        files.append(w)
+        i += 1
+    return (how, n, files) if how and n >= 0 else None
+
+
+def _grep_exe(name):
+    import shutil  # here, not at the top: only a measured grep needs it
+    found = shutil.which(name)
+    if found or name != "grep":
+        return found
+    git = shutil.which("git")  # exec-form hooks run without Git Bash's PATH: grep sits beside git
+    if git:
+        cand = os.path.join(os.path.dirname(os.path.dirname(git)), "usr", "bin", "grep.exe")
+        return cand if os.path.isfile(cand) else None
+    return None
+
+
+def _first_output(stage, base):
+    """The exact text the first pipeline stage prints, or None when it is not modelled."""
+    words = _words(stage, base)
+    if not words:
+        return None
+    prog = os.path.basename(words[0]).lower().removesuffix(".exe")
+    if prog in ("grep", "egrep", "fgrep", "rg"):
+        exe = _grep_exe(prog)
+        if not exe:
+            return None
+        import subprocess  # here, not at the top: ~5 ms only a measured grep needs
+        try:
+            r = subprocess.run([exe] + words[1:], cwd=base, capture_output=True, timeout=2,
+                               stdin=subprocess.DEVNULL)
+        except (OSError, subprocess.TimeoutExpired):
+            return None
+        return r.stdout.decode("utf-8", "replace") if r.returncode in (0, 1) else None
+    if prog == "cat" and len(words) == 2 and not words[1].startswith("-"):
+        found = _resolve(words[1], base)
+        if not found:
+            return None
+        with open(found[0], encoding="utf-8", errors="replace") as f:
+            return f.read()  # whole: alone it is a dump, only a later head/tail can make it small
+    if prog in ("head", "tail"):
+        spec = _count_arg(words, 1)
+        if not spec or len(spec[2]) != 1:
+            return None
+        how, n, (name,) = spec
+        found = _resolve(name, base)
+        if not found:
+            return None
+        with open(found[0], "rb") as f:
+            data = f.read()
+        if how == "bytes":
+            return (data[:n] if prog == "head" else data[-n:] if n else b"").decode("utf-8", "replace")
+        lines = data.decode("utf-8", "replace").splitlines(True)
+        if how == "from":
+            return "".join(lines[max(n - 1, 0):]) if prog == "tail" else None
+        return "".join(lines[:n] if prog == "head" else (lines[-n:] if n else []))
+    if prog == "sed" and len(words) == 4 and words[1] == "-n":
+        m = _SED_RANGE.match(words[2])
+        found = _resolve(words[3], base) if m else None
+        if not found:
+            return None
+        with open(found[0], encoding="utf-8", errors="replace") as f:
+            lines = f.read().splitlines(True)
+        a = int(m.group(1))
+        b = a if not m.group(2) else (len(lines) if m.group(2) == "$" else int(m.group(2)))
+        return "".join(lines[a - 1:b])
+    return None
+
+
+def _small_output(seg, base):
+    """True when the segment's whole output is known and fits OUTPUT_BUDGET: its first stage
+    computed exactly, then each later stage a head/tail/grep/sort/uniq over it."""
+    stages = _scan(seg, stages=True)
+    if not stages:
+        return False
+    text = _first_output(stages[0].strip(), base)
+    if text is None:
+        return False
+    for st in stages[1:]:
+        words = _words(st, base) or []
+        prog = os.path.basename(words[0]).lower() if words else ""
+        if prog in ("head", "tail"):
+            spec = _count_arg(words, 1)
+            if not spec or spec[2] or spec[0] != "lines":
+                return False
+            lines = text.splitlines(True)
+            text = "".join(lines[:spec[1]] if prog == "head" else (lines[-spec[1]:] if spec[1] else []))
+        elif prog not in ("grep", "sort", "uniq"):  # these print no more than they read
+            return False
+    return len(text) <= OUTPUT_BUDGET
+
+
 def _reads_big_md(cmd, base, tool="Bash"):
     """(path, lines) of the big .md file `cmd` reads raw, or None."""
     cache = []
@@ -446,7 +630,8 @@ def _reads_big_md(cmd, base, tool="Bash"):
                 base = target
         else:
             big = _segment_reads_big_md(seg, base, tool, env)
-            if big:
+            # A read whose real output is small prints nothing big (D001): measured, not guessed.
+            if big and not (tool == "Bash" and _small_output(seg, base)):
                 return big
         if outer and seg.rstrip().endswith(")"):
             base = outer.pop()

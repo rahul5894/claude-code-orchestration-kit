@@ -352,10 +352,27 @@ try:
     for p in (oldtmp, newtmp):
         open(p, "w").close()
     os.utime(oldtmp, (time.time() - 7200, time.time() - 7200))
+    # Every bucket here got briefs/ and reports/ the old way; "open" holds a brief.
+    for slug in ("old", "recent", "open"):
+        for sub in ("briefs", "reports"):
+            os.makedirs(note(root6, slug, sub), exist_ok=True)
+    with open(note(root6, "open", os.path.join("briefs", "01-x.md")), "w", encoding="utf-8") as fh:
+        fh.write("# brief\n")
+    os.makedirs(os.path.join(root6, ".claude", "scratch", "_closed", "recent"))  # a name already taken
+    # STATE.md closed 9 days ago, INDEX.md still lists it OPEN: they disagree, so it stays.
+    os.makedirs(note(root6, "drift", ""))
+    write_state(root6, "drift", "# STATE\nUpdated: x   Status: CLOSED "
+                + time.strftime("%Y-%m-%d", time.localtime(time.time() - 9 * day)) + "\n")
+    with open(os.path.join(root6, ".claude", "scratch", "INDEX.md"), "w", encoding="utf-8") as fh:
+        fh.write("# Task index\n| slug | status | updated | next action |\n|---|---|---|---|\n"
+                 "| drift | OPEN | 2026-10-01 | x |\n| old | DONE | 2026-10-01 | none |\n")
     kc.prune(root6)
+    # Closed 7+ days = moved into _closed/ (bucket kit-optimize-pass D001): find each where it is now.
+    closed = os.path.join("_closed", "{}")
 
     def left(slug):
-        return sorted(os.listdir(note(root6, slug, "digests")))
+        here = slug if os.path.isdir(note(root6, slug, "digests")) else closed.format(slug)
+        return sorted(os.listdir(note(root6, here, "digests")))
     ok(left("old") == [".gitignore", "s.json"] or left("old") == ["s.json"],
        "closed 8 days ago: digest and snapshot deleted, the entry kept")
     ok(left("recent") == ["s.json", "s.md", "s.state.md"] and "s.md" in left("open"),
@@ -363,7 +380,16 @@ try:
     ok(left(os.path.join("_closed", "moved")) == ["s.json"] and left("nodate") == ["s.json"],
        "a bucket moved to _closed/ is pruned too; no close date = STATE.md's mtime")
     ok(not os.path.exists(oldtmp) and os.path.exists(newtmp), "a tmp file older than an hour goes, a new one stays")
-    ok("no verbatim record" in view(root6, "old"), "a pruned bucket's view says the record is gone")
+    ok("no verbatim record" in view(root6, closed.format("old")), "a pruned bucket's view says the record is gone")
+    ok(not os.path.exists(note(root6, "old", "")) and os.path.isfile(note(root6, closed.format("old"), "STATE.md"))
+       and not os.path.exists(note(root6, "nodate", "")) and os.path.isdir(note(root6, closed.format("nodate"), "digests"))
+       and os.path.isfile(note(root6, "recent", "STATE.md")) and os.path.isfile(note(root6, "open", "STATE.md")),
+       "closed 7+ days -> moved into _closed/ whole; closed 6 days, open, or a name taken in _closed/ -> stays")
+    ok(os.path.isfile(note(root6, "drift", "STATE.md")) and not os.path.exists(note(root6, closed.format("drift"), "")),
+       "STATE.md says CLOSED but INDEX.md lists it OPEN -> stays where the index looks for it")
+    ok(not os.path.exists(note(root6, "open", "reports")) and os.path.isfile(note(root6, "open", os.path.join("briefs", "01-x.md")))
+       and not os.path.exists(note(root6, "recent", "briefs")) and not os.path.exists(note(root6, closed.format("old"), "reports")),
+       "an empty briefs/ or reports/ goes; one holding a brief stays")
     # The prune flag lives in the project's scratch, never the temp dir; a stale context marker
     # goes, a fresh one, a folder and another tool's file stay.
     t = tempfile.gettempdir()

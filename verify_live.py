@@ -593,21 +593,36 @@ _caps = (['(top level)'] if 'maxEffortLevel' in s else []) + [
 ok(not _caps, 'no maxEffortLevel silently capping the pins', str(_caps))
 # The decisions injector is only load-bearing once it is REGISTERED: a hook that exists on disk
 # and in no settings file injects nothing, and nothing else here would say so.
+def _runs(h, script):
+    """A hook entry runs the kit's `script`: in its shell-form command or, in exec form, its args."""
+    return script in ' '.join([str(h.get('command', ''))] + [str(a) for a in (h.get('args') or [])])
+
+
 _ss = (s.get('hooks', {}) or {}).get('SubagentStart', []) or []
-ok(any('kit-subagent-start.py' in h.get('command', '')
+ok(any(_runs(h, 'kit-subagent-start.py')
        for e in _ss for h in (e.get('hooks', []) or [])),
    'SubagentStart injector registered live', str(_ss)[:200])
 ok(any(e.get('matcher') == 'builder|refuter|verifier|debugger|researcher'
        for e in _ss for h in (e.get('hooks', []) or [])
-       if 'kit-subagent-start.py' in h.get('command', '')),
+       if _runs(h, 'kit-subagent-start.py')),
    'SubagentStart injector matcher = builder|refuter|verifier|debugger|researcher',
    str([e.get('matcher') for e in _ss])[:200])
 # The timeline (bucket handoff-timeline): a session under 45% gets its record only from the
 # SessionEnd hook, and its 1.5 s default budget is raised only by the entry's own timeout.
 _se = (s.get('hooks', {}) or {}).get('SessionEnd', []) or []
-ok(any('kit-session-end.py' in h.get('command', '') and (h.get('timeout') or 0) >= 5
+ok(any(_runs(h, 'kit-session-end.py') and (h.get('timeout') or 0) >= 5
        for e in _se for h in (e.get('hooks', []) or [])),
    'SessionEnd timeline hook registered live with timeout >= 5 s', str(_se)[:200])
+# Mid-turn handoff (bucket kit-optimize-pass D001): Stop alone saw only finished turns.
+_pb = (s.get('hooks', {}) or {}).get('PostToolBatch', []) or []
+ok(any(_runs(h, 'kit-context.py') for e in _pb for h in (e.get('hooks', []) or [])),
+   'PostToolBatch mid-turn handoff hook registered live', str(_pb)[:200])
+# Exec form, no shell (D001): a shell-form command bakes in an interpreter path and pays Git Bash.
+_shell_form = [str(h.get('command', ''))[-60:]
+               for e_list in (s.get('hooks', {}) or {}).values() for e in (e_list or [])
+               for h in (e.get('hooks', []) or [])
+               if '.claude/hooks/' in str(h.get('command', '')).replace('\\', '/') and not h.get('args')]
+ok(not _shell_form, 'every kit hook in exec form (args), none through a shell', str(_shell_form)[:200])
 
 print("\n=== E. roster table matches every agent file ===")
 orch = (HOME / 'output-styles' / 'orchestrator.md').read_text(encoding='utf-8')
@@ -682,22 +697,22 @@ ok(_ss_ok, 'the installed SubagentStart injector emits nothing or a well-formed 
 print("  NOTE  per-project state is checked by `python audit_project.py <repo>`, not here")
 # These counts are pinned on purpose: a suite that silently shrinks is the failure this
 # catches. Bump them WITH the test, never to make a red line green.
-ok('md-guard self-check: 190/190 passed' in r2.stdout, 'md-guard self-check 190/190',
+ok('md-guard self-check: 212/212 passed' in r2.stdout, 'md-guard self-check 212/212',
    [l for l in r2.stdout.splitlines() if 'md-guard' in l])
-ok('kit-subagent-report self-check: 12/12 passed' in r2.stdout,
-   'kit-subagent-report self-check 12/12',
+ok('kit-subagent-report self-check: 16/16 passed' in r2.stdout,
+   'kit-subagent-report self-check 16/16',
    [l for l in r2.stdout.splitlines() if 'kit-subagent-report' in l])
 ok('kit-subagent-start self-check: 25/25 passed' in r2.stdout,
    'kit-subagent-start self-check 25/25',
    [l for l in r2.stdout.splitlines() if 'kit-subagent-start' in l])
-ok('kit-context self-check: 51/51 passed' in r2.stdout,
-   'kit-context self-check 51/51',
+ok('kit-context self-check: 62/62 passed' in r2.stdout,
+   'kit-context self-check 62/62',
    [l for l in r2.stdout.splitlines() if 'kit-context' in l])
 ok('kit_digest self-check: 35/35 passed' in r2.stdout,
    'kit_digest self-check 35/35',
    [l for l in r2.stdout.splitlines() if 'kit_digest' in l])
-ok('kit_chain self-check: 55/55 passed' in r2.stdout,
-   'kit_chain self-check 55/55',
+ok('kit_chain self-check: 58/58 passed' in r2.stdout,
+   'kit_chain self-check 58/58',
    [l for l in r2.stdout.splitlines() if 'kit_chain' in l])
 ok('kit-session-end self-check: 8/8 passed' in r2.stdout,
    'kit-session-end self-check 8/8',

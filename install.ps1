@@ -124,15 +124,22 @@ function Merge-Into($dst, $src) {
 # One kit hook in the parsed settings: re-assert matcher, command and timeout on the entry that
 # already runs $file, else append one. $matcher $null = the event takes none (Stop): no key.
 # Uses $py and $dest from step 5. $ev, not $event: $Event is an automatic variable.
-# A hook runs the kit's script when its command ENDS in .claude/hooks/<file> (a closing quote
-# allowed). The old `*md-guard.py*` also took over a user's own md-guard.py.orig hook: rewrote
-# its command and the matcher of its whole entry (verify_live C3b, 2026-09-23).
+# A hook runs the kit's script when its command ENDS in .claude/hooks/<file> (shell form, a
+# closing quote allowed) or its last exec-form argument does. The old `*md-guard.py*` also took
+# over a user's own md-guard.py.orig hook: rewrote its command and the matcher of its whole entry
+# (verify_live C3b, 2026-09-23).
 function Test-Runs($h, $file) {
-    $h -is [Collections.IDictionary] -and
-        ("$($h['command'])".Replace('\', '/') -match ('/\.claude/hooks/' + [regex]::Escape($file) + '["'']?\s*$'))
+    if ($h -isnot [Collections.IDictionary]) { return $false }
+    $re = '/\.claude/hooks/' + [regex]::Escape($file) + '["'']?\s*$'
+    $last = @($h['args'])[-1]
+    ("$($h['command'])".Replace('\', '/') -match $re) -or ($null -ne $last -and "$last".Replace('\', '/') -match $re)
 }
+# Exec form (bucket kit-optimize-pass D001): the interpreter is spawned with the script as its
+# argument and no shell. Shell form ran every call through Git Bash (+22 ms) and baked in a
+# python.exe path: when Python moved, every kit hook on that machine failed silently (2026-10-03).
+# $py is the `py` launcher when there is one ($pyArgs -3), so a Python upgrade changes nothing.
 function Register-Hook($set, $ev, $matcher, $file, $label) {
-    $cmd = "$py " + (Join-Path $dest "hooks\$file").Replace('\', '/')
+    $hookArgs = @($pyArgs) + @((Join-Path $dest "hooks\$file").Replace('\', '/'))
     if (-not $set['hooks']) { $set['hooks'] = [ordered]@{} }
     if (-not $set['hooks'][$ev]) { $set['hooks'][$ev] = @() }
     $entries = @($set['hooks'][$ev])
@@ -145,12 +152,21 @@ function Register-Hook($set, $ev, $matcher, $file, $label) {
         # timeout is re-asserted like matcher: it is in SECONDS, and an install that
         # predates that fix left 5000 (83 minutes) in the user's settings. Only correcting
         # it on a FRESH install would never reach the machines that already have it.
-        foreach ($e in $mine) { if ($null -ne $matcher) { $e['matcher'] = $matcher }; foreach ($h in @($e['hooks']) | Where-Object { Test-Runs $_ $file }) { if ($h['command'] -ne $cmd) { $h['command'] = $cmd; $changed = $true }; if ($h['timeout'] -ne 5) { $h['timeout'] = 5; $changed = $true } } }
-        "${label}: " + $(if ($changed) { 'python path updated' } else { 'already registered' })
+        foreach ($e in $mine) {
+            if ($null -ne $matcher) { $e['matcher'] = $matcher }
+            foreach ($h in @($e['hooks']) | Where-Object { Test-Runs $_ $file }) {
+                if ($h['command'] -ne $py -or (@($h['args']) -join "`n") -ne ($hookArgs -join "`n")) {
+                    $h['command'] = $py; $h['args'] = $hookArgs; $changed = $true
+                }
+                if ($h.Contains('shell')) { $h.Remove('shell'); $changed = $true }  # ignored with args
+                if ($h['timeout'] -ne 5) { $h['timeout'] = 5; $changed = $true }
+            }
+        }
+        "${label}: " + $(if ($changed) { 'updated (exec form)' } else { 'already registered' })
     } else {
         $new = [ordered]@{}
         if ($null -ne $matcher) { $new['matcher'] = $matcher }
-        $new['hooks'] = @([ordered]@{ type = 'command'; command = $cmd; timeout = 5 })
+        $new['hooks'] = @([ordered]@{ type = 'command'; command = $py; args = $hookArgs; timeout = 5 })
         $entries += $new
         $set['hooks'][$ev] = $entries
         "${label}: registered in settings.json"
@@ -255,11 +271,19 @@ $missing = @('md-guard.py', 'kit-session-start.py', 'kit-subagent-report.py', 'k
     Where-Object { -not (Test-Path (Join-Path $dest "hooks\$_")) }
 if ($missing) { throw "Hook script(s) missing from the kit checkout, nothing registered: $($missing -join ', ')" }
 $py = $null
-foreach ($name in 'python3.13', 'python3.12', 'python', 'python3', 'py') {
-    $cmd = Get-Command $name -ErrorAction SilentlyContinue
+$pyArgs = @()
+# The `py` launcher first: it finds the newest Python 3 itself, so an upgrade never strands the
+# hooks (D001). It costs ~11 ms a call more than python.exe; exec form saves ~22.
+$launcher = Get-Command py -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+if ($launcher -and (& $launcher.Source -3 -c 'import sys; print(sys.version_info >= (3, 12))' 2>$null) -eq 'True') {
+    $py = $launcher.Source.Replace('\', '/'); $pyArgs = @('-3')
+}
+foreach ($name in 'python', 'python3', 'python3.14', 'python3.13', 'python3.12') {
+    if ($py) { break }
+    $cmd = Get-Command $name -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
     if (-not $cmd) { continue }
     $v = & $cmd.Source -c 'import sys; print(sys.version_info >= (3, 12))' 2>$null
-    if ($v -eq 'True') { $py = $cmd.Source.Replace('\', '/'); break }
+    if ($v -eq 'True') { $py = $cmd.Source.Replace('\', '/') }
 }
 if (-not $py) { Write-Warning "md-guard: no Python 3.12+ on PATH. Install the latest Python 3 (winget search Python.Python) and re-run."; }
 else {
@@ -283,6 +307,10 @@ else {
     # 9. kit-context: at the end of a finished turn, measure context, write the session digest
     #    (kit_digest.py) and ask for the handoff.
     Register-Hook $set 'Stop' $null 'kit-context.py' 'kit-context'
+    #    And after every batch of tool calls, so a long turn is told mid-way (D001; a turn went
+    #    45% -> 96% with no Stop between). Only with this kit-context.py: an older one reads the
+    #    payload as a Stop and would block the agentic loop.
+    Register-Hook $set 'PostToolBatch' $null 'kit-context.py' 'kit-context (mid-turn)'
     # 10. kit-session-end: at /clear, exit or logout, the ending session's record in every task
     #     bucket it worked on - entry, STATE snapshot, verbatim digest, SESSIONS.md - at any
     #     context % (kit_chain.py). SessionEnd hooks get 1.5 s by default; Register-Hook's
@@ -297,14 +325,14 @@ else {
     foreach ($f in 'md-guard_test.py', 'kit-session-start_test.py', 'kit-subagent-report_test.py',
                    'kit-subagent-start_test.py', 'kit-context_test.py', 'kit_off_test.py',
                    'kit_digest_test.py', 'kit_chain_test.py', 'kit-session-end_test.py') {
-        $t = & $py (Join-Path $dest "hooks\$f") 2>&1 | Select-Object -Last 1
+        $t = & $py @pyArgs (Join-Path $dest "hooks\$f") 2>&1 | Select-Object -Last 1
         $f.Replace('_test.py', '') + " self-check: $t"
     }
     # From the checkout, not $dest: the fixtures it builds read extras\project\CLAUDE.md
     # beside it, and the published copy in kit\ has no extras\ next to it.
-    $t6 = & $py (Join-Path $dest 'kit\kit_switch.py') --selftest 2>&1 | Select-Object -Last 1
+    $t6 = & $py @pyArgs (Join-Path $dest 'kit\kit_switch.py') --selftest 2>&1 | Select-Object -Last 1
     "kit-switch self-check: $t6"
-    $t5 = & $py (Join-Path $kit 'scan_project_test.py') 2>&1 | Select-Object -Last 1
+    $t5 = & $py @pyArgs (Join-Path $kit 'scan_project_test.py') 2>&1 | Select-Object -Last 1
     if ($LASTEXITCODE -ne 0) { "scan-project self-check: FAILED (exit $LASTEXITCODE) - see above" }
     else { "scan-project self-check: $t5" }
 }
