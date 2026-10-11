@@ -80,3 +80,5 @@ anything that is not a Python symbol.
 | `turns` inflated 2.3-3.9x | One JSONL line per content block was counted as one turn |
 | A reviewer judging a stub | qartez dedups per server, and every agent shares that process |
 | A brief that called a 341-line file short | Nobody had counted; section 9b now prints the census |
+| A scratch tidy that never moved a bucket | Its test used unwatched temp folders; Windows refuses `os.rename` of any folder with a subfolder inside an editor-watched project (WinError 5) - move file by file (`kit_chain._move_tree`) |
+| A bench that filed real task sessions as "no task" | `kit_chain.scan(root=sandbox)` ignores note paths outside root; scan as the real project (`chain_ab._scan_as_real`) |
