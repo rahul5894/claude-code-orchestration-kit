@@ -693,7 +693,7 @@ ok(_ss_ok, 'the installed SubagentStart injector emits nothing or a well-formed 
 print("  NOTE  per-project state is checked by `python audit_project.py <repo>`, not here")
 # These counts are pinned on purpose: a suite that silently shrinks is the failure this
 # catches. Bump them WITH the test, never to make a red line green.
-ok('md-guard self-check: 230/230 passed' in r2.stdout, 'md-guard self-check 230/230',
+ok('md-guard self-check: 231/231 passed' in r2.stdout, 'md-guard self-check 231/231',
    [l for l in r2.stdout.splitlines() if 'md-guard' in l])
 ok('kit-subagent-report self-check: 16/16 passed' in r2.stdout,
    'kit-subagent-report self-check 16/16',

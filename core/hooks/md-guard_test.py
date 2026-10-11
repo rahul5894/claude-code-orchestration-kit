@@ -404,6 +404,11 @@ MESSAGES = [
      reason("Bash", {"command": f"cat {BIG}"}), ["truncates long lines", "Read every window in order"]),
     ("shell deny carries the line count and the outline",
      reason("Bash", {"command": f"cat {DOC}"}), ["guide.md (700 lines)", "Outline (", "L351 ## Part 7"]),
+    # the way to the knowledge first (2026-10-12): the Read tool on the exact path, whole or paged
+    ("shell deny leads with Read on the exact path; cut is only for locating",
+     reason("Bash", {"command": f"cat {BIG}"}),
+     ["md-guard: big.md", "To read it, use the Read tool on `" + BIG.replace("\\", "/") + "`",
+      "nothing is withheld", "To locate a spot instead", "never read content that way"]),
 ]
 # The hook runs on every shell call with a 5 s budget: a URL (a UNC spelling took 17 s) and a
 # brace explosion (six 20-way braces took 0.78 s) must each stay far inside it.

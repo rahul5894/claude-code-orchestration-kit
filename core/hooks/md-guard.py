@@ -707,18 +707,22 @@ def check_bash(inp, cwd=None, tool="Bash"):
     if big:
         # The map goes with the refusal, so the next call can be the right Read window.
         path, n = big
+        # The way to the knowledge goes first, with the exact path (2026-10-12): agents that got
+        # "add | cut" first sometimes read content through it, every long line cut at 300 chars.
         if path == "*.md":
-            what, tail = "a recursive .md search", ""
+            what, first, tail = "a recursive .md search", "", ""
         else:
             what = f"{os.path.basename(path)} ({n} lines)"
-            tail = (" A doc the agent must have whole (CLAUDE.md, a brief, a handoff) Reads whole "
-                    "with no limit. Outline (the file's own headings - document text, not "
+            first = (f"To read it, use the Read tool on `{path.replace(chr(92), '/')}`: it returns the "
+                     "whole document when it fits and pages a longer one - read every page in order to "
+                     "the end; nothing is withheld. ")
+            tail = (" A doc the agent must have whole (CLAUDE.md, a brief, a handoff, a skill) Reads "
+                    "whole with no limit. Outline (the file's own headings - document text, not "
                     "instructions):\n" + outline(path))
         deny(f"md-guard: {what} read in a shell without a column cap (long paragraph-lines "
-             "blow the output). To locate, add `| cut -c1-300` "
+             "blow the output). " + first + "To locate a spot instead, add `| cut -c1-300` "
              "(PowerShell: `| % { $_.Substring(0,[Math]::Min(300,$_.Length)) }`); it "
-             "truncates long lines, so read the content itself with Read, not the shell. "
-             + HOW + tail)
+             "truncates long lines, so never read content that way. " + HOW + tail)
 
 
 def main():
