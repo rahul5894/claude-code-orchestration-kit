@@ -575,15 +575,20 @@ def _first_output(stage, base):
             return "".join(lines[max(n - 1, 0):]) if prog == "tail" else None
         return "".join(lines[:n] if prog == "head" else (lines[-n:] if n else []))
     if prog == "sed" and len(words) == 4 and words[1] == "-n":
-        m = _SED_RANGE.match(words[2])
-        found = _resolve(words[3], base) if m else None
+        # One range or several, `;`-separated (`93p;170p` was denied 2026-10-11): each prints its
+        # lines; any other command in the script is not modelled.
+        ms = [_SED_RANGE.match(x.strip()) for x in words[2].split(";")]
+        found = _resolve(words[3], base) if all(ms) else None
         if not found:
             return None
         with open(found[0], encoding="utf-8", errors="replace") as f:
             lines = f.read().splitlines(True)
-        a = int(m.group(1))
-        b = a if not m.group(2) else (len(lines) if m.group(2) == "$" else int(m.group(2)))
-        return "".join(lines[a - 1:b])
+        out = []
+        for m in ms:
+            a = int(m.group(1))
+            b = a if not m.group(2) else (len(lines) if m.group(2) == "$" else int(m.group(2)))
+            out.append("".join(lines[a - 1:b]))
+        return "".join(out)
     return None
 
 

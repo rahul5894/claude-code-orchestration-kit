@@ -73,7 +73,7 @@ kit-subagent-start: registered in settings.json
 kit-context: registered in settings.json
 kit-context (mid-turn): registered in settings.json
 kit-session-end: registered in settings.json
-md-guard self-check: 220/220 passed
+md-guard self-check: 223/223 passed
 kit-session-start self-check: 68/68 passed
 kit-subagent-report self-check: 16/16 passed
 kit-subagent-start self-check: 25/25 passed
@@ -265,7 +265,7 @@ search passes whatever the file's size - one pattern, every alternative anchored
 `-A`/`-B`/`-C`/`-v` - because it prints only the outline: it is project-records' own index of
 decisions (`grep -n "^### " docs/DECISIONS.md` in a records project), which was denied before.
 
-Check: `python ~/.claude/hooks/md-guard_test.py` prints `220/220 passed`. The test
+Check: `python ~/.claude/hooks/md-guard_test.py` prints `223/223 passed`. The test
 builds its own fixtures in a temp folder, so it runs on any machine. The installer runs
 it for you.
 
@@ -468,7 +468,7 @@ report format. The skill is worth keeping, so the kit ships its own copy at
 
 ## 7. Final checklist
 
-- [ ] `pwsh install.ps1` printed `md-guard self-check: 220/220 passed`
+- [ ] `pwsh install.ps1` printed `md-guard self-check: 223/223 passed`
 - [ ] the same run printed `kit-session-start self-check: 68/68 passed`
 - [ ] the same run printed `kit-subagent-report self-check: 16/16 passed`
 - [ ] the same run printed `kit-subagent-start self-check: 25/25 passed`

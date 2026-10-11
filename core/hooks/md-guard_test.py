@@ -163,6 +163,10 @@ CASES = [
     ("DENY",  "Bash", {"command": f'grep -n "line" {BIG} | head -100'}, None),
     ("ALLOW", "Bash", {"command": f"sed -n 10,20p {BIG}"}, None),
     ("ALLOW", "Bash", {"command": f"sed -n '12p' {BIG}"}, None),
+    # several ranges in one script are measured too (2026-10-11); a big one still denies
+    ("ALLOW", "Bash", {"command": f"sed -n '12p;20p' {BIG}"}, None),
+    ("DENY",  "Bash", {"command": f"sed -n '12p;1,100p' {BIG}"}, None),
+    ("DENY",  "Bash", {"command": f"sed -n '12p;w {tmp}/out.txt' {BIG}"}, None),
     ("DENY",  "Bash", {"command": f"sed -n 1,100p {BIG}"}, None),
     ("ALLOW", "Bash", {"command": f"head -c 1500 {BIG}"}, None),
     ("ALLOW", "Bash", {"command": f"tail -c 400 {BIG}"}, None),
