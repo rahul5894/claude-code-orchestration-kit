@@ -206,7 +206,7 @@ for name, must_lack, must_have in [
         ('researcher', ['Edit', 'Write', 'WebFetch', 'WebSearch', 'Agent'],
          ['Read', QZ + 'explore', 'mcp__firecrawl__firecrawl_search', 'mcp__exa__web_search_exa',
           'mcp__context7__query-docs']),
-        ('debugger', ['Edit', 'Write', 'Agent'], ['Read', 'Bash', QZ + 'locate']),
+        ('debugger', ['Edit', 'Write', 'Agent'], ['Read', 'Bash', QZ + 'explore']),
         ('builder', ['Agent'], ['Edit', 'Write', 'Bash', QZ + 'impact']),
         ('verifier', ['Edit', 'Write', 'Bash', 'Agent'], ['Read', QZ + 'read', QZ + 'refs'])]:
     d, _ = fmx(f'core/agents/{name}.md')

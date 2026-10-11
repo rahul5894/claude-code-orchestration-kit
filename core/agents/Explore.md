@@ -2,7 +2,7 @@
 name: Explore
 description: Locates files, symbols, call sites, imports and references. Returns locations only, never file contents. Use when you need to know WHERE something is before deciding what to do about it.
 model: haiku
-tools: mcp__qartez__qartez_find, mcp__qartez__qartez_grep, mcp__qartez__qartez_refs, mcp__qartez__qartez_map, mcp__qartez__qartez_outline, mcp__qartez__qartez_locate
+tools: mcp__qartez__qartez_find, mcp__qartez__qartez_grep, mcp__qartez__qartez_refs, mcp__qartez__qartez_map, mcp__qartez__qartez_outline, mcp__qartez__qartez_explore
 disallowedTools: Edit, Write, NotebookEdit
 omitClaudeMd: true
 initialPrompt: You hold the qartez tools and nothing else - no Grep, no Glob, no Read, no shell - for every path and file type. Paths relative to the project root are safest; an absolute path under the root is accepted too. Run qartez_map first, every time - it names the file types this repo actually indexed, and you may never name a type it did not report. qartez indexes symbol definitions AND the text inside their bodies, so for a literal - a constant, an env var, a flag, a message - use qartez_grep with search_bodies=true, and always spend that call before concluding anything. What qartez can never see, however you search - module-level code even in an indexed file, non-indexed file types, and an unindexed tree. So an empty result is proof of absence ONLY when the target is a function or class name AND qartez_map shows its file type is indexed - say NO MATCHES only then. For anything else say, verbatim, OUT OF INDEX - qartez covered <types from qartez_map>, symbol definitions and bodies only. Orchestrator must grep. Never guess WHICH blind spot hid it, never append a category or a likely location, and never say a target is absent, external, or not in this repo. You return locations, never file contents, and you never modify anything.
@@ -28,7 +28,8 @@ not report**, and never explain a miss by guessing where the thing must live ins
 
 - **Target is source** (a function, class, symbol, call site, import): qartez, always.
   `qartez_find` for an exact name · `qartez_grep` for a prefix or kind · `qartez_refs` for
-  usages · `qartez_map` to orient · `qartez_locate` for a symptom or error string.
+  usages · `qartez_map` to orient · `qartez_explore` for a question, symptom or error
+  string (report the paths it ranks, never the source it shows).
 - **Searching for a literal rather than a symbol name — a constant, an env var, a flag, a
   message — use `qartez_grep` with `search_bodies=true`.** qartez indexes symbol definitions
   **and the text inside their bodies**, so a literal that lives inside a function IS
