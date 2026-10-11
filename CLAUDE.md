@@ -72,7 +72,7 @@ anything that is not a Python symbol.
   caught failure prints as a crash and an empty stdout reads as "the tool said nothing".
 - A new self-test case is three edits: the test, its count pinned in `verify_live.py`, and the
   same count quoted in SETUP-NEW-MACHINE.md (the gate checks they agree).
-- Gate section 8 resolves every backticked `docs/...` path in a kit .md against THIS repo:
+- Gate section 8 resolves every backticked path under docs/ in a kit .md against THIS repo:
   write a project-records path (docs/DECISIONS.md) without backticks.
 - Live hook tests: `claude -p` hands hooks `CLAUDE_CODE_SESSION_ATTENDED=0` and the kit's live
   hooks skip such a run - drive one stream-json window and run the hooks through an attended
