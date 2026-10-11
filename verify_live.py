@@ -707,8 +707,8 @@ ok('kit-context self-check: 62/62 passed' in r2.stdout,
 ok('kit_digest self-check: 41/41 passed' in r2.stdout,
    'kit_digest self-check 41/41',
    [l for l in r2.stdout.splitlines() if 'kit_digest' in l])
-ok('kit_chain self-check: 58/58 passed' in r2.stdout,
-   'kit_chain self-check 58/58',
+ok('kit_chain self-check: 61/61 passed' in r2.stdout,
+   'kit_chain self-check 61/61',
    [l for l in r2.stdout.splitlines() if 'kit_chain' in l])
 ok('kit-session-end self-check: 8/8 passed' in r2.stdout,
    'kit-session-end self-check 8/8',

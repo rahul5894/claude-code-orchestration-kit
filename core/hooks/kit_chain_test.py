@@ -390,6 +390,46 @@ try:
     ok(not os.path.exists(note(root6, "open", "reports")) and os.path.isfile(note(root6, "open", os.path.join("briefs", "01-x.md")))
        and not os.path.exists(note(root6, "recent", "briefs")) and not os.path.exists(note(root6, closed.format("old"), "reports")),
        "an empty briefs/ or reports/ goes; one holding a brief stays")
+    # Windows refuses a folder rename for any folder with a subfolder while an editor watches the
+    # project (WinError 5, measured 2026-10-11 - every bucket has digests/): the bucket then moves
+    # file by file; a half move is undone; a link inside leaves the bucket alone.
+    root_w = project("pw", slugs=("w1", "w2", "w3"))
+    nine = "# STATE\nUpdated: x   Status: CLOSED " + time.strftime("%Y-%m-%d", time.localtime(time.time() - 9 * day)) + "\n"
+    for slug in ("w1", "w2", "w3"):
+        write_state(root_w, slug, nine)
+        os.makedirs(note(root_w, slug, "digests"))
+        with open(note(root_w, slug, os.path.join("digests", "s.md")), "w", encoding="utf-8") as fh:
+            fh.write("verbatim " + slug)
+    os.makedirs(os.path.join(tmp, "elsewhere-w3"), exist_ok=True)
+    linked_ok = junction(note(root_w, "w3", "linked"), os.path.join(tmp, "elsewhere-w3"))
+    real_rename, real_replace, w2_calls = kc.os.rename, kc.os.replace, []
+
+    def refuse(a, b):
+        if os.path.isdir(a):
+            raise OSError(5, "Access is denied")
+        return real_rename(a, b)
+
+    def flaky(a, b):
+        if os.sep + "w2" + os.sep in a:
+            w2_calls.append(a)
+            if len(w2_calls) == 2:
+                raise OSError(32, "The process cannot access the file")
+        return real_replace(a, b)
+    kc.os.rename, kc.os.replace = refuse, flaky
+    try:
+        kc.tidy(root_w)
+    finally:
+        kc.os.rename, kc.os.replace = real_rename, real_replace
+    cw = os.path.join("_closed", "{}")
+    ok(not os.path.exists(note(root_w, "w1", "")) and os.path.isfile(note(root_w, cw.format("w1"), "STATE.md"))
+       and open(note(root_w, cw.format("w1"), os.path.join("digests", "s.md")), encoding="utf-8").read() == "verbatim w1",
+       "a folder rename refused (an editor watching): the bucket moves file by file, every file intact")
+    ok(os.path.isfile(note(root_w, "w2", "STATE.md")) and os.path.isfile(note(root_w, "w2", "FINDINGS.md"))
+       and open(note(root_w, "w2", os.path.join("digests", "s.md")), encoding="utf-8").read() == "verbatim w2"
+       and not os.path.exists(note(root_w, cw.format("w2"), "")),
+       "a file locked half way: the move is undone - the bucket whole where it was, nothing in _closed/")
+    ok(not linked_ok or (os.path.isfile(note(root_w, "w3", "STATE.md")) and not os.path.exists(note(root_w, cw.format("w3"), ""))),
+       "a link inside a bucket: the bucket is left alone, the link never followed")
     # The prune flag lives in the project's scratch, never the temp dir; a stale context marker
     # goes, a fresh one, a folder and another tool's file stay.
     t = tempfile.gettempdir()

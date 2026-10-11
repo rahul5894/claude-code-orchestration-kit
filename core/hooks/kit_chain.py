@@ -748,11 +748,51 @@ def tidy(root, now=None):
             continue
         try:
             os.makedirs(closed_dir, exist_ok=True)
-            os.rename(bucket, target)
-            moved += 1
         except OSError:
-            pass  # a Windows lock: the next day's upkeep tries again
+            continue
+        moved += _move_tree(bucket, target)
     return moved
+
+
+def _move_tree(src, dst):
+    """src moved to dst, which does not exist yet. A plain rename first; Windows refuses one for
+    any folder with a subfolder while an editor watches the project (WinError 5, measured
+    2026-10-11 - every bucket has digests/), so then file by file and the emptied folders
+    removed, which pass. A half move is undone: the bucket stays whole where it was and the
+    next day's upkeep tries again. A link anywhere inside: left alone. True when moved."""
+    try:
+        os.rename(src, dst)
+        return True
+    except OSError:
+        pass
+    walk = list(os.walk(src))
+    if any(linked(os.path.join(d, n)) for d, subs, files in walk for n in subs + files):
+        return False
+    done = []
+    try:
+        for d, _, files in walk:
+            os.makedirs(os.path.join(dst, os.path.relpath(d, src)), exist_ok=True)
+            for f in files:
+                a = os.path.join(d, f)
+                b = os.path.join(dst, os.path.relpath(a, src))
+                os.replace(a, b)
+                done.append((a, b))
+        for d, _, _ in reversed(walk):  # os.walk is top-down: reversed, children go first
+            os.rmdir(d)
+        return True
+    except OSError:
+        for a, b in reversed(done):
+            try:
+                os.makedirs(os.path.dirname(a), exist_ok=True)
+                os.replace(b, a)
+            except OSError:
+                pass  # left in dst, never deleted
+        for d, _, _ in sorted(os.walk(dst), key=lambda w: -len(w[0])):
+            try:
+                os.rmdir(d)  # only the folders this made, and only when empty
+            except OSError:
+                pass
+        return False
 
 
 def _prune_log(log, now):

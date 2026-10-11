@@ -80,7 +80,7 @@ kit-subagent-start self-check: 25/25 passed
 kit-context self-check: 62/62 passed
 kit_off self-check: 13/13 passed
 kit_digest self-check: 41/41 passed
-kit_chain self-check: 58/58 passed
+kit_chain self-check: 61/61 passed
 kit-session-end self-check: 8/8 passed
 kit-switch self-check: 18/18 passed
 scan-project self-check: 38/38 passed
@@ -319,7 +319,7 @@ after 30 days and the newest 200 entries stay. The session start names the newes
 `/continue` resumes it by reading its digest - as the remember plugin's summary did, but word for
 word and with no model call. `--backfill` also logs past conversations of no task (2+ typed
 messages: a transcript cannot tell a headless run).
-Check: `python ~/.claude/hooks/kit_chain_test.py` prints `58/58 passed` and
+Check: `python ~/.claude/hooks/kit_chain_test.py` prints `61/61 passed` and
 `python ~/.claude/hooks/kit-session-end_test.py` prints `8/8 passed`.
 
 Known gaps, on purpose:
@@ -475,7 +475,7 @@ report format. The skill is worth keeping, so the kit ships its own copy at
 - [ ] the same run printed `kit-context self-check: 62/62 passed`
 - [ ] the same run printed `kit_off self-check: 13/13 passed`
 - [ ] the same run printed `kit_digest self-check: 41/41 passed`
-- [ ] the same run printed `kit_chain self-check: 58/58 passed`
+- [ ] the same run printed `kit_chain self-check: 61/61 passed`
 - [ ] the same run printed `kit-session-end self-check: 8/8 passed`
 - [ ] the same run printed `kit-switch self-check: 18/18 passed`
 - [ ] the same run printed `scan-project self-check: 38/38 passed`
