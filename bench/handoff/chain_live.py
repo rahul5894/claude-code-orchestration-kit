@@ -69,6 +69,11 @@ def project():
     root = tempfile.mkdtemp(prefix="kit-chain-")
     with open(os.path.join(root, "CLAUDE.md"), "w", encoding="utf-8") as f:
         f.write("# test project\n| **FAST GATE — agents run this** | `python -c pass` | 0.1 s |\n")
+    # The kit is off in a project until /kit-on writes its rules file (432eae4); the hooks check
+    # only its first bytes, so a header line turns both arms on.
+    os.makedirs(os.path.join(root, ".claude", "rules"))
+    with open(os.path.join(root, ".claude", "rules", "orchestration-kit.md"), "w", encoding="utf-8") as f:
+        f.write("<!-- orchestration-kit (test fixture) -->\n")
     scratch = os.path.join(root, ".claude", "scratch")
     os.makedirs(scratch)
     with open(os.path.join(scratch, "INDEX.md"), "w", encoding="utf-8") as f:

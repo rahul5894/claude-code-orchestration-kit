@@ -324,3 +324,28 @@ each reader the project's MEMORY.md index, as every real session starts with it.
 The current-state points both kits still lose are one detail (`QB_ARMS fixroot`) left out of a
 short answer; it is in the current STATE.md. `note_writes_scan.py` holds the filing fix's own
 measure: of 642 note writes the old test saw, ~167 were reads, and it never saw 389 real ones.
+
+## Kit + project-records (2026-10-11, Claude Code 2.1.29x, Opus 5.5; bucket kit-records-integration)
+
+Is the kit alone as it was before the records work (`432eae4`), does records file as much with the
+kit on, and does a handoff in a records project lose nothing? The kit side reuses the scripts
+above; the records side is the records hard-test harness (`D:\skill-workspaces\records-hardtest`,
+outside this repo: `node scripts/run.mjs T13off|T13on|T14on|T14off|T15on|T15off|T15fix`). Its
+runs use `--setting-sources project,local`, so the kit is added explicitly: kit_switch on, its
+commands/agents/skills in the project, its hooks as `--settings` (the Stop hook through a shim
+that sets ATTENDED=1, as `claude -p` sets 0), the window capped with
+`CLAUDE_CODE_MAX_CONTEXT_TOKENS` + `DISABLE_COMPACT=1` so a real session crosses 45%.
+
+| Test | Before | After |
+|---|---|---|
+| 432eae4's 420 hook test cases on the new hooks | - | 418 pass; the 2 others are the session log, by design |
+| hook output, 9 real projects (27 outputs) | - | 0 old lines removed; kit-only adds the no-task-session block |
+| `chain_live.py --arm both --ref 432eae4` | 10/10 | 10/10 |
+| SESSIONS.md of 61 real buckets | - | byte-identical |
+| records hard-test, kit absent / kit ON (14 runs each) | 96/96 | 96/96 |
+| records' session-end writes, kit absent / ON | PROGRESS 10, Now 10 | PROGRESS 10, Now 11 |
+| a full context in a records project, records alone / with the kit | PROGRESS entry 0/4 | 4/4 |
+| handoff mid-interview, then `/continue` (T15 → T15fix) | INDEX row 0/2, card shown 0/2 | 2/2, 2/2 |
+
+`chain_live.py`'s fixture now writes the kit-on rules header: since `432eae4` both arms were silent
+without it.
