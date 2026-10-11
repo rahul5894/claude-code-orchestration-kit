@@ -330,8 +330,11 @@ extra.append(((lines_after(c, "- bare-one [OPEN]: x") or ["  "])[0][:2] != "  " 
               "a STATE.md that gives no about, state or step adds no line - nothing guessed"))
 extra.append(("- closed-new (closed " + ago(2) + "): Avatar upload with a square crop" in c
               and "- closed-moved (closed " + ago(1) + "): CSV export" in c and "- closed-nodate (closed " in c
-              and "closed-old" not in c and "open-unlisted" not in c and "Closed in the last 14 days" in c,
-              "closed in the last 14 days are listed (also in _closed/, no date = mtime); older and open ones are not"))
+              and "closed-old" not in c and "Closed in the last 14 days" in c
+              and "open-unlisted" not in c.split("Closed in the last 14 days")[1]
+              and "- open-unlisted [OPEN, no INDEX row]" in c,
+              "closed in the last 14 days are listed (also in _closed/, no date = mtime); older and open ones are not; "
+              "an open bucket INDEX.md does not name is an open card, marked"))
 c = context(run("stdin", CARD, source="compact"))
 extra.append(("about-one [OPEN]" in c and "  about:" not in c and "closed-new" not in c,
               "after a compaction: the short rows, no card lines, no closed list"))
@@ -350,6 +353,22 @@ state(DONE, "fin", f"# STATE\nAbout: the finished one\nStatus: CLOSED {ago(3)}\n
 extra.append(("- fin (closed " in run("cards", DONE)["_text"] and run("stdin", DONE) == {}
               and "No task buckets here" in run("cards", WITH)["_text"],
               "--cards lists closed tasks with none open (the note stays silent); no scratch -> says so"))
+# A handoff that wrote STATE.md and no INDEX.md (bucket kit-records-integration, T15on 2 of 2): the
+# next /continue still gets its card, marked; a row INDEX.md has wins (DONE stays done); a `_`
+# folder (the session log) is never a task.
+NOIDX = bucket_project("cards-noindex", True, [])
+os.remove(os.path.join(NOIDX, ".claude", "scratch", "INDEX.md"))
+state(NOIDX, "b007-portal", "# STATE\nAbout: customer portal interview\nStatus: OPEN\n## Next action\nround 1 again\n", 0)
+state(NOIDX, "_sessions", "# STATE\nStatus: OPEN\n", 0)
+DONEROW = bucket_project("cards-donerow", True, [("over", "DONE", "none")])
+state(DONEROW, "over", "# STATE\nStatus: OPEN\n", 0)
+state(DONEROW, "side", "# STATE\nAbout: a side task\nStatus: OPEN\n", 0)
+t, c = run("cards", NOIDX)["_text"], context(run("stdin", NOIDX))
+td = run("cards", DONEROW)["_text"]
+extra.append(("- b007-portal [OPEN, no INDEX row]" in t and "round 1 again" in t and "b007-portal" in c
+              and "_sessions" not in t and "- side [OPEN, no INDEX row]" in td and "over [" not in td,
+              "a bucket INDEX.md does not name, STATE open -> its card, marked (no INDEX.md too); "
+              "a DONE row wins; `_` folders never"))
 BIG = bucket_project("cards-big", True, [(f"t{i}", "OPEN", "n" * 300) for i in range(10)])
 for i in range(10):
     state(BIG, f"t{i}", f"# STATE\nAbout: {'a' * 300}\nUpdated: x   Status: OPEN {'s ' * 150}\n## Next action\n{'q' * 300}\n",

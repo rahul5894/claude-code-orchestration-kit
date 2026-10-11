@@ -110,8 +110,20 @@ try:
 except OSError:
     CAN_LINK = False
 
+# A bucket INDEX.md does not name, its STATE.md open (a handoff that skipped the index row, bucket
+# kit-records-integration T15on): its decisions still reach the agent, as its card reaches /continue.
+# A row INDEX.md has wins, DONE included; no INDEX.md at all is the same as no row.
+UNLISTED = project("unlisted", [("kept", "DONE")], {"kept": "1. use OLD\n", "lost": "1. use LOST\n"})
+NOINDEX = project("noindex", [], {"solo": "1. use SOLO\n"})
+os.remove(os.path.join(NOINDEX, ".claude", "scratch", "INDEX.md"))
+for _root, _slug in ((UNLISTED, "kept"), (UNLISTED, "lost"), (NOINDEX, "solo")):
+    with open(os.path.join(_root, ".claude", "scratch", _slug, "STATE.md"), "w", encoding="utf-8") as f:
+        f.write(f"# STATE - {_slug}\nUpdated: 2026-10-11   Status: OPEN\n")
+
 CASES = [
     # (want, how, root, substrings the injected text must contain)
+    ("CONTEXT", "stdin", UNLISTED, ["lost", "use LOST"], ["use OLD"]),
+    ("CONTEXT", "check", NOINDEX, ["solo", "use SOLO"]),
     ("QUIET",   "stdin", NOSCRATCH, []),
     ("CONTEXT", "stdin", ONE, ["alpha", "use X"]),
     ("CONTEXT", "check", ONE, ["alpha", "use X"]),

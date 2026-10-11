@@ -66,9 +66,15 @@ UNSAFE = re.compile(r"[^A-Za-z0-9._-]")
 # family, major, minor of a Claude model id; a date (-20250514) or a -v1:0 suffix is no minor.
 FAMILY = re.compile(r"claude-(opus|sonnet|haiku|fable)-(\d+)(?:-(\d{1,2}))?(?![0-9])")
 TRUTHY = ("1", "true", "yes", "on")
+# The rules' path, named: a session that never ran /task or /continue (a records project starts
+# from "next item") looked for skills/task/SKILL.md and then ran `find /` over the whole disk,
+# 2 of 2 live runs (bucket kit-records-integration, T14on); install.ps1 copies it there. Told
+# "section 4" alone, 2 of 2 runs wrote STATE.md and no INDEX.md row (T15on), so both are named.
 REASON = ("orchestration-kit: context is at {pct}% ({used}K of {window}K). Hand off now, before "
           "any new work. {where} It is the handoff: write it by the task "
-          "skill's STATE rules, in at most ~{lines} lines (sized to how full this session is). "
+          "skill's STATE rules (~/.claude/commands/task.md, sections 1 and 4: the bucket's "
+          "INDEX.md row and its STATE.md - read that file, never search for it), in at most "
+          "~{lines} lines (sized to how full this session is). "
           "The kit then saves this whole conversation word for word into that bucket's digests/ "
           "and keeps it current each turn, and lists the session in the bucket's SESSIONS.md "
           "timeline (both written by the kit, never by you), so STATE.md is the curated "

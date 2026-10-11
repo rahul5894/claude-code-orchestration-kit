@@ -34,17 +34,25 @@ BULLET_RE = re.compile(r"[-*]\s+(\S+?)\s+[—–-]{1,2}\s+(.+?)(?:\s+[—–-]{1
 OPEN = ("OPEN", "BLOCKED")
 OPEN_IF_FOLDER = ("IN PROGRESS", "IN-PROGRESS", "WIP", "ACTIVE", "ONGOING", "PAUSED", "WAITING",
                   "PENDING", "STARTED", "TODO")
+# A bucket folder INDEX.md does not name at all, its STATE.md not closed: a handoff that wrote
+# STATE.md but no index row (bucket kit-records-integration, T15on 2 of 2 runs) was invisible to
+# the next /continue, whose cards said "No open task". Its row says so, for the model to add it.
+UNLISTED = "OPEN, no INDEX row"
+STATE_DONE_RE = re.compile(r"\bStatus\b[*:\s]{1,6}(?:CLOSED|DONE|ABANDONED)\b", re.IGNORECASE)
+FOLDER_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
 
 
 def open_rows(index_path):
-    """(slug, status, next action) for every open row, in file order. Unreadable = []."""
+    """(slug, status, next action) for every open row, in file order, then every bucket folder
+    the file does not name whose STATE.md is not closed (unlisted). Unreadable = no rows."""
     scratch = os.path.dirname(index_path)
     try:
         with open(index_path, encoding="utf-8", errors="replace") as f:
             lines = f.read().splitlines()
     except OSError:
-        return []
+        lines = []
     out = []
+    listed = set()
     for line in lines:
         s = line.strip()
         table = s.startswith("|")
@@ -59,12 +67,44 @@ def open_rows(index_path):
                 continue
             slug, status, nxt = m.group(1), m.group(2), m.group(3) or ""
         slug = slug.strip("*` ")
+        listed.add(slug)
         word = status.strip("*` ").upper()
         if not slug or not word.startswith(OPEN + OPEN_IF_FOLDER):
             continue
         if (not table or not word.startswith(OPEN)) and not os.path.isdir(os.path.join(scratch, slug)):
             continue
         out.append((slug, status.strip(), nxt.strip()))
+    return out + unlisted(scratch, listed)
+
+
+def unlisted(scratch, listed):
+    """(slug, UNLISTED, "") per bucket folder not in `listed` with a regular STATE.md inside the
+    scratch dir that does not say CLOSED / DONE / ABANDONED; names starting `_` (_closed,
+    _sessions, _inbox) and linked folders or files are never buckets. A row INDEX.md has, in any
+    status, wins: a task the index closed stays closed."""
+    try:
+        if linked(scratch) or not os.path.isdir(scratch):
+            return []
+        real = os.path.realpath(scratch)
+        names = sorted(os.listdir(scratch))
+    except OSError:
+        return []
+    out = []
+    for slug in names:
+        if slug in listed or slug.startswith("_") or not FOLDER_RE.fullmatch(slug):
+            continue
+        folder = os.path.join(scratch, slug)
+        path = os.path.join(folder, "STATE.md")
+        try:
+            if (linked(folder) or linked(path) or not os.path.isfile(path)
+                    or not os.path.realpath(path).startswith(real + os.sep)):
+                continue
+            with open(path, "rb") as f:
+                head = f.read(2000).decode("utf-8", "ignore")
+        except (OSError, ValueError):
+            continue
+        if not STATE_DONE_RE.search(head):
+            out.append((slug, UNLISTED, ""))
     return out
 
 

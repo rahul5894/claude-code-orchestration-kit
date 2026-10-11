@@ -74,9 +74,9 @@ kit-subagent-start: registered in settings.json
 kit-context: registered in settings.json
 kit-session-end: registered in settings.json
 md-guard self-check: 190/190 passed
-kit-session-start self-check: 67/67 passed
+kit-session-start self-check: 68/68 passed
 kit-subagent-report self-check: 12/12 passed
-kit-subagent-start self-check: 23/23 passed
+kit-subagent-start self-check: 25/25 passed
 kit-context self-check: 51/51 passed
 kit_off self-check: 13/13 passed
 kit_digest self-check: 35/35 passed
@@ -276,7 +276,7 @@ the rule that docs/ is the one home of a decision, finding or lesson, and the on
 from the project's docs/DECISIONS.md of every `D-NNN` the open buckets cite - so a bucket names a
 project decision by its id instead of copying it. The session-start note says the same once and,
 with no task open, names the first open line of the project's roadmap as the next item.
-Check: `python ~/.claude/hooks/kit-subagent-start_test.py` prints `23/23 passed`.
+Check: `python ~/.claude/hooks/kit-subagent-start_test.py` prints `25/25 passed`.
 
 `~/.claude/hooks/kit-context.py` is a `Stop` hook. At 45%+ context, the first stop in each
 10-point band asks the model to write the handoff into the bucket's `STATE.md` (60 lines at
@@ -472,9 +472,9 @@ report format. The skill is worth keeping, so the kit ships its own copy at
 ## 7. Final checklist
 
 - [ ] `pwsh install.ps1` printed `md-guard self-check: 190/190 passed`
-- [ ] the same run printed `kit-session-start self-check: 67/67 passed`
+- [ ] the same run printed `kit-session-start self-check: 68/68 passed`
 - [ ] the same run printed `kit-subagent-report self-check: 12/12 passed`
-- [ ] the same run printed `kit-subagent-start self-check: 23/23 passed`
+- [ ] the same run printed `kit-subagent-start self-check: 25/25 passed`
 - [ ] the same run printed `kit-context self-check: 51/51 passed`
 - [ ] the same run printed `kit_off self-check: 13/13 passed`
 - [ ] the same run printed `kit_digest self-check: 35/35 passed`

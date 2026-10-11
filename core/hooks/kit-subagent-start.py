@@ -34,7 +34,7 @@ if __name__ == "__main__" and not READONLY and kit_off():
 import json  # noqa: E402
 import re  # noqa: E402
 
-from kit_index import open_rows, record_heads, records_project  # noqa: E402
+from kit_index import open_rows, record_heads, records_project, unlisted  # noqa: E402
 
 MAX_CHARS = 6000
 LEAD = ("orchestration-kit: decisions already made for the open bucket(s) below. A change "
@@ -108,7 +108,8 @@ def main():
         if not root or kit_off(root):
             return
     scratch = os.path.join(root, ".claude", "scratch")
-    if not os.path.isfile(os.path.join(scratch, "INDEX.md")):
+    # No INDEX.md and no open bucket folder it would name (kit_index.unlisted): nothing to carry.
+    if not os.path.isfile(os.path.join(scratch, "INDEX.md")) and not unlisted(scratch, set()):
         return
     found = sections(scratch)
     records = records_project(root)

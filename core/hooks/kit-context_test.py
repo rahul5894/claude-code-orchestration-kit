@@ -262,9 +262,10 @@ try:
     ok(blocked(res, 50) and "~60 lines" in res[1].get("reason", "") and "digests/" in res[1].get("reason", "")
        and sorted(os.listdir(scratch)) == ["_sessions"]
        and os.path.isfile(os.path.join(scratch, "_sessions", "digests", s + ".json"))
-       and "touched no bucket" in res[1].get("reason", "") and "parallel window" in res[1].get("reason", ""),
+       and "touched no bucket" in res[1].get("reason", "") and "parallel window" in res[1].get("reason", "")
+       and "~/.claude/commands/task.md" in res[1].get("reason", "") and "INDEX.md row" in res[1].get("reason", ""),
        "50% block: STATE at ~60 lines, digest promised, no bucket made (the session goes in the session log); "
-       "no bucket -> open one, never another's")
+       "no bucket -> open one, never another's; the task rules' path named (no disk search)")
     state("other")  # another session's STATE.md: only on disk, never in this transcript
     ok(notice(run(path, s, stop_hook_active=True), 50) and not os.path.exists(digest("other", s)),
        "the stop after the block: only another session's STATE.md exists -> no digest")
