@@ -341,6 +341,12 @@ that wrote its notes by absolute path had landed in the session log.
 | reader tokens / $ per run | 3.14M / $2.06 | 2.17M / $1.51 |
 | the last digest, read whole (b2s / savings / ui) | 27K / 62K / 34K tok | 10K / 15K / 5K tok |
 
+**Round 6b (hallucination):** `<arm>h` reads that arm's sandbox with the chain's `absent.json`
+appended - 4 plausible questions per chain that no record answers (a Slack channel, a GPU model,
+a Sentry DSN...), each grep-checked absent from every record and the project's MEMORY.md; the
+only right answer is UNKNOWN. `read ... --arms apph --samples 2 --memory`: traps answered
+UNKNOWN 24/24, none invented; the 16 real questions in the same runs 99.0%, 0 wrong.
+
 ## Kit + project-records (2026-10-11, Claude Code 2.1.29x, Opus 5.5; bucket kit-records-integration)
 
 Is the kit alone as it was before the records work (`432eae4`), does records file as much with the
