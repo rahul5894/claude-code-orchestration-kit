@@ -598,8 +598,13 @@ def _small_output(seg, base):
         prog = os.path.basename(words[0]).lower() if words else ""
         if prog in ("head", "tail"):
             spec = _count_arg(words, 1)
-            if not spec or spec[2] or spec[0] != "lines":
+            if not spec or spec[2] or spec[0] not in ("lines", "bytes"):
                 return False
+            if spec[0] == "bytes":  # `| head -c 120`: a byte cap (measured live 2026-10-11, denied)
+                data = text.encode("utf-8")
+                data = data[:spec[1]] if prog == "head" else (data[-spec[1]:] if spec[1] else b"")
+                text = data.decode("utf-8", "replace")
+                continue
             lines = text.splitlines(True)
             text = "".join(lines[:spec[1]] if prog == "head" else (lines[-spec[1]:] if spec[1] else []))
         elif prog not in ("grep", "sort", "uniq"):  # these print no more than they read

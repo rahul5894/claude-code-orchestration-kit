@@ -164,6 +164,8 @@ CASES = [
     ("ALLOW", "Bash", {"command": f"tail -n 5 {BIG}"}, None),
     ("DENY",  "Bash", {"command": f"tail -n +10 {BIG}"}, None),
     ("ALLOW", "Bash", {"command": f"cat {BIG} | head -3"}, None),
+    ("ALLOW", "Bash", {"command": f"sed -n 1,100p {BIG} | head -c 120"}, None),
+    ("DENY",  "Bash", {"command": f"cat {BIG} | tail -c 20000"}, None),
     ("DENY",  "Bash", {"command": f"cat {BIG} | head -100"}, None),
     ("DENY",  "Bash", {"command": f'X=1; grep -n "line $X" {BIG}'}, None),
     ("ALLOW", "Bash", {"command": f'grep -n "line 7 " {BIG[:-len("big.md")]}big*.md'}, None),
