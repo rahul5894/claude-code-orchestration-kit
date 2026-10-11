@@ -23,6 +23,10 @@ repo unusual.
 suite, no network. `verify_live.py` also reads `~/.claude`, runs `install.ps1` twice and
 shells out to `claude plugin validate` and `qartez doctor` — which is why it is not the gate.
 
+**Every commit runs the gate on its staged files** (`.githooks/pre-commit`, switched on by
+`install.ps1` through `core.hooksPath`): a red gate cannot be committed, and another window's
+unstaged work never blocks yours. Never `--no-verify`.
+
 ### Agents never run these
 
 - `python verify_live.py` — it **writes to `~/.claude`** through `install.ps1`. Only I run it.

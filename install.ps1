@@ -337,6 +337,13 @@ else {
     else { "scan-project self-check: $t5" }
 }
 
+# This checkout's own commits run the fast gate on their staged files (.githooks/pre-commit):
+# a red gate cannot be committed (b9e374d was, 2026-10-12). Repo-local git config only.
+if ((Test-Path (Join-Path $kit '.git')) -and (Get-Command git -ErrorAction SilentlyContinue)) {
+    git -C $kit config core.hooksPath .githooks
+    if ($LASTEXITCODE -eq 0) { "git hooks: .githooks (a commit runs validate_kit.py on its staged files)" }
+}
+
 "done. The kit is OFF in every project until /kit-on there (it copies the rules in; /kit-off"
 "      takes them out). Open windows: the hooks run the new code from their next event, the"
 "      commands and rules from the next /clear; agents from a new window."

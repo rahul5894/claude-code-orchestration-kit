@@ -84,6 +84,7 @@ kit_chain self-check: 61/61 passed
 kit-session-end self-check: 8/8 passed
 kit-switch self-check: 18/18 passed
 scan-project self-check: 38/38 passed
+git hooks: .githooks (a commit runs validate_kit.py on its staged files)
 done. ...
 ```
 

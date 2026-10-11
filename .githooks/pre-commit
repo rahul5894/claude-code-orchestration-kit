@@ -1,0 +1,19 @@
+#!/bin/sh
+# The fast gate on exactly what is being committed - the staged snapshot, exported to a temp
+# folder - never on the working tree: another window's half-done files must not block a correct
+# commit, and a red gate must never land (b9e374d did, 2026-10-12, when a shell chain read a
+# printed FAIL line as success). Active through `git config core.hooksPath .githooks`, which
+# install.ps1 sets for this checkout. ~1.5 s.
+tmp=$(mktemp -d) || exit 1
+trap 'rm -rf "$tmp"' EXIT
+git checkout-index -a -f --prefix="$tmp/" || exit 1
+py=$(command -v python || command -v python3 || command -v py)
+[ -n "$py" ] || { echo "pre-commit: no python on PATH - the gate cannot run, commit refused" >&2; exit 1; }
+out=$(cd "$tmp" && PYTHONIOENCODING=utf-8 "$py" validate_kit.py 2>&1)
+last=$(printf '%s\n' "$out" | grep "checks run" | tail -n 1)
+case "$last" in
+  *"failures: 0"*) exit 0 ;;
+esac
+printf '%s\n' "$out" | grep "^FAIL" | head -n 20 >&2
+echo "pre-commit: the fast gate is red on the staged files (${last:-no tally line}) - commit refused" >&2
+exit 1

@@ -684,8 +684,16 @@ for frag, label in [('core\\skills', 'installer copies skills'),
                      'installer removes both retired kit output styles'),
                     ('RETIRED_AGENTS', 'installer removes retired agents by name'),
                     ('RETIRED_SKILLS', 'installer removes retired skills by name'),
-                    ('maxEffortLevel', 'installer warns on maxEffortLevel')]:
+                    ('maxEffortLevel', 'installer warns on maxEffortLevel'),
+                    ('config core.hooksPath .githooks', 'installer turns on the pre-commit gate for this checkout')]:
     chk(frag in inst, label)
+# A red gate landed once (b9e374d, 2026-10-12: a shell chain read a printed FAIL line as success).
+# The hook gates every commit on its STAGED files, exported - another window's unstaged work
+# never blocks a correct commit - and on the tally saying 0 failures, never on an exit code.
+_pc = open('.githooks/pre-commit', encoding='utf-8', newline='').read() if os.path.isfile('.githooks/pre-commit') else ''
+chk(_pc.startswith('#!/bin/sh\n') and '\r' not in _pc and 'checkout-index -a -f --prefix=' in _pc
+    and 'validate_kit.py' in _pc and '*"failures: 0"*) exit 0' in _pc,
+    '.githooks/pre-commit: LF, gates the staged snapshot on "failures: 0"')
 # A substring only proves the text exists. These two guards were provably dead once, because
 # they read the POST-merge settings, where the kit's own value always wins. So assert the
 # mechanism: both must read the pre-merge copy, and the pre-merge copy must be taken before
