@@ -371,3 +371,10 @@ that sets ATTENDED=1, as `claude -p` sets 0), the window capped with
 
 `chain_live.py`'s fixture now writes the kit-on rules header: since `432eae4` both arms were silent
 without it.
+
+`notask_live.py` (2026-10-12) closes the check headless runs had left to a real window: one
+stream-json window (one `CLAUDE_PID` across `/clear`), every kit hook run through an attended
+shim. A chat with no task, a code word in its second message answered "OK" only, `/clear`,
+`/continue`, then "what was my code word?": Opus 6/6 - S1's record in `_sessions/` holds the
+word, S2's start marks "(this window's last session)", S2 reads that record, opens no task, and
+answers the word that no session-start line carried.
