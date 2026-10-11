@@ -29,19 +29,20 @@ if (-not (Test-Path $pj)) {
 }
 $pol = Get-Content $pj -Raw | ConvertFrom-Json -AsHashtable
 
-# 1. Agents, commands, skills, output styles: plain copy. Retired agents are removed by name
+# 1. Agents, commands, skills: plain copy. Retired agents are removed by name
 #    only — never sweep the folder, you may keep your own agents there.
 $RETIRED_AGENTS = @('scout')         # dropped in v2: the Explore shadow does locating
 $RETIRED_SKILLS = @()                # skill folders a later version renames or drops
-$RETIRED_OUTPUT_STYLES = @()         # output styles a later version renames or drops
+# The kit ships no output style since 2026-10-11 (kit-optimize-pass D001): both were unused
+# since 2026-09-24, when the default style became the user's rule in every project.
+$RETIRED_OUTPUT_STYLES = @('kit-lean', 'orchestrator')
 # settings.json env keys a later version drops, with the value the kit wrote. Merge-Into only
 # adds, so without this a dropped key lives on forever; a user's own value is left alone.
 $RETIRED_ENV = @{}
 New-Item -ItemType Directory -Force (Join-Path $dest 'agents'), (Join-Path $dest 'commands'),
-    (Join-Path $dest 'skills'), (Join-Path $dest 'output-styles') | Out-Null
+    (Join-Path $dest 'skills') | Out-Null
 Copy-Item (Join-Path $kit 'core\agents\*.md')        (Join-Path $dest 'agents')        -Force
 Copy-Item (Join-Path $kit 'core\commands\*.md')      (Join-Path $dest 'commands')      -Force
-Copy-Item (Join-Path $kit 'core\output-styles\*.md') (Join-Path $dest 'output-styles') -Force
 Copy-Item (Join-Path $kit 'core\skills\*')           (Join-Path $dest 'skills') -Recurse -Force
 foreach ($r in $RETIRED_AGENTS) {
     $p = Join-Path $dest "agents\$r.md"
@@ -65,7 +66,6 @@ Copy-Item (Join-Path $kit 'kit_switch.py')            (Join-Path $dest 'kit\kit_
 "agents:        " + ((Get-ChildItem (Join-Path $kit 'core\agents\*.md')).BaseName -join ', ')
 "commands:      " + ((Get-ChildItem (Join-Path $kit 'core\commands\*.md')).BaseName -join ', ')
 "skills:        " + ((Get-ChildItem (Join-Path $kit 'core\skills') -Directory).Name -join ', ')
-"output-styles: " + ((Get-ChildItem (Join-Path $kit 'core\output-styles\*.md')).BaseName -join ', ')
 
 # 2. The kit's shared rules. The kit is OFF in every project by default (bucket
 #    kit-default-off-optimize, D002): the rules go to kit\orchestration-kit.md, which no session
@@ -194,10 +194,10 @@ if ($set['env'] -is [Collections.IDictionary]) {
         }
     }
 }
-# kit-lean was the installed style until kit-modes D013; the fragment no longer sets one, so
-# a user's own style is never touched. Only the value the kit itself wrote is taken back.
-if ($set['outputStyle'] -eq 'kit-lean') {
-    $set.Remove('outputStyle'); "outputStyle: removed the retired kit default 'kit-lean'"
+# The fragment sets no style, so a user's own style is never touched; a retired kit style is
+# taken back, as its file is gone (kit-lean was the installed default until kit-modes D013).
+if ($set['outputStyle'] -in $RETIRED_OUTPUT_STYLES) {
+    "outputStyle: removed the retired kit style '$($set['outputStyle'])'"; $set.Remove('outputStyle')
 }
 
 # 3b. core/plugins.json `disable`: a plugin whose hooks fire in every session cannot be
@@ -339,5 +339,4 @@ else {
 
 "done. The kit is OFF in every project until /kit-on there (it copies the rules in; /kit-off"
 "      takes them out). Open windows: the hooks run the new code from their next event, the"
-"      commands and rules from the next /clear; agents and output styles from a new window."
-"      The kit sets no output style; /output-style kit-lean or orchestrator opts in."
+"      commands and rules from the next /clear; agents from a new window."

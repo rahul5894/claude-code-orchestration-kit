@@ -212,12 +212,13 @@ going on: two windows writing one `STATE.md` lose each other's lines.
 
 ## While a bucket is open
 
-- **A bucket is a handoff, not a delegation mode.** Unless the `orchestrator` output style
-  is on, do the work yourself and spawn builder, refuter, verifier or debugger only when I
-  ask. Briefs already in `briefs/` are history, not a pattern to continue.
+- **A bucket is a handoff, not a delegation mode.** Do the work yourself and spawn builder,
+  refuter, verifier or debugger only when I ask. Briefs already in `briefs/` are history, not
+  a pattern to continue.
 - When you do spawn, write the brief to `briefs/<NN>-<task>.md` first. NN counts up from 01.
   Make it read-only (`attrib +R` on Windows, `chmod a-w` elsewhere), and name its path in the
-  agent's prompt - the kit files the report by it. Do not show me briefs unless I ask.
+  agent's prompt - the kit files the report by it. Do not show me briefs unless I ask. Run
+  `git status --short` before and after a read-only agent: a tree it changed voids its verdict.
 - Every brief must name the bucket and require the agent to read `DECISIONS.md` before
   changing anything, append to `FINDINGS.md`, and never edit anything under `briefs/`.
   **Agents do not write `STATE.md`** — two writers to a replaced-not-appended `STATE.md` lose

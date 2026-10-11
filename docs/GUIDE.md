@@ -15,18 +15,12 @@ styles into `~/.claude`, and the kit's rules to `~/.claude/kit/orchestration-kit
 `~/.claude/CLAUDE.md` is not touched. **The kit is off in every project until you type `/kit-on`
 (or `/kit-init`) there.**
 
-## 2. The two modes
+## 2. No modes
 
-| Mode | What it does | How to switch |
-|---|---|---|
-| `default` (after install) | Plain Claude Code: Claude writes the code itself, no builder or refuter unless you ask; where the kit is on, its hooks, guards, rules and `/task` + `/continue` still apply | `/output-style default` |
-| `kit-lean` | Claude writes the code itself, runs the gate, then `/code-review` (and `/security-review` for risky files) | `/output-style kit-lean` |
-| `orchestrator` | Full loop: builder agent writes, refuter + verifier review, Fable/Opus split | `/output-style orchestrator` |
-
-- The kit sets no style, so `default` is on after install; `/kit-init` does not change it. Bench E wave G:
-  plain Opus 5.5 xhigh tied `kit-lean` on every hidden test, 7% faster, 17% cheaper.
-- `/output-style` changes the mode for THIS project only (it writes `.claude/settings.local.json`).
-- `orchestrator` for big or multi-day work; `kit-lean` when you want the review step too.
+The kit ships no output style: `orchestrator` and `kit-lean` were retired on 2026-10-11, unused
+after 2026-09-24 (bench E wave G: plain Opus 5.5 xhigh tied `kit-lean` on every hidden test, 7%
+faster, 17% cheaper). Claude writes the code itself, with no builder or refuter unless you ask;
+where the kit is on, its hooks, guards, rules and `/task` + `/continue` apply.
 
 ## 3. A new project
 
@@ -53,7 +47,7 @@ missing, a message at session start reminds you.
 - The kit is **off** in every project by default: no hooks at work, no kit rules in the chat.
 - `/kit-on` - on here: it copies the kit's rules into `.claude/rules/orchestration-kit.md`
   (kept out of git through `.git/info/exclude`); that file is also the switch.
-- `/kit-off` - off here: the copy goes, kit hooks are silent, and a kit output style in force
+- `/kit-off` - off here: the copy goes, kit hooks are silent, and a retired kit style still set
   here (kit-lean or orchestrator) goes back to default. Task files stay. (md-guard still stops
   the read-only reviewer agents from writing.)
 - `/kit-uninstall` - removes the kit's files from this project (asks first, can zip your task

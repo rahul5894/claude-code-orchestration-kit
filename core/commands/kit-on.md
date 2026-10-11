@@ -1,5 +1,5 @@
 ---
-description: Turn the orchestration kit ON in this project - it is off in every project until then. Copies the kit's rules in; hooks run from their next event; the default output style stays (never kit-lean or orchestrator); asks once whether the project should also keep project-records.
+description: Turn the orchestration kit ON in this project - it is off in every project until then. Copies the kit's rules in; hooks run from their next event; the default output style stays; asks once whether the project should also keep project-records.
 allowed-tools: Bash, Read, AskUserQuestion
 ---
 
@@ -9,7 +9,7 @@ Run exactly `python ~/.claude/kit/kit_switch.py on "<root>"` and paste its outpu
 It copies the kit's rules to `.claude/rules/orchestration-kit.md` - Claude Code loads them from
 there in every new chat and in every subagent, and every kit hook looks for that file first -
 lists it in `.git/info/exclude` so it is never committed, and keeps the default output style
-(a kit style, `kit-lean` or `orchestrator`, in force here is overridden with `default`). A plugin
+(a retired kit style, `kit-lean` or `orchestrator`, still set here is overridden with `default`). A plugin
 that keeps a session journal of its own (remember) is switched off here, in
 `.claude/settings.local.json`, from the next session: the kit's task timeline keeps that record,
 and `/kit-off` turns the plugin back on.

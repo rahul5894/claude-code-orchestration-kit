@@ -64,7 +64,6 @@ Expected output, in this order:
 agents:        builder, debugger, Explore, refuter, researcher, verifier
 commands:      continue, kit-init, kit-off, kit-on, kit-uninstall, task
 skills:        review-precision, simple-english
-output-styles: kit-lean, orchestrator
 kit/orchestration-kit.md: written  (or "unchanged" on a re-run)
 settings.json: merged (backup written)  ("created" if none existed, "unchanged" on a re-run)
 md-guard: registered in settings.json
@@ -100,25 +99,21 @@ events, the end of a turn (Stop) and after each batch of tool calls (PostToolBat
 turn is told to hand off mid-way). Every hook is registered in exec form, no shell: the `py`
 launcher with `-3` and the script (the newest Python 3, so a Python upgrade breaks nothing),
 or the absolute `python.exe` when there is no launcher. An older install's shell-form entries
-are converted in place. It also copies the commands, both output
-styles and the skills, and publishes the `/kit-init` template and scripts to `~/.claude/kit/`. It is safe to run again after
+are converted in place. It also copies the commands and the skills, and publishes the
+`/kit-init` template and scripts to `~/.claude/kit/`. It is safe to run again after
 every kit change. A second run prints `unchanged` and `already registered`.
 
-Two modes. The installer copies both output styles into `~/.claude/output-styles/`:
-`orchestrator` (the full delegate-and-review loop, for a Fable orchestrator or large
-multi-part work) and `kit-lean` (an Opus main session that implements itself and reviews
-with the native `/code-review` and `/security-review`). `settings.json` gets no output style:
-Claude Code's own default stays (both kit modes are opt-in). Switch with `/output-style kit-lean` or
-`/output-style orchestrator`; hooks and agents are the same in both. With no style set,
-builder, refuter, verifier and debugger stay installed but are spawned only when you ask.
+No modes. The kit ships no output style since 2026-10-11: an older install's `orchestrator`
+and `kit-lean` (unused after 2026-09-24) are removed from `~/.claude/output-styles/`, and a
+user-level `outputStyle` naming either is taken out, so Claude Code's own default stays.
+Builder, refuter, verifier and debugger stay installed and are spawned only when you ask.
 
 Checks:
 
 1. `python verify_live.py`. It must print `ALL CLEAR` and exit 0. This reads `~/.claude`,
    not just the repo, so it is the check that catches a stale install: every installed
    file byte-identical to the repo, every effort pin and `env` key live in
-   `settings.json`, the roster table in the output style matching the agent files, and no
-   agent holding `Grep`/`Glob` or carrying an order it has no tool for.
+   `settings.json`, no retired kit style left behind, and no agent holding `Grep`/`Glob` or carrying an order it has no tool for.
    Every one of its sections is break-tested. Run it after every kit change, not only on
    a new machine. `python validate_kit.py` is the faster repo-only half and runs inside it.
 2. `python agent_stats.py` after you have run some agents. It reads the transcripts Claude
@@ -186,7 +181,7 @@ machine that does not have those, or the servers show as failed to connect.
 
 ## 2c. A new project: open it and run `/kit-init`
 
-Everything in the kit is global — agents, output style, hooks, the shared rules, qartez and
+Everything in the kit is global — agents, hooks, the shared rules, qartez and
 the researcher's web servers at user scope. **The only per-project thing is a `CLAUDE.md`
 with a measured FAST GATE row**, and the kit now creates that itself:
 
@@ -391,7 +386,7 @@ report format. The skill is worth keeping, so the kit ships its own copy at
   test cases.
 - Effort decision: builder, refuter and verifier run at `high`, researcher at `medium`. The
   brief already names the pattern, so the builder does not need extra thinking. Reviewing
-  does. Under `/output-style orchestrator`, Fable (main session) decides and Opus executes. Opus tokens are not the
+  does. Fable (main session) decides and Opus executes. Opus tokens are not the
   constraint. Fable context size and wall-clock are.
 - Review loop, revised 2026-09-18 after measuring one 310-minute session (63 agents,
   1,493 model turns). Two things changed. **The refuter no longer runs the gate**: the v1
@@ -402,17 +397,11 @@ report format. The skill is worth keeping, so the kit ships its own copy at
   the verifier judges CONFIRMED / PLAUSIBLE / REFUTED and is the only holder of the
   exclusion list. The binary ACCEPT/REWORK had no PLAUSIBLE state, so an uncertain-but-real
   bug died at the refuter with no record.
-- Delegation threshold: raised to 400/8 on 2026-09-18 for wall-clock, then lowered on
-  2026-09-22 — a builder runs for everything over ~30 changed lines or ~2 files, any new
-  logic, or a security surface at any size (orchestrator style only). The 09-18 raise had
-  called 2 files / 40 lines roughly 10x too strict against the 200-400 LOC window where
-  peer review finds 70-90% of defects; the 09-22 measurement (every Fable main-session turn
-  re-read ~422K cached tokens) reversed it. Below the threshold the main session does the work and notes it under
-  `## Unreviewed since <sha>` in the bucket's `STATE.md`; one batched refuter pass reviews
-  the accumulated diff at commit, at the threshold, or with the next builder change. A
-  security-surface change is never batched. Revised 2026-09-22: the inline threshold is ~30
-  changed lines / ~2 files with no new logic; the 400/8 numbers now trigger only the batched
-  review. Reason in docs/FABLE-OPUS-SPLIT.md.
+- Delegation threshold (history: it belonged to the orchestrator style, which went on
+  2026-10-11): raised to 400/8 on 2026-09-18 for wall-clock, lowered on 2026-09-22 to 30
+  lines / 2 files after measuring every Fable main-session turn re-reading ~422K cached
+  tokens; below it the main session worked inline and one batched refuter pass reviewed the
+  diff. Reason in docs/FABLE-OPUS-SPLIT.md.
 - Earlier live test on 2026-09-16: the
   verifier confirmed one real fix with three line numbers and refuted one planted fake
   fix with the exact line. Research basis: startdebugging.net (117 transcripts: cost is
@@ -493,6 +482,5 @@ report format. The skill is worth keeping, so the kit ships its own copy at
 - [ ] `verify_live.py` C6 lists no unreviewed plugin
 - [ ] In a new Claude Code session, asking Claude to read a 300+ line `.md` whole is
       denied and the message names the capped `grep -n` + `Read` window
-- [ ] Under `/output-style orchestrator`, a non-trivial `/task` shows builder then ONE refuter
-      on Opus in the Agent map, and a rework shows builder then verifier, never a second
-      refuter pair. With no style set, no agent spawns unless you ask for one
+- [ ] A `/task` spawns no agent unless you ask for one; asked for a review loop, it shows
+      builder then ONE refuter on Opus in the Agent map, and a rework builder then verifier

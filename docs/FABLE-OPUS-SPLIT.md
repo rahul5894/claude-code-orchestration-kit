@@ -2,7 +2,7 @@
 
 Written 2026-09-20, updated 2026-09-23 for Opus 5.5 on Claude Code 2.1.280+ (where `opus` resolves to it). This is the reference for "which seat does
 which work", so that a new machine, a new project, or a new plugin lands on the same split.
-The rules themselves live in `core/output-styles/orchestrator.md` and `core/CLAUDE.md`;
+The rules lived in the orchestrator output style (removed 2026-10-11, unused since 09-24) and `core/CLAUDE.md`;
 this page only explains the shape.
 
 > **This split is the opt-in `/output-style orchestrator` loop.** Since 2026-09-24 the kit sets

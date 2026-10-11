@@ -1,12 +1,12 @@
 # Claude Code orchestration kit
 
-> **Default since 2026-09-24: the kit sets no output style.** The main session makes every
-> change itself, inside the kit's hooks, guards, rules and session handoff, and spawns a
-> builder, refuter, verifier or debugger only when you ask. Everything else in this box is the
-> opt-in `/output-style orchestrator` loop.
+> **Since 2026-10-11 the kit ships no output style** (`orchestrator` and `kit-lean` were unused
+> after 2026-09-24, when the default style became the rule; both are in git history). The main
+> session makes every change itself, inside the kit's hooks, guards, rules and session
+> handoff, and spawns a builder, refuter, verifier or debugger only when you ask.
 >
 > **This fork (2026-09-14, loop revised 2026-09-18): Fable thinks, Opus executes; a finder
-> and a judge instead of one reviewer; delegation above a threshold, not by default.**
+> and a judge instead of one reviewer.**
 > Upstream pins haiku/sonnet/opus and bans `fable` on subagents. This fork runs on a Max
 > plan where Opus quota is not the constraint and Fable quota is. The split is **what
 > thinks vs what executes**. The main session is whatever `/model` says — Fable 5.1 at
@@ -17,18 +17,16 @@
 > researcher, refuter, verifier all execute a decision already written down — and locating runs on `haiku`. **No agent hard-pins `fable`, so Fable quota
 > running out can never break the loop.**
 >
-> The brief's CONTEXT names the pattern and points at an existing `file:line` that does it
-> that way; a builder that meets an unsettled choice stops and reports instead of picking.
+> When you do ask for agents, the brief's CONTEXT names the pattern and points at an existing
+> `file:line` that does it that way; a builder that meets an unsettled choice stops and
+> reports instead of picking.
 > Review is split in two, because recall and precision are different jobs: the **refuter**
 > is the finder and drops nothing, the **verifier** is the judge and returns CONFIRMED /
 > PLAUSIBLE / REFUTED with PLAUSIBLE as the default. Only the judge carries the exclusion
 > list. **No review agent runs the gate** — its output is pasted into the brief — which is
 > what four refuters died doing in the measured session that prompted this rework.
 >
-> Under `orchestrator`, a builder runs for every non-trivial change — over ~30 changed lines
-> or ~2 files, any new logic, any security surface. Only trivial edits stay in the main session, queued for one
-> batched review. Search is
-> qartez, never `Grep`/`Glob`; the web is Firecrawl → Exa → Context7, never
+> Search is qartez, never `Grep`/`Glob`; the web is Firecrawl → Exa → Context7, never
 > `WebFetch`/`WebSearch`. Install is a **merge** into `~/.claude/`, never a replace.
 > `validate_kit.py` pins the repo side of all this and `verify_live.py` pins the installed
 > side. Upstream: [SirRuggie/claude-code-orchestration-kit](https://github.com/SirRuggie/claude-code-orchestration-kit).
@@ -40,10 +38,8 @@ effort level, and can spawn subagents of its own. Fable spawning Fable to run a 
 how a week of quota disappears in a day.
 
 This kit fixes that with six subagents. Each one has a pinned model, a pinned effort level,
-and a fixed tool list, and none of them can spawn another subagent. With no output style
-(the default) the main session makes changes itself and spawns one only when you ask. Under
-the opt-in `orchestrator` style the main session plans, writes briefs, reviews and verifies,
-and never edits code.
+and a fixed tool list, and none of them can spawn another subagent. The main session makes
+changes itself and spawns one only when you ask.
 
 A **brief** is the written task each subagent receives: what to do, what not to do, and
 the exact condition that means it is done.
@@ -52,14 +48,14 @@ A **bucket** is the folder that holds everything about one task: its briefs, rep
 findings, and decisions. Its name is a **slug**: a short name with no spaces, only
 lowercase letters, numbers, and hyphens, so it is safe as a folder name. Example: `bug-42`.
 
-### Two modes
+### No modes
 
-The kit ships two output styles. `orchestrator` is the full loop described above: the main
-session delegates to builders and reviewers, for a Fable orchestrator or large multi-part
-work. `kit-lean` is for an Opus orchestrator: the main session implements changes itself,
-then reviews them with the bundled `/code-review` and `/security-review`. Switch with
-`/output-style kit-lean` or `/output-style orchestrator`. Hooks, agents and `CLAUDE.md`
-are shared by both. Both are opt-in: the kit sets no output style, because bench E wave G (2026-09-24) showed plain Opus 5.5 xhigh tying kit-lean on every hidden test, 7% faster and 17% cheaper (bench/README.md). With no style set, the kit is its hooks, guards, rules and session handoff (`/task`, `/continue`) and nothing more: builder, refuter, verifier and debugger say in their own descriptions to spawn only under `orchestrator` or when the user asks, and `/task` no longer continues a bucket's old briefs as a pattern.
+The kit ships no output style since 2026-10-11. Bench E wave G (2026-09-24) showed plain Opus
+5.5 xhigh tying the kit's `kit-lean` style on every hidden test, 7% faster and 17% cheaper
+(bench/README.md), and neither `kit-lean` nor the full-delegation `orchestrator` style was used
+after that. The kit is its hooks, guards, rules and session handoff (`/task`, `/continue`):
+builder, refuter, verifier and debugger say in their own descriptions to spawn only when the
+user asks, and `/task` never continues a bucket's old briefs as a pattern.
 
 ## Install
 
@@ -81,7 +77,7 @@ keeps each session), and in a project that keeps the project-records record in i
 it keeps one home per fact: a task's notes cite a docs entry's id and never copy it.
 
 It copies the six agents, the six commands (`/task`, `/continue`, `/kit-init`, `/kit-off`,
-`/kit-on`, `/kit-uninstall`), both output styles, the skills and the hooks (six registered),
+`/kit-on`, `/kit-uninstall`), the skills and the hooks (six registered),
 publishes the `/kit-init` template, the scripts and the shared rules to `~/.claude/kit/` (your
 own `~/.claude/CLAUDE.md` is left alone, and an old kit block in it is removed), and deep-merges
 `core/settings.user.json` into `~/.claude/settings.json` (backup written when it changes).
@@ -91,10 +87,9 @@ file loaded → `/tasks` while a subagent runs shows its model.
 
 | File | What it is |
 |---|---|
-| `core/CLAUDE.md` | The shared rules every session and every subagent loads in a project with the kit on, installed as `~/.claude/kit/orchestration-kit.md` and copied by `/kit-on` into the project's `.claude/rules/`: tools, working from a brief, buckets, the gate, review, honesty. The brief format, the roster and model pinning live in `core/output-styles/orchestrator.md`, which subagents never load. |
+| `core/CLAUDE.md` | The shared rules every session and every subagent loads in a project with the kit on, installed as `~/.claude/kit/orchestration-kit.md` and copied by `/kit-on` into the project's `.claude/rules/`: tools, working from a brief, buckets, the gate, review, honesty. Each agent's model, effort and tools are pinned in its own file below. |
 | `core/agents/` | The six agents, one file each: Explore `haiku`, researcher `opus`, builder `opus`, refuter `opus`, verifier `opus`, debugger `inherit`. Each file pins the model, the **effort**, and the tools. |
 | `core/commands/` | `/continue` is the one way in: alone it resumes this window's task or recommends one of the open tasks; `/continue <request>` routes the request to the open task it belongs to, a closed task it continues (reopened) or a new task it opens - after one question, decided from each task's card (its STATE.md `About:` line, state and next step, in the session-start note), reading the full history only of the task picked. `/task` shows every open task. `/kit-init` sets up a project (and turns the kit on); `/kit-on`, `/kit-off` and `/kit-uninstall` switch the kit per project - off is the default. |
-| `core/output-styles/` | `orchestrator` and `kit-lean`, both opt-in. |
 | `core/hooks/` | The six registered hooks (md-guard, kit-session-start, kit-subagent-start, kit-subagent-report, kit-context, kit-session-end), the shared `kit_off.py`, `kit_index.py`, `kit_digest.py` (the verbatim session digest and its tool trail) and `kit_chain.py` (every task's session timeline, SESSIONS.md), and a self-test for each. |
 | `core/skills/` | `review-precision` (preloaded on the verifier only) and `simple-english` (slash-only). |
 | `core/plugins.json` | Plugins whose hooks fire in every session: `disable` is applied by the installer, `allow` is checked by `verify_live.py`. |
@@ -118,20 +113,12 @@ never set either.
 | builder | opus, `effort: high` | Writes the code the brief specifies, in the pattern the brief names, and runs the tests; `qartez_impact` before every edit. | The only agent with Edit and Write. Does not choose patterns: an unsettled choice is a BLOCKER, not a decision. |
 | refuter | opus, `effort: high`, `maxTurns: 40` | **The finder.** Reviews the change once, correctness and security in the same pass, and forwards every candidate it can attach a failure scenario to. | Has no Edit or Write tool. **Never runs the gate** — the gate's output is in its brief. It does not decide which candidates are real. |
 | verifier | opus, `effort: high`, `maxTurns: 20` | **The judge.** Returns CONFIRMED / PLAUSIBLE / REFUTED per candidate, and FIXED / NOT FIXED per must-fix after a rework. The only agent that carries the exclusion list. | Read-only, no Bash, no shell of any kind. REFUTED needs the quoted line that makes the failure impossible; otherwise PLAUSIBLE. |
-| debugger | inherit (the orchestrator's model), `effort: high` | Finds the real cause of a hard bug and proves it, with runtime tools (delve, Flutter DTD, Postgres). | Has no Edit or Write tool. It explains, it does not fix. |
+| debugger | inherit (the main session's model), `effort: high` | Finds the real cause of a hard bug and proves it, with runtime tools (delve, Flutter DTD, Postgres). | Has no Edit or Write tool. It explains, it does not fix. |
 
-Under `orchestrator`, the loop is: **gate → builder → gate → refuter finds → verifier
-judges → you decide.** CONFIRMED and PLAUSIBLE items become a second builder brief, then the verifier
-answers FIXED or NOT FIXED per item. A second round of must-fixes, or any NOT FIXED, stops
-the loop and comes back to you. Three agents on the happy path, five at most.
-
-With no style set, none of this runs: the main session makes every change itself and spawns
-these agents only when you ask.
-
-Under `orchestrator`, **trivial edits never enter that loop.** Under ~30 changed lines or ~2
-files with no new logic, the main session edits and queues the diff for one batched review.
-Everything else is a builder on Opus: measured 2026-09-22, every main-session turn on Fable re-read ~422K cached
-tokens, so ten inline turns cost more than one builder.
+The main session makes every change itself and spawns these agents only when you ask. Asked
+for a full review loop, it runs **gate → builder → gate → refuter finds → verifier judges →
+you decide**: CONFIRMED and PLAUSIBLE items become a second builder brief, then the verifier
+answers FIXED or NOT FIXED per item.
 
 **None of the six can spawn a subagent.** The `Agent` tool is not in any of their
 tool lists, so it does not exist for them. This is enforced, not just requested. For any
@@ -157,14 +144,11 @@ keeps the bookkeeping.
 
 1. In your repo, type `/task fix the broken menu on the settings page`. Claude opens a
    bucket for it, names it `broken-settings-menu`, shows the scope, and waits for your go.
-2. With no style set (the default), Claude makes the change itself, runs the gate and the
-   tests, and keeps the bucket's `STATE.md` current as the handoff.
-3. Under `/output-style orchestrator`, Claude instead writes a brief and spawns the builder.
-   The refuter then lists every candidate defect, the verifier marks each CONFIRMED /
-   PLAUSIBLE / REFUTED, a second brief fixes what is left, and the verifier answers FIXED or
-   NOT FIXED per item. A second round is not looped; Claude brings it to you.
-4. When the work is done and verified, Claude closes the bucket and tells you in one line.
-5. Say the next thing: "now the time display is wrong". Claude sees it is a different
+2. Claude makes the change itself, runs the gate and the tests, and keeps the bucket's
+   `STATE.md` current as the handoff. Ask for a builder or a refuter and it writes a brief and
+   spawns one instead.
+3. When the work is done and verified, Claude closes the bucket and tells you in one line.
+4. Say the next thing: "now the time display is wrong". Claude sees it is a different
    task, opens a new bucket, and starts again. Ten tasks in a day means ten buckets. You
    named none of them.
 
@@ -182,7 +166,7 @@ about a project go in that project's repo.**
 |---|---|
 | `agents/*.md` | The six agents from the table above. One file each, so each one's tool list is enforced. |
 | `commands/*.md` | `/task` (the dashboard for every bucket), `/continue`, `/kit-init`, `/kit-off`, `/kit-on`, `/kit-uninstall`. |
-| `output-styles/`, `skills/` | The two opt-in styles; `review-precision` and `simple-english`. |
+| `skills/` | `review-precision` and `simple-english`. |
 | `kit/` | What `/kit-init` and the per-project switch run: the project template, `audit_project.py`, `scan_project.py`, `kit_switch.py`, and `orchestration-kit.md` - the kit's shared rules, which `/kit-on` copies into a project's `.claude/rules/`, where they load like `CLAUDE.md` in every session and into every subagent. No session loads them from here. |
 | `hooks/*.py` | Six registered hooks, each in exec form through the `py` launcher (no shell). md-guard (PreToolUse, Bash/PowerShell) keeps a big markdown doc from being dumped raw into a shell - it measures what the read really prints, so a small grep or line window passes (Read pages big files by itself) - and stops read-only agents' shell writes; kit-session-start (SessionStart) names the missing gate and the open buckets, re-injects `STATE.md` after a compaction, and once a day moves a task closed 7+ days into `_closed/`; kit-subagent-start and kit-subagent-report hand `DECISIONS.md` to agents and file each agent's final message as its brief's `reports/<NN>-<agent>.md`; kit-context (PostToolBatch mid-turn, Stop at the turn's end) asks for the handoff at 45%+ context, then keeps a verbatim session digest in that bucket's `digests/`, and tells you: /clear, then type /continue; kit-session-end (SessionEnd) records every session that worked on a task - at any context % - in the bucket's SESSIONS.md timeline, with its digest and STATE snapshot, kept until 7 days after the task closes; a conversation with no task goes in the session log, `.claude/scratch/_sessions/`, word for word for 30 days, and `/continue` after a `/clear` picks it up. |
 
@@ -247,9 +231,9 @@ Three reasons:
 
 Every subagent loads all of CLAUDE.md, so **every line costs money every time one
 starts.** About 60% of this kit's first `CLAUDE.md` was instructions only the main chat
-could use. A subagent paid for those lines and could do nothing with them. They now live in
-the `orchestrator` output style, which subagents never load; `~/.claude/rules/*.md` loads like
-CLAUDE.md and costs the same.
+could use. A subagent paid for those lines and could do nothing with them. They moved to an
+output style, which subagents never load, and went with it on 2026-10-11 (unused since
+2026-09-24); `~/.claude/rules/*.md` loads like CLAUDE.md and costs the same.
 
 So the split is: **CLAUDE.md holds the rules, this README holds the reasons.** Reasons do
 not change what Claude does, and nothing loads this README while Claude runs. So reasons
@@ -316,8 +300,8 @@ detection, and a section where the scan found nothing says so and refreshes on t
   for an agent that is not one of the six. This order needs Claude Code 2.1.251 or newer.
   Older versions put the environment variable first.
 - **`haiku` is an official short name.** So is `fable`, and **this fork hard-pins it on
-  nothing.** The `debugger` is `model: inherit`, so hard reasoning follows whichever seat the
-  orchestrator is on — Fable while its quota lasts, Opus after — and Fable running out can
+  nothing.** The `debugger` is `model: inherit`, so hard reasoning follows whichever model the
+  main session runs — Fable while its quota lasts, Opus after — and Fable running out can
   never break an agent. A Fable subagent's file reads and command output die with it anyway,
   while the same work done inline by a Fable main session stays in that context for every
   later turn.

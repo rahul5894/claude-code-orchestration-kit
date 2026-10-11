@@ -102,8 +102,6 @@ for p in sorted(glob.glob('core/agents/*.md')):
 
 pairs = [(p, HOME / 'agents' / os.path.basename(p)) for p in glob.glob('core/agents/*.md')]
 pairs += [(p, HOME / 'commands' / os.path.basename(p)) for p in glob.glob('core/commands/*.md')]
-pairs += [(p, HOME / 'output-styles' / os.path.basename(p))
-          for p in glob.glob('core/output-styles/*.md')]
 pairs += [(p, HOME / 'skills' / pathlib.Path(p).parent.name / 'SKILL.md')
           for p in glob.glob('core/skills/*/SKILL.md')]
 
@@ -572,8 +570,8 @@ for label, got, want in [
         ('agent teams off', s.get('env', {}).get('CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS'), '0'),
         ('spawn depth', s.get('env', {}).get('CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH'), '1')]:
     ok(got == want, f"{label} = {want}", str(got))
-# D013: the kit sets no style; a user-level kit-lean is the retired default install.ps1 removes.
-ok(s.get('outputStyle') != 'kit-lean', 'no leftover user-level kit-lean style (opt-in per project)',
+# The kit ships no style (2026-10-11): install.ps1 takes back a user-level style naming a retired one.
+ok(s.get('outputStyle') not in ('kit-lean', 'orchestrator'), 'no user-level outputStyle naming a retired kit style',
    f"{s.get('outputStyle')!r} - run install.ps1")
 # Absent is fine: the plugin was never installed on this machine, and the installer only
 # writes `false` for ids the user's settings already name. Only `true` is the failure.
@@ -624,14 +622,12 @@ _shell_form = [str(h.get('command', ''))[-60:]
                if '.claude/hooks/' in str(h.get('command', '')).replace('\\', '/') and not h.get('args')]
 ok(not _shell_form, 'every kit hook in exec form (args), none through a shell', str(_shell_form)[:200])
 
-print("\n=== E. roster table matches every agent file ===")
-orch = (HOME / 'output-styles' / 'orchestrator.md').read_text(encoding='utf-8')
-for p in sorted(glob.glob('core/agents/*.md')):
-    d, _ = fm(p)
-    row = re.search(rf"\|\s*\*?\*?`?{re.escape(d.get('name', ''))}`?\*?\*?\s*\|\s*\*?\*?([a-z]+)\*?\*?", orch)
-    ok(row is not None and row.group(1) == d.get('model'),
-       f"roster row = {d.get('name')}.md ({d.get('model')})",
-       row.group(1) if row else 'no row')
+print("\n=== E. no retired kit output style left installed ===")
+# Both styles went 2026-10-11 (kit-optimize-pass D001); each agent's model, effort and tools are
+# pinned per file and checked by validate_kit.py, so the style's roster table needs no home.
+for _st in ('kit-lean', 'orchestrator'):
+    ok(not (HOME / 'output-styles' / f'{_st}.md').exists(), f'retired style {_st} not installed',
+       'run install.ps1')
 
 print("\n=== F. gate, installer idempotency ===")
 r = subprocess.run([sys.executable, 'validate_kit.py'], capture_output=True, text=True, encoding='utf-8', errors='replace')

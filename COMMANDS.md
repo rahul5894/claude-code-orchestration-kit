@@ -23,7 +23,7 @@ Run these in PowerShell, in the kit folder.
 
 | Command | What happens |
 |---|---|
-| `pwsh -File install.ps1` | Installs or updates the kit in `~/.claude` for every project. Safe to run again. Restart Claude Code after: agents and output styles load at startup. |
+| `pwsh -File install.ps1` | Installs or updates the kit in `~/.claude` for every project. Safe to run again. Restart Claude Code after: agents load at startup. |
 | `pwsh -File uninstall.ps1 -WhatIf` | Shows what uninstall would remove. Changes nothing. |
 | `pwsh -File uninstall.ps1` | Removes the kit from `~/.claude` for every project. Your own files and settings stay, and it writes backups. Projects are not touched: a project's task notes, and the rules copy where the kit was on, stay where they are - `/kit-off` there first. `install.ps1` brings the kit back. |
 
@@ -46,4 +46,4 @@ Run these in PowerShell, in the kit folder.
   cannot write files. It is a safety rule, and it only matters if you ask for one of them.
 - **Output style is `default` on this machine** (`"outputStyle": "default"` in
   `~/.claude/settings.json`), so Claude makes changes itself and spawns an agent only when you
-  ask. The kit sets no style of its own.
+  ask. The kit ships no output style (both retired 2026-10-11).

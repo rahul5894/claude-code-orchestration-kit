@@ -10,7 +10,7 @@ Claude Code was launched in, where the hooks look for the switch. Never `.`: the
 have `cd`'d elsewhere, and the Bash tool does not set CLAUDE_PROJECT_DIR (measured 2026-09-23).
 
 It deletes `.claude/rules/orchestration-kit.md` - the kit's rules copy, which is also the switch
-every kit hook looks for - resets a kit output style (`kit-lean` or `orchestrator`) in force
+every kit hook looks for - resets a retired kit output style (`kit-lean` or `orchestrator`) still set
 here to `default`, and takes out the `false` `/kit-on` set for a journal plugin (remember) in
 `.claude/settings.local.json`, so it runs here again from the next session. Your own
 `~/.claude/CLAUDE.md`, this project's `CLAUDE.md` and

@@ -1,9 +1,8 @@
 # <PROJECT NAME> — working rules
 
-Repo-specific rules only. The orchestration loop, model routing, agent roster, brief format
-and reporting rules live in `.claude/rules/orchestration-kit.md` - the kit's rules, which `/kit-on`
-copied here (and, when you opt into one,
-the kit's output styles), and apply here too.
+Repo-specific rules only. The kit's shared rules (tools, briefs, buckets, the gate, review,
+honesty) live in `.claude/rules/orchestration-kit.md` - the kit's rules, which `/kit-on`
+copied here, and apply here too.
 
 Keep this file about **this codebase**: how to check it, how to build it, what is dangerous
 in it, and what it has already got wrong. Every line is re-paid by every subagent on every

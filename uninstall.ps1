@@ -34,7 +34,7 @@ try { $set = if ($raw.Trim()) { $raw | ConvertFrom-Json -AsHashtable } else { $n
 catch { throw "settings.json is not valid JSON ($sf). Fix or move it, then re-run. Nothing was changed." }
 $frag = Get-Content (Join-Path $kit 'core\settings.user.json') -Raw | ConvertFrom-Json -AsHashtable
 $hookFiles = (Get-ChildItem (Join-Path $kit 'core\hooks\*.py')).Name
-$styles    = (Get-ChildItem (Join-Path $kit 'core\output-styles\*.md')).BaseName
+$styles    = @('kit-lean', 'orchestrator')   # retired 2026-10-11; an older install left them
 
 # 1. settings.json. Hook entries go when their command runs a kit script. A key from
 #    core/settings.user.json goes only while its value is still the kit's: a value you changed
@@ -136,7 +136,7 @@ if ($cur -match $pat) {
 $files = @(
     (Get-ChildItem (Join-Path $kit 'core\agents\*.md')).Name        | ForEach-Object { "agents\$_" }
     (Get-ChildItem (Join-Path $kit 'core\commands\*.md')).Name      | ForEach-Object { "commands\$_" }
-    (Get-ChildItem (Join-Path $kit 'core\output-styles\*.md')).Name | ForEach-Object { "output-styles\$_" }
+    $styles | ForEach-Object { "output-styles\$($_).md" }
     $hookFiles | ForEach-Object { "hooks\$_" }
     'rules\orchestration-kit.md'
     'kit')

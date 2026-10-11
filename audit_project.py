@@ -203,7 +203,6 @@ if proj is not None:
     ok(not dupes, '.mcp.json defines no server that is already at user scope', str(dupes))
 
 # 5. The global side this project depends on is actually there.
-ok((HOME / 'output-styles' / 'orchestrator.md').exists(), 'global orchestrator style installed')
 ok(len(list((HOME / 'agents').glob('*.md'))) >= 6, 'six kit agents installed globally')
 ok({'qartez', 'firecrawl', 'exa', 'context7'} <= user_servers,
    'qartez + the researcher web servers are at user scope',

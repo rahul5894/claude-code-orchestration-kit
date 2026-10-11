@@ -1,8 +1,8 @@
 # claude-code-orchestration-kit — working rules
 
-Repo-specific rules only. The orchestration loop, model routing, agent roster, brief format
-and reporting rules live in `.claude/rules/orchestration-kit.md` (`core/CLAUDE.md`, copied in by `/kit-on`) and
-the kit's output styles.
+Repo-specific rules only. The kit's shared rules (tools, briefs, buckets, the gate, review,
+honesty) live in `.claude/rules/orchestration-kit.md` (`core/CLAUDE.md`, copied in by `/kit-on`);
+each agent's model, effort and tools are pinned in its own file.
 
 **This repo IS the kit.** Editing `core/` changes what every other project loads on its next
 `install.ps1`, so a mistake here ships everywhere. That is the only thing that makes this

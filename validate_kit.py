@@ -83,7 +83,7 @@ try:
 except ImportError:
     _yaml = None
 for _f in sorted(glob.glob('core/agents/*.md') + glob.glob('core/commands/*.md')
-                 + glob.glob('core/skills/*/SKILL.md') + glob.glob('core/output-styles/*.md')):
+                 + glob.glob('core/skills/*/SKILL.md')):
     _head = open(_f, encoding='utf-8').read().split('\n---', 1)[0].lstrip('-\n')
     if _yaml:
         try:
@@ -315,12 +315,9 @@ chk('A near-miss is not a match' in _exx,
     'Explore: warned that a near-miss spelling is not a match')
 chk('Nothing follows an `OUT OF INDEX` line' in _exx,
     'Explore: nothing may be appended after the OUT OF INDEX verdict')
-# That instruction does NOT hold on haiku - measured across five runs and three rewordings,
-# the category still gets appended (the fabricated file:LINE did stop). So the orchestrator
-# side is the real control, and it must stay: without it a wrong category silently steers the
-# follow-up grep. This is load-bearing, not advice.
-chk('discard any category' in open('core/output-styles/orchestrator.md', encoding='utf-8').read(),
-    'orchestrator: told to discard Explore category, which prompting does not suppress')
+# That instruction does NOT hold on haiku (five runs, three rewordings: the category is still
+# appended); the orchestrator style that told the main session to discard it went with both
+# kit styles on 2026-10-11 (kit-optimize-pass D001, unused since 2026-09-24).
 _eip = fmx('core/agents/Explore.md')[0].get('initialPrompt', '')
 chk('Never guess WHICH blind spot' in _eip,
     'Explore: initialPrompt agrees with the body (omitClaudeMd makes it the only copy)')
@@ -383,23 +380,6 @@ chk('never the finder' in shared_txt,
 _rf = open('core/agents/refuter.md', encoding='utf-8').read()
 chk('not even if a brief asks for it' in _rf,
     'refuter: no full-suite escape hatch, not even via the brief')
-_orch = open('core/output-styles/orchestrator.md', encoding='utf-8').read()
-# Two refuters at the SAME number as the delegation threshold means every delegated change
-# gets two reviewers, and "three agents on the happy path" becomes impossible.
-chk('~15 files or ~800 changed lines' in _orch,
-    'orchestrator: the two-refuter threshold sits above the delegation threshold')
-chk('git status --short` before and after every read-only agent' in _orch,
-    'orchestrator: the git-status write detector exists (a tool list cannot stop a shell write)')
-chk('ACCEPT' not in _orch.split('## Verification order')[-1].split('## Measurement')[0],
-    'orchestrator: no stale ACCEPT vocabulary in the verification order')
-# The write-detector only applies to agents that actually hold Bash. Naming one that does not
-# makes the rule's own justification false.
-chk(re.search(r'not the verifier, which has no shell', re.sub(r'\s+', ' ', _orch)) is not None,
-    'orchestrator: the write-detector excludes the shell-less verifier')
-chk('Hinglish stays Hinglish' in _orch,
-    'orchestrator: the reply-in-the-user-language rule survives')
-chk(re.search(r'findings to `FINDINGS\.md` myself', re.sub(r'\s+', ' ', _orch)) is not None,
-    'orchestrator: takes the FINDINGS.md duty promised to read-only agents')
 # The full-suite ban has to be absolute in every agent that can run one.
 # Match on normalised whitespace: these phrases wrap across lines, and a literal `in`
 # check silently fails on the line break rather than on the rule being absent.
@@ -530,12 +510,8 @@ for p in sorted(glob.glob('core/commands/*.md')):
     chk(set(d) <= CMDKEYS, f'{n}: only documented keys', str(set(d) - CMDKEYS))
     # $1 is the SECOND word, not the first, so any numbered positional is a hazard here.
     chk(re.search(r'[$][0-9]', s) is None, f'{n}: no numbered positional args')
-chk(os.path.isfile('core/output-styles/orchestrator.md'),
-    'core/output-styles/orchestrator.md exists')
-for p in sorted(glob.glob('core/output-styles/*.md')):
-    d, _ = fm(p)
-    chk(d is not None and 'name' in d and 'description' in d,
-        f'{os.path.basename(p)}: output style has name+description')
+# The kit ships no output style (kit-optimize-pass D001, 2026-10-11): install.ps1 retires both.
+chk(not glob.glob('core/output-styles/*'), 'core/output-styles/ is gone (the kit ships no style)')
 
 print()
 print('=== 5. THE PER-SPAWN COST BUDGET ===')
@@ -556,29 +532,6 @@ chk(len(cm) <= 200, 'core/CLAUDE.md is <= 200 lines (docs guidance)', str(len(cm
 chk(len(cm_raw) <= SHARED_BYTE_BUDGET,
     f'core/CLAUDE.md is <= {SHARED_BYTE_BUDGET} bytes (this is what every spawn pays)',
     f'{len(cm_raw)} bytes')
-# The output style is where the orchestrator's half went. Without keep-coding-instructions a
-# custom style REPLACES Claude Code's built-in software-engineering instructions, so
-# activating it would make the main session worse, silently.
-osd, ostxt = fmx('core/output-styles/orchestrator.md')
-chk(str(osd.get('keep-coding-instructions')).lower() == 'true',
-    'orchestrator style: keep-coding-instructions true (else it strips the built-ins)',
-    str(osd.get('keep-coding-instructions')))
-chk(osd.get('name') == 'orchestrator', 'orchestrator style: name matches the settings value',
-    str(osd.get('name')))
-# The lean mode (kit-modes D001/D002/D004): the other style, same rules for the built-ins, and
-# the phrases that make it the lean mode - native review, the switch back, the handoff, the
-# reply format. Its body is main-session context on every turn, so it has a line budget.
-lsd, lstxt = fmx('core/output-styles/kit-lean.md')
-chk(lsd.get('name') == 'kit-lean', 'kit-lean style: name is kit-lean', str(lsd.get('name')))
-chk(str(lsd.get('keep-coding-instructions')).lower() == 'true',
-    'kit-lean style: keep-coding-instructions true (else it strips the built-ins)',
-    str(lsd.get('keep-coding-instructions')))
-lsbody = lstxt.split('\n---', 1)[-1].strip('\n').splitlines()
-chk(len(lsbody) <= 110, 'kit-lean style: body is <= 110 lines', str(len(lsbody)))
-for phrase in ('/code-review', '/security-review', '/output-style orchestrator', 'STATE.md',
-               'Aapko karna hai'):
-    # the body only: the description in the frontmatter names the review commands too
-    chk(phrase in '\n'.join(lsbody), f'kit-lean style: names {phrase}')
 # Only agents that take everything from the brief may skip it - and only if they restate the
 # tool rules, or they fall back to Grep on source and cost more than the flag saved.
 for p in agentfiles:
@@ -630,11 +583,10 @@ chk(not unexplained, 'no unexplained duplication', str(unexplained[:3]))
 
 print()
 print('=== 7. ONE OWNER PER CONCEPT, AND THE SPLIT HOLDS ===')
-# Two audiences, two files. SHARED = core/CLAUDE.md, re-paid on EVERY subagent spawn, so it
-# holds only what a subagent can act on. ORCH = the output style, main session only, free per
-# spawn. A concept in the wrong file is either dead weight on every agent or a rule the
-# orchestrator no longer has.
-SHARED, ORCH = 'core/CLAUDE.md', 'core/output-styles/orchestrator.md'
+# SHARED = core/CLAUDE.md, re-paid on EVERY subagent spawn, so it holds only what a subagent
+# can act on, each rule once. The orchestrator style that held the main session's half went
+# with both kit styles on 2026-10-11 (kit-optimize-pass D001).
+SHARED = 'core/CLAUDE.md'
 cfg = [f for f in cfgfiles if f not in PROSE]
 for concept, pat, owner in [
         # an agent acts on these
@@ -651,36 +603,10 @@ for concept, pat, owner in [
         ('security surface defined', r'A \*\*security surface\*\* is', SHARED),
         # matched on the prose, not the frontmatter - every read-only agent file legitimately
         # carries the key itself, and that is the implementation, not a second definition
-        ('read-only agents blocked', r'blocks the edit tools only', SHARED),
-        # only the orchestrator can act on these
-        ('six-section brief', 'CURRENT STATE', ORCH),
-        ('banned phrases', 'explore all approaches', ORCH),
-        ('model resolution order', 'Resolution order', ORCH),
-        ('roster table', r'`refuter`[^|]*\|\s*opus', ORCH),
-        ('fable thinks, opus executes', r'Execution stays on Opus, always', ORCH),
-        ('debugger inherits the orchestrator seat', r'debugger is `model: inherit`', ORCH),
-        # builder.md's description legitimately names the threshold so the orchestrator can
-        # pick it; the RULE sentence is what must have one owner
-        ('delegation threshold', r'under \*\*~30 changed lines or ~2 files\*\*', ORCH),
-        ('one refuter pass', 'ONE refuter pass', ORCH),
-        ('batch review of small changes', 'Unreviewed since', ORCH),
-        ('resume instead of re-spawn', r'Resume with `SendMessage`', ORCH),
-        ('sibling cache stagger', 'stagger same-profile spawns', ORCH),
-        ('measurement targets', r'turns before the\s*\n?first edit', ORCH),
-        ('no-candidates ends the loop', 'A refuter that returns no candidates ends the loop', ORCH),
-        ('ops loops go to general-purpose', r'goes to\s+`general-purpose`', ORCH),
-        ('kit-init before any brief', r'`/kit-init` runs\s+before any brief', ORCH),
-        ('clear after a closed bucket', r'A closed bucket ends the session: `/clear`', ORCH),
-        ('context boundary exit', r'first time per 10-point band', ORCH),
-        ('brief size cap', r'One brief stays under ~400 changed lines or ~8 files', ORCH),
-        ('orchestrator turn budget', 'my own turns per task', ORCH)]:
+        ('read-only agents blocked', r'blocks the edit tools only', SHARED)]:
     owners = [f for f in cfg if re.search(pat, open(f, encoding='utf-8').read())]
     chk(owner in owners, f'{concept}: defined in {os.path.basename(owner)}', str(owners))
     chk(len(owners) == 1, f'{concept}: single definition', str(owners))
-# The mid-bucket exit once told the orchestrator to run `/session-handoff`; the kit ships no
-# such skill, and STATE.md is the handoff.
-chk('/session-handoff' not in _orch,
-    'orchestrator style does not depend on a skill the kit does not ship')
 
 # The split is only a saving if the shared file stays out of the orchestrator's business.
 shared_txt = open(SHARED, encoding='utf-8').read()
@@ -754,7 +680,8 @@ chk('maxEffortLevel' not in su and all('maxEffortLevel' not in v for v in ms.val
 chk(os.path.isfile('install.ps1'), 'install.ps1 exists')
 inst = open('install.ps1', encoding='utf-8').read() if os.path.isfile('install.ps1') else ''
 for frag, label in [('core\\skills', 'installer copies skills'),
-                    ('core\\output-styles', 'installer copies output styles'),
+                    ("$RETIRED_OUTPUT_STYLES = @('kit-lean', 'orchestrator')",
+                     'installer removes both retired kit output styles'),
                     ('RETIRED_AGENTS', 'installer removes retired agents by name'),
                     ('RETIRED_SKILLS', 'installer removes retired skills by name'),
                     ('maxEffortLevel', 'installer warns on maxEffortLevel')]:
@@ -823,12 +750,12 @@ print('=== 10. THE USER-FACING DOCS DESCRIBE THE KIT THAT SHIPS ===')
 # "the refuter runs the gate first" (the rule that killed four refuters). Pin them.
 USER_DOCS = ['README.md', 'SETUP-NEW-MACHINE.md']
 readme = open('README.md', encoding='utf-8').read()
-orch_txt = open('core/output-styles/orchestrator.md', encoding='utf-8').read()
 
 for name in sorted(PINS):
     d, _ = fmx(f'core/agents/{name}.md')
-    # The README roster row and the orchestrator roster row must both name the real model.
-    for label, txt in (('README', readme), ('orchestrator style', orch_txt)):
+    # The README roster row must name the real model (the orchestrator style's roster went
+    # with the style, 2026-10-11).
+    for label, txt in (('README', readme),):
         row = re.search(rf'^\|\s*\*?\*?`?{re.escape(name)}`?\*?\*?\s*\|([^|]*)\|',
                         txt, re.M)
         chk(row is not None, f'{label}: has a roster row for {name}')
@@ -842,7 +769,7 @@ for name in sorted(PINS):
                     chk(str(d.get(key, '')) == claimed,
                         f'{label}: {name} row {key} {claimed} matches the file',
                         f'file says {d.get(key)!r}')
-            # The orchestrator roster writes effort as "opus · high", with no "effort:" prefix,
+            # A roster that writes effort as "opus · high", with no "effort:" prefix,
             # so the loop above emitted NO check for it at all: the file could say `low` and
             # the table `high` with the gate green. Read the bare word after the model too.
             # `[*`]*` skips the markdown emphasis the roster uses around `**inherit**`.
@@ -873,36 +800,13 @@ for doc in USER_DOCS:
                 if not any(w in m.group(0).lower() for w in NEG)]
         chk(not hits, f'{doc}: never says the refuter {why}', str(hits[:1]))
 
-# The delegation threshold is one number with one owner. A doc quoting a different one sends
-# a reader back to spawning a pair for a two-line change.
-thr = re.search(r'~(\d+) changed lines or ~(\d+) files', orch_txt)
-chk(thr is not None, 'orchestrator style states the delegation threshold')
-if thr:
-    want = (thr.group(1), thr.group(2))
-    for doc in USER_DOCS:
-        s = open(doc, encoding='utf-8').read()
-        # EVERY statement of it must agree, not just one of them: README states it twice,
-        # so an "at least one correct mention" check passes with the other one stale.
-        said = re.findall(r'~?(\d+)\s+changed lines\s*(?:or|/)\s*~?(\d+)\s+files', s)
-        chk(said and all(p == want for p in said),
-            f'{doc}: every delegation threshold reads {want[0]} lines / {want[1]} files',
-            str(said))
-# Two refuters must cost MORE than one builder+refuter pair, or every delegated change gets
-# two reviewers. This equalled the delegation threshold until 2026-09-18; lowered to 30/2 on
-# 2026-09-22.
-two = re.search(r'~(\d+) files or ~(\d+) changed lines\*\*[^*]{0,90}gets TWO refuters', orch_txt)
-chk(two is not None, 'orchestrator style states the two-refuter threshold')
-# No per-doc restatement check for this one: both thresholds are written in the same sentence
-# shape ("~N changed lines or ~M files"), so a regex cannot tell a delegation mention from a
-# two-refuter mention, and one written to try flagged the correct 400/8 lines as wrong. The
-# "strictly above" check below is what actually protects the number that matters. The brief
-# size cap (orchestrator.md, "One brief stays under") is a third sentence in that same shape,
-# and it must never be restated in USER_DOCS with the `N changed lines or M files` wording —
-# a restatement there is indistinguishable from the other two and drifts unnoticed.
-if two and thr:
-    chk(int(two.group(2)) > int(thr.group(1)) and int(two.group(1)) > int(thr.group(2)),
-        'two-refuter threshold is strictly above the delegation threshold',
-        f'{two.group(2)}/{two.group(1)} vs {thr.group(1)}/{thr.group(2)}')
+# The delegation and two-refuter thresholds lived in the orchestrator style and went with it
+# (2026-10-11): with no style, the main session does the work and spawns only on request, so
+# a user doc that still quotes a threshold describes a mode that is gone.
+for doc in USER_DOCS:
+    s = open(doc, encoding='utf-8').read()
+    said = re.findall(r'~?(\d+)\s+changed lines\s*(?:or|/)\s*~?(\d+)\s+files', s)
+    chk(not said, f'{doc}: quotes no delegation threshold (the orchestrator mode is gone)', str(said))
 
 # verify_live.py covers what this file structurally cannot (the installed tree). A setup doc
 # that does not send the reader to it leaves a stale install undetectable.
@@ -1230,10 +1134,14 @@ chk('def harness_text' in _kd and 'kit_digest.harness_text(' in _kh and '"cmdStr
 for _a in ('builder', 'refuter', 'verifier', 'debugger'):
     _desc = next((ln for ln in open(f'core/agents/{_a}.md', encoding='utf-8')
                   if ln.startswith('description:')), '')
-    chk('ONLY under the `orchestrator` output style' in _desc and 'Use for every' not in _desc,
-        f'{_a}: description limits spawning to the orchestrator style or a user request')
+    chk('ONLY when the user asks' in _desc and 'Use for every' not in _desc and 'output style' not in _desc,
+        f'{_a}: description limits spawning to a user request')
 chk('A bucket is a handoff, not a delegation mode' in _tk,
     'task.md: a bucket does not make a styleless session delegate')
+# The write detector moved here from the orchestrator style (2026-10-11): an agent's tool list
+# cannot stop a shell write, so whoever spawns a read-only agent checks the tree around it.
+chk('`git status --short` before and after a read-only agent' in re.sub(r'\s+', ' ', _tk),
+    'task.md: git status before and after a read-only agent (a changed tree voids its verdict)')
 _un = open('uninstall.ps1', encoding='utf-8').read() if os.path.isfile('uninstall.ps1') else ''
 chk('SupportsShouldProcess' in _un and "rules\\orchestration-kit.md" in _un
     and 'Nothing was changed' in _un,
@@ -1306,14 +1214,12 @@ chk('byte-compiler' in _ki and 'compileall' in _ki,
     '/kit-init refuses an interpreter byte-compile as the gate')
 # The builder's full report lives in a file and the chat gets ten lines (2026-09-22): the
 # user's chat window was filling with CHANGED/IMPACT/ARTIFACTS blocks written for the
-# orchestrator, not for them. All three files must agree or the builder gets two contracts.
+# orchestrator, not for them. Both files must agree or the builder gets two contracts.
 _bm = open('core/agents/builder.md', encoding='utf-8').read()
 chk('reports/<NN>-builder.md' in _bm and 'Full report:' in _bm,
     'builder.md: full report to reports/<NN>-builder.md, ten-line summary in chat')
 chk('writes the full one to `reports/`' in open(SHARED, encoding='utf-8').read(),
     'core/CLAUDE.md: the report-file rule names the builder exception')
-chk('reports/<NN>-builder.md' in orch_txt,
-    'orchestrator style: opens the builder report file only when a line is not none')
 # A checker the machine does not have is not a gate: one run invented `uvx ruff check .` on a
 # repo with no ruff anywhere, and the row it wrote could never be run by a builder.
 chk('not on PATH is a candidate only when' in _ki,
