@@ -261,7 +261,7 @@ chk('If you can write' in shared_txt and 'If you cannot' in shared_txt,
 _sh = re.sub(r'\s+', ' ', shared_txt)
 chk('never `Grep`/`Glob` on source; kit agents do not hold them at all' in _sh,
     'shared: code search is qartez, and kit agents hold no Grep/Glob on any path')
-chk('`Read` is *not* guarded, so that rule is yours' in _sh,
+chk('`Read` is _not_ guarded, so that rule is yours' in _sh,
     'shared: admits Read is unenforced, so the agent owns that rule')
 # qartez asserts "very likely not defined in this repo" on any miss. Measured: an identifier
 # inside a function body is found; a constant at module level in the SAME indexed file is not.
@@ -547,6 +547,52 @@ chk(str(d.get('omitClaudeMd')).lower() == 'true', 'Explore: omitClaudeMd true (s
     str(d.get('omitClaudeMd')))
 chk('qartez' in str(d.get('initialPrompt', '')),
     'Explore: initialPrompt restates the qartez rule')
+
+print()
+print('=== 5b. THE RULES COPY BREAKS NO PROJECT CHECK ===')
+# /kit-on puts this file into every kit-on project as .claude/rules/orchestration-kit.md, hidden
+# from git by .git/info/exclude only, and a project tool that lists files from disk still reads
+# it: online-payment-integration F-043 (2026-10-10, its records and budget checks) and Frontdesk
+# F-075 (2026-10-12, a doc-link check took `STATE.md` for a link), each fixed in the project's
+# check - the rule pinned below tells every agent so. Prettier reads .gitignore and
+# .prettierignore, never .git/info/exclude, so a repo-root `prettier --check .` fails on the copy
+# unless it is Prettier-clean (2026-10-12, Prettier 3.9.9: two `*word*` emphases, and no blank
+# line after install.ps1's header). Checked: the rewrites Prettier makes in prose of this kind,
+# each pattern first proven on a line it must catch.
+def _mask(s):
+    """Code spans (one may wrap a line) and fences blanked out, line numbers kept: Prettier
+    leaves their insides alone."""
+    return re.sub(r'```.*?```|`[^`]*`', lambda m: re.sub(r'[^\n]', 'x', m.group()), s, flags=re.S)
+
+
+def _prose(line):
+    return line.replace('**', '').replace(SEP + '*', '')
+
+
+PRETTIER_REWRITES = [  # (what Prettier rewrites, pattern on masked prose, a line it must catch)
+    ('a *word* emphasis or a * bullet (it writes _word_ and -)', r'\*', '`Read` is *not* guarded'),
+    ('a + bullet (it writes -)', r'^\s*\+ ', '+ an item'),
+    ('__bold__ (it writes **bold**)', r'__', 'a __bold__ word'),
+    ('a 1) list (it writes 1.)', r'^\s*\d+\) ', '1) first'),
+    ('a table (it realigns the columns)', r'^\s*\|', '| a | b |')]
+_cm_text = cm_raw.decode('utf-8')
+_cm_prose = [_prose(ln) for ln in _mask(_cm_text).split(chr(10))]
+for _what, _pat, _bad in PRETTIER_REWRITES:
+    chk(re.search(_pat, _prose(_mask(_bad))) is not None, f'5b pattern catches {_what}', _bad)
+    _hits = [i for i, ln in enumerate(_cm_prose, 1) if re.search(_pat, ln)]
+    chk(not _hits, f'core/CLAUDE.md has no {_what}', f'lines {_hits[:5]}')
+chk(re.search(r'[ \t]$', 'a line ') is not None, '5b pattern catches trailing whitespace')
+_hits = [i for i, ln in enumerate(_cm_text.split(chr(10)), 1) if re.search(r'[ \t]$', ln)]
+chk(not _hits, 'core/CLAUDE.md has no trailing whitespace (Prettier strips it)', f'lines {_hits[:5]}')
+chk(chr(10) * 3 not in _cm_text and _cm_text.endswith(chr(10)) and not _cm_text.endswith(chr(10) * 2),
+    'core/CLAUDE.md: one blank line between blocks, one newline at the end (as Prettier writes)')
+_inst_text = open('install.ps1', encoding='utf-8').read() if os.path.isfile('install.ps1') else ''
+chk('-->`n`n" +' in _inst_text, 'install.ps1 puts a blank line after the rules header (Prettier adds one)')
+chk(re.search(r'skip\s+what\s+git\s+ignores', _cm_text) is not None and '`git check-ignore`' in _cm_text,
+    "core/CLAUDE.md: a project check failing on the kit's files is fixed to skip what git ignores")
+_kon = open('core/commands/kit-on.md', encoding='utf-8').read() if os.path.isfile('core/commands/kit-on.md') else ''
+chk('naming `orchestration-kit.md` or `.claude/scratch/`' in _kon,
+    "/kit-on runs the project's gate once on a fresh kit ON and reads it for the kit's files")
 
 print()
 print('=== 6. DUPLICATION ===')

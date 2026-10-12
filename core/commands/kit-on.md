@@ -15,6 +15,13 @@ that keeps a session journal of its own (remember) is switched off here, in
 and `/kit-off` turns the plugin back on.
 If it exits non-zero, show its message and stop.
 
+On a fresh `kit ON` (not `kit already ON`), check that the copy breaks none of this project's
+checks: if its `CLAUDE.md` has a FAST GATE row with a command (not `none`), run that command
+once. A line of its output naming `orchestration-kit.md` or `.claude/scratch/` is a project
+check that reads files git ignores: tell the user which check, and that the fix belongs in
+that check (the rules' gate section says how), never in the kit's file. Anything else red is
+not the kit's: mention it and leave it.
+
 Then, so the kit works in THIS chat too, Read `~/.claude/kit/orchestration-kit.md` whole and
 follow it from now on. Tell the user: the kit is on - the hooks from their next event, the rules
 now and in every new chat; `/clear` shows this project's task list; `/kit-init` if this project

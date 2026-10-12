@@ -80,7 +80,9 @@ if (Get-Command git -ErrorAction SilentlyContinue) {
     $common = git -C $kit rev-parse --path-format=absolute --git-common-dir 2>$null
     if ($LASTEXITCODE -eq 0 -and $common) { $src = (Split-Path ($common | Select-Object -First 1).Trim() -Parent) -replace '/', '\' }
 }
-$rules = "<!-- orchestration-kit (fork of SirRuggie/claude-code-orchestration-kit, source $src) -->`n" +
+# A blank line after the header: Prettier puts one there, and a repo-root `prettier --check .`
+# reads the project copy - .git/info/exclude hides it from git only (validate_kit 5b).
+$rules = "<!-- orchestration-kit (fork of SirRuggie/claude-code-orchestration-kit, source $src) -->`n`n" +
          (Get-Content (Join-Path $kit 'core\CLAUDE.md') -Raw)
 # Compare LF-normalized: Write-Lf strips CRLF on write, so a raw compare never matches and
 # the file is rewritten on every run, hiding whether anything actually changed.

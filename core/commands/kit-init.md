@@ -51,7 +51,8 @@ Run the chosen candidate **once**, wrapped in a timer (`Measure-Command` in Powe
 `time` in bash), and record the wall-clock seconds. If it exceeds **60 s**, it is not a fast
 gate: say so, report the number, and stop — do not write a CLAUDE.md that names a slow gate.
 If it fails on the untouched tree, record that too: a red baseline is a fact the first
-builder needs, not a reason to hide the command.
+builder needs, not a reason to hide the command. A red line naming the kit's own files is
+read and reported as `~/.claude/commands/kit-on.md` says for a fresh `kit ON`.
 
 **If no candidate exists** — no package scripts, no linter, no compiler, no analyzer (a docs,
 notes or tools repo) — write the gate row's Command cell as bare text, no backticks:

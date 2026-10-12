@@ -5,7 +5,7 @@ Every session and subagent of a project the kit is on in (`/kit-on`). A repo's o
 ## Tools
 
 - **Code search is qartez**, never `Grep`/`Glob` on source; kit agents do not hold them at
-  all. `Read` is *not* guarded, so that
+  all. `Read` is _not_ guarded, so that
   rule is yours — briefs, markdown, JSON, config only, never source, where `qartez_read`
   returns the symbol instead of the whole file. Paths relative to the project root are
   safest; an absolute path under the root, or `./x`, is accepted too.
@@ -17,7 +17,7 @@ Every session and subagent of a project the kit is on in (`/kit-on`). A repo's o
   `NO MATCHES` only there, `OUT OF INDEX` everywhere else. **Never name which blind spot hid
   it** (measured wrong on three runs of four), never repeat qartez's "not defined in this
   repo" wording, and never list the files you searched beside an empty result.
-- **A dedup stub is never evidence.** qartez's read cache is per *server*, shared by every
+- **A dedup stub is never evidence.** qartez's read cache is per _server_, shared by every
   agent of a session, so `// (served earlier by this server: ...)` can arrive for a body you
   have never seen (verified: a fresh verifier got the stub for a symbol the orchestrator had
   read). Re-read with `fresh=true`; judge nothing you do not hold.
@@ -67,6 +67,10 @@ suite**, codegen staleness included.
   never invented.
 - **Zero review agents run it.** Its verbatim output is in your brief. Treat its findings as
   candidates to triage, not as pass/fail.
+- **The kit's files are not the project's.** A project check that fails on this rules file
+  (`.claude/rules/orchestration-kit.md`, git-ignored through `.git/info/exclude`) or on a
+  git-ignored `.claude/scratch/` file reads files from disk: make it skip what git ignores
+  (`git check-ignore`). Never edit this file: the kit rewrites it.
 
 ## Review: recall and precision are different jobs
 
