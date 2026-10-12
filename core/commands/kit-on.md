@@ -25,9 +25,11 @@ has no `CLAUDE.md` with a FAST GATE row.
 The project-records skill keeps a project's permanent record in its docs/ folder, committed to
 git: client mails and calls filed by date, every decision quoted with who and when, questions,
 findings and numbered work items, each with an id. The kit keeps the working memory of a task;
-the two divide the work, one home per fact. Ask only when both hold: this project does not keep
-it yet (no docs/TIMELINE.md beside `.claude/skills/project-records/`), and this machine has it
-(`~/.claude/commands/records-install.md` exists). Otherwise say nothing about it.
+the two divide the work, one home per fact. Ask only when all three hold: this run switched the
+kit on (its output says `kit ON`, not `kit already ON` - a project already on was asked when it
+was switched on), this project does not keep it yet (no docs/TIMELINE.md beside
+`.claude/skills/project-records/`), and this machine has it (`~/.claude/commands/records-install.md`
+exists). Otherwise say nothing about it.
 
 One AskUserQuestion, the recommended option first with `(Recommended)` in its label:
 - recommend **No** when the project already runs its own record or next-item system - its

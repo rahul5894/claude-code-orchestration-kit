@@ -1100,6 +1100,12 @@ chk("kept yours" in _inst and "$pre['modelSettings']" in _inst,
 chk('AskUserQuestion' in _kon.split('---', 2)[1] and '/records-install' in _kon and 'Never run it' in _kon
     and 'records-install.md' in _kon and 'Records: one question' in _kini and 'AskUserQuestion' in _kini.split('---', 2)[1],
     '/kit-on and /kit-init ask once whether the project keeps project-records; the user types /records-install')
+# 2026-10-12: /kit-on typed again in a project already on re-asked the records question; the
+# header of an install from a linked worktree named a temp folder in every project's copy.
+chk('not `kit already ON`' in _kon,
+    '/kit-on asks the records question only when this run switched the kit on')
+chk('--git-common-dir' in _inst and 'source $src)' in _inst,
+    'install.ps1 names the kit checkout in the rules header, also from a linked worktree')
 # One whole-file writer (review 2026-10-10: a fixed `<copy>.tmp` name let a cloned repo's link
 # truncate any file of the user's; /simplify: three writers had grown apart). kit_index.write_atomic:
 # a tmp name of the process's own created new, a rename that never follows a link, the Windows retry.

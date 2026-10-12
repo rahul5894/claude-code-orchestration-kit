@@ -73,7 +73,14 @@ Copy-Item (Join-Path $kit 'kit_switch.py')            (Join-Path $dest 'kit\kit_
 #    and every subagent load them, and that copy is also the switch the hooks look for. The
 #    session-start hook keeps an ON project's copy current with this file.
 $rf    = Join-Path $dest 'kit\orchestration-kit.md'
-$rules = "<!-- orchestration-kit (fork of SirRuggie/claude-code-orchestration-kit, source $kit) -->`n" +
+# The header names the kit's own checkout even when a linked worktree installs (2026-10-12: an
+# install from a temp worktree put its path into 9 projects' copies). Not a git checkout = $kit.
+$src = $kit
+if (Get-Command git -ErrorAction SilentlyContinue) {
+    $common = git -C $kit rev-parse --path-format=absolute --git-common-dir 2>$null
+    if ($LASTEXITCODE -eq 0 -and $common) { $src = (Split-Path ($common | Select-Object -First 1).Trim() -Parent) -replace '/', '\' }
+}
+$rules = "<!-- orchestration-kit (fork of SirRuggie/claude-code-orchestration-kit, source $src) -->`n" +
          (Get-Content (Join-Path $kit 'core\CLAUDE.md') -Raw)
 # Compare LF-normalized: Write-Lf strips CRLF on write, so a raw compare never matches and
 # the file is rewritten on every run, hiding whether anything actually changed.
